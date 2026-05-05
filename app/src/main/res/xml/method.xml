@@ -8,6 +8,6 @@
         android:imeSubtypeMode="keyboard"
         android:imeSubtypeExtraValue="KeyboardLayoutSet=wenet"
         android:isAsciiCapable="false"
-        android:imeSubtypeId="1" />
+        android:subtypeId="1" />
     
 </input-method>
