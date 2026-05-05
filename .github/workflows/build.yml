@@ -25,21 +25,43 @@ jobs:
       uses: android-actions/setup-android@v3
       with:
         accept-android-sdk-licenses: true
+        log-accept-android-sdk-licenses: true
+    
+    - name: Accept Android SDK licenses manually
+      run: |
+        mkdir -p $ANDROID_HOME/licenses
+        echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c7" > $ANDROID_HOME/licenses/android-sdk-license
+        echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
+        echo -e "\n84831b9409646a918e305ecf71c9" >> $ANDROID_HOME/licenses/android-sdk-license
+        echo -e "\n791207223" > $ANDROID_HOME/licenses/intel-android-extra-license
+        cat $ANDROID_HOME/licenses/android-sdk-license
+        echo "✅ Licenses created"
+    
+    - name: Verify SDK
+      run: |
+        ls -la $ANDROID_HOME/
+        sdkmanager --list || echo "⚠️ sdkmanager not found, will install"
     
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
     
+    - name: Clean build
+      run: ./gradlew clean --no-daemon || true
+    
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --no-daemon --stacktrace
+      run: ./gradlew assembleDebug --no-daemon --stacktrace --info
+      env:
+        ANDROID_HOME: ${{ env.ANDROID_HOME }}
     
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: cesia-input-method-debug
         path: app/build/outputs/apk/debug/*.apk
     
     - name: Create Release
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && success()
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ github.run_number }}
@@ -54,8 +76,8 @@ jobs:
           4. 首次使用会自动下载WeNet模型（~90MB）
           
           ## 更新内容
+          - 自动构建版本 v${{ github.run_number }}
           - 基于最新main分支代码
-          - 自动构建版本
         files: app/build/outputs/apk/debug/*.apk
         draft: false
         prerelease: false
