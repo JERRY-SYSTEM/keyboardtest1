@@ -25,6 +25,10 @@ jobs:
           bash -c "
             echo '=== 环境检查 ===' && \
             java -version && \
+            which gradle && \
+            echo '=== 设置环境变量 ===' && \
+            export ANDROID_HOME=/opt/android-sdk && \
+            export PATH=$PATH:/opt/gradle/bin && \
             echo '=== 构建APK ===' && \
             gradle assembleDebug --no-daemon --stacktrace && \
             echo '=== 构建完成 ===' && \
