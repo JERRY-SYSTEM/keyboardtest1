@@ -27,11 +27,7 @@ android {
         }
     }
     
-    externalNativeBuild {
-        cmake {
-            path "src/main/cpp/CMakeLists.txt"
-        }
-    }
+    // 移除externalNativeBuild - WeNet库自带native代码
     
     buildFeatures {
         viewBinding true
