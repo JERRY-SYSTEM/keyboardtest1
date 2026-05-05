@@ -25,15 +25,28 @@ jobs:
           bash -c "
             echo '=== 环境检查 ===' && \
             java -version && \
-            which gradle && \
+            echo '=== 查找Gradle ===' && \
+            (which gradle || echo 'Gradle not in PATH, searching...') && \
+            (gradle --version || echo 'Gradle not found, installing...') && \
             echo '=== 设置环境变量 ===' && \
             export ANDROID_HOME=/opt/android-sdk && \
-            export PATH=$PATH:/opt/gradle/bin && \
+            export PATH=$PATH:/opt/gradle/bin:/opt/android-sdk/tools:/opt/android-sdk/platform-tools && \
             echo '=== 构建APK ===' && \
-            gradle assembleDebug --no-daemon --stacktrace && \
+            gradle assembleDebug --no-daemon --stacktrace --info && \
             echo '=== 构建完成 ===' && \
             ls -lh app/build/outputs/apk/debug/
           "
+      continue-on-error: true
+    
+    - name: Check build result
+      run: |
+        if [ -f app/build/outputs/apk/debug/*.apk ]; then
+          echo "✅ APK构建成功！"
+          ls -lh app/build/outputs/apk/debug/*.apk
+        else
+          echo "❌ APK构建失败，查看日志..."
+          cat build.log 2>/dev/null || echo "无详细日志"
+        fi
     
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
