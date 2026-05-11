@@ -6,21 +6,24 @@ import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
 import okhttp3.*
 import org.json.JSONObject
-import java.io.IOException
 
 /**
  * Cesia 输入法设置页面
- * 配置润色 API 地址、测试连接、查看日志
+ * 配置润色 API、唤醒词/结束词、测试连接、查看日志
  */
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var etApiUrl: TextInputEditText
+    private lateinit var etWakeWord: TextInputEditText
+    private lateinit var etEndWord: TextInputEditText
+    private lateinit var switchVoiceActivation: SwitchMaterial
     private lateinit var btnSave: MaterialButton
     private lateinit var btnReset: MaterialButton
-    private lateinit var btnTest: MaterialButton
+    private lateinit var btnTestApi: MaterialButton
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
 
@@ -34,6 +37,8 @@ class SettingsActivity : AppCompatActivity() {
 
     companion object {
         const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
+        const val DEFAULT_WAKE_WORD = "Hey Typeless"
+        const val DEFAULT_END_WORD = "Typeless Over"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,38 +53,37 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun initViews() {
         etApiUrl = findViewById(R.id.et_api_url)
+        etWakeWord = findViewById(R.id.et_wake_word)
+        etEndWord = findViewById(R.id.et_end_word)
+        switchVoiceActivation = findViewById(R.id.switch_voice_activation)
         btnSave = findViewById(R.id.btn_save)
         btnReset = findViewById(R.id.btn_reset)
-        btnTest = findViewById(R.id.btn_test_api) ?: run {
-            // 如果布局里没有测试按钮，动态创建
-            MaterialButton(this).apply {
-                text = "测试 API 连接"
-                id = View.generateViewId()
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = 16
-                }
-            }
-        }
-        tvStatus = findViewById(R.id.tv_api_status) ?: TextView(this).apply {
-            id = View.generateViewId()
-        }
-        tvLog = findViewById(R.id.tv_log) ?: TextView(this).apply {
-            id = View.generateViewId()
-        }
+        btnTestApi = findViewById(R.id.btn_test_api)
+        tvStatus = findViewById(R.id.tv_api_status)
+        tvLog = findViewById(R.id.tv_log)
     }
 
     private fun loadSettings() {
-        val savedUrl = prefs.getString("api_url", DEFAULT_API_URL)
-        etApiUrl.setText(savedUrl)
-        appendLog("已加载保存的 API 地址")
+        val apiUrl = prefs.getString(CesiaInputMethod.PREF_API_URL, DEFAULT_API_URL)
+        val wakeWord = prefs.getString(CesiaInputMethod.PREF_WAKE_WORD, DEFAULT_WAKE_WORD)
+        val endWord = prefs.getString(CesiaInputMethod.PREF_END_WORD, DEFAULT_END_WORD)
+        val voiceActivation = prefs.getBoolean(CesiaInputMethod.PREF_VOICE_ACTIVATION, false)
+
+        etApiUrl.setText(apiUrl)
+        etWakeWord.setText(wakeWord)
+        etEndWord.setText(endWord)
+        switchVoiceActivation.isChecked = voiceActivation
+
+        appendLog("已加载上次设置")
     }
 
     private fun setupListeners() {
         btnSave.setOnClickListener {
             val url = etApiUrl.text?.toString()?.trim() ?: ""
+            val wakeWord = etWakeWord.text?.toString()?.trim() ?: DEFAULT_WAKE_WORD
+            val endWord = etEndWord.text?.toString()?.trim() ?: DEFAULT_END_WORD
+            val voiceActivation = switchVoiceActivation.isChecked
+
             if (url.isEmpty()) {
                 etApiUrl.error = "请输入 API 地址"
                 return@setOnClickListener
@@ -90,51 +94,80 @@ class SettingsActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // 保存到 SharedPreferences
-            prefs.edit().putString("api_url", url).apply()
+            if (wakeWord == endWord) {
+                Toast.makeText(this, "唤醒词和结束词不能相同", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
 
-            // 保存到输入法服务可以读取的位置
-            PreferenceManager.getDefaultSharedPreferences(this)
-                .edit()
-                .putString("api_url", url)
+            // 保存所有设置
+            prefs.edit()
+                .putString(CesiaInputMethod.PREF_API_URL, url)
+                .putString(CesiaInputMethod.PREF_WAKE_WORD, wakeWord)
+                .putString(CesiaInputMethod.PREF_END_WORD, endWord)
+                .putBoolean(CesiaInputMethod.PREF_VOICE_ACTIVATION, voiceActivation)
                 .apply()
 
-            tvStatus.text = "✓ 已保存: ${url.take(50)}..."
-            appendLog("API 地址已保存: $url")
-            Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show()
+            // 同时保存到全局 SharedPreferences
+            PreferenceManager.getDefaultSharedPreferences(this)
+                .edit()
+                .putString(CesiaInputMethod.PREF_API_URL, url)
+                .putString(CesiaInputMethod.PREF_WAKE_WORD, wakeWord)
+                .putString(CesiaInputMethod.PREF_END_WORD, endWord)
+                .putBoolean(CesiaInputMethod.PREF_VOICE_ACTIVATION, voiceActivation)
+                .apply()
+
+            tvStatus.text = "✓ 设置已保存"
+            appendLog("""
+                💾 设置已保存:
+                  API: $url
+                  唤醒词: "$wakeWord"
+                  结束词: "$endWord"
+                  语音激活: $voiceActivation
+            """.trimIndent())
+
+            Toast.makeText(this, "设置已保存 ✓", Toast.LENGTH_SHORT).show()
         }
 
         btnReset.setOnClickListener {
             etApiUrl.setText(DEFAULT_API_URL)
-            prefs.edit().putString("api_url", DEFAULT_API_URL).apply()
+            etWakeWord.setText(DEFAULT_WAKE_WORD)
+            etEndWord.setText(DEFAULT_END_WORD)
+            switchVoiceActivation.isChecked = false
+
+            prefs.edit()
+                .putString(CesiaInputMethod.PREF_API_URL, DEFAULT_API_URL)
+                .putString(CesiaInputMethod.PREF_WAKE_WORD, DEFAULT_WAKE_WORD)
+                .putString(CesiaInputMethod.PREF_END_WORD, DEFAULT_END_WORD)
+                .putBoolean(CesiaInputMethod.PREF_VOICE_ACTIVATION, false)
+                .apply()
+
             PreferenceManager.getDefaultSharedPreferences(this)
                 .edit()
-                .putString("api_url", DEFAULT_API_URL)
+                .putString(CesiaInputMethod.PREF_API_URL, DEFAULT_API_URL)
+                .putString(CesiaInputMethod.PREF_WAKE_WORD, DEFAULT_WAKE_WORD)
+                .putString(CesiaInputMethod.PREF_END_WORD, DEFAULT_END_WORD)
+                .putBoolean(CesiaInputMethod.PREF_VOICE_ACTIVATION, false)
                 .apply()
-            tvStatus.text = "已重置为默认地址"
-            appendLog("API 地址已重置为默认值")
+
+            tvStatus.text = "已重置为默认设置"
+            appendLog("🔄 设置已重置为默认值")
             Toast.makeText(this, "已重置默认设置", Toast.LENGTH_SHORT).show()
         }
 
-        // 如果有测试按钮，绑定点击事件
-        try {
-            val testBtn = findViewById<MaterialButton>(R.id.btn_test_api)
-            testBtn?.setOnClickListener {
-                testApiConnection()
-            }
-        } catch (_: Exception) {}
+        btnTestApi.setOnClickListener {
+            testApiConnection()
+        }
     }
 
     private fun testApiConnection() {
-        btnTest.isEnabled = false
-        btnTest.text = "测试中..."
+        btnTestApi.isEnabled = false
+        btnTestApi.text = "测试中..."
         tvStatus.text = "🔄 正在测试连接..."
 
         Thread {
             try {
                 val url = etApiUrl.text?.toString()?.trim() ?: DEFAULT_API_URL
 
-                // 发送测试请求（用 "你好" 作为测试文本）
                 val json = JSONObject().apply {
                     put("text", "你好世界")
                     put("language", "zh")
@@ -154,31 +187,28 @@ class SettingsActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (response.isSuccessful) {
                         tvStatus.text = "✅ API 连接成功 (${response.code})"
-                        appendLog("API 测试成功: $body")
+                        appendLog("API 测试成功 (${response.code}): $body")
                         Toast.makeText(this, "API 连接正常 ✓", Toast.LENGTH_SHORT).show()
                     } else {
                         tvStatus.text = "❌ API 返回错误: ${response.code}"
                         appendLog("API 测试失败: HTTP ${response.code} - $body")
-                        Toast.makeText(this, "API 返回错误: ${response.code}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "API 返回错误: ${response.code}", Toast.LENGTH_SHORT)
+                            .show()
                     }
-                    btnTest.isEnabled = true
-                    btnTest.text = "测试 API 连接"
-                }
-            } catch (e: IOException) {
-                runOnUiThread {
-                    tvStatus.text = "❌ 网络连接失败"
-                    appendLog("API 测试失败: ${e.message}")
-                    Toast.makeText(this, "无法连接 API: ${e.message}", Toast.LENGTH_SHORT).show()
-                    btnTest.isEnabled = true
-                    btnTest.text = "测试 API 连接"
+                    btnTestApi.isEnabled = true
+                    btnTestApi.text = "📡 测试 API"
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    tvStatus.text = "❌ 测试出错: ${e.message}"
-                    appendLog("API 测试异常: ${e.message}")
-                    Toast.makeText(this, "测试出错: ${e.message}", Toast.LENGTH_SHORT).show()
-                    btnTest.isEnabled = true
-                    btnTest.text = "测试 API 连接"
+                    tvStatus.text = "❌ 网络连接失败"
+                    appendLog("API 测试失败: ${e.message}")
+                    Toast.makeText(
+                        this,
+                        "连接失败: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    btnTestApi.isEnabled = true
+                    btnTestApi.text = "📡 测试 API"
                 }
             }
         }.start()
@@ -187,7 +217,8 @@ class SettingsActivity : AppCompatActivity() {
     private fun appendLog(msg: String) {
         runOnUiThread {
             val current = tvLog.text?.toString() ?: ""
-            val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(System.currentTimeMillis())
+            val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                .format(System.currentTimeMillis())
             val newLog = "$current\n[$timestamp] $msg"
             tvLog.text = newLog
         }

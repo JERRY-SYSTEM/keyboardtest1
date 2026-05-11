@@ -16,11 +16,14 @@ import android.widget.Toast
 import com.cesia.input.audio.AudioRecorder
 import com.cesia.input.engine.TypelessEngine
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.switchmaterial.SwitchMaterial
 
 /**
  * Cesia Typeless 输入法 —— 语音自动润色上屏
  *
- * 3 步完成输入: 点麦克风 → 说话 → 自动上屏
+ * 🔥 语音激活模式: 说 "Hey Typeless" → 说话 → 说 "Typeless Over" → 自动润色上屏
+ * 🔘 手动按钮模式: 点麦克风按钮 → 说话 → 静音自动结束 → 自动润色上屏
+ *
  * 无需"选中文字"等多余步骤，commitText 直接上屏
  */
 class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionListener {
@@ -41,12 +44,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 录音状态
     private var isRecording = false
 
-    // API URL
+    // 设置
     private var apiUrl = "https://typeless-ai-service.vercel.app/api/polish"
 
     companion object {
         const val PREF_API_URL = "api_url"
+        const val PREF_VOICE_ACTIVATION = "voice_activation"
+        const val PREF_WAKE_WORD = "wake_word"
+        const val PREF_END_WORD = "end_word"
         const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
+        const val DEFAULT_WAKE_WORD = "Hey Typeless"
+        const val DEFAULT_END_WORD = "Typeless Over"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,19 +93,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 绑定按钮事件
         setupButtonListeners()
 
-        updateStatus("就绪 - 点击麦克风开始")
+        updateStatus("就绪 - 点击麦克风或说唤醒词")
         setStatusDot("idle")
 
         return view
     }
 
     private fun setupButtonListeners() {
-        // 麦克风按钮 —— Typeless 核心触发
+        // 麦克风按钮 —— 手动模式触发 / 语音激活下停止录音
         micButton.setOnClickListener {
-            toggleRecording()
+            if (isVoiceActivationEnabled()) {
+                // 语音激活模式下，点击麦克风 = 停止录音
+                stopRecording()
+            } else {
+                toggleRecording()
+            }
         }
 
-        // 长按麦克风 = 停止（安全机制）
+        // 长按麦克风 = 强制停止（安全机制）
         micButton.setOnLongClickListener {
             if (isRecording) {
                 stopRecording()
@@ -124,6 +137,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+    /**
+     * 切换到下一个输入法
+     */
+    private fun switchToNextInputMethod() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            switchToPreviousInputMethod()
+        } else {
+            @Suppress("DEPRECATION")
+            currentInputBinding?.let { binding ->
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                @Suppress("DEPRECATION")
+                imm.switchToNextInputMethod(binding.token, false)
+            }
+        }
+    }
+
     private fun showSettings() {
         val settingsIntent = Intent(this, SettingsActivity::class.java)
         settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -135,6 +164,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
             apiUrl = prefs.getString(PREF_API_URL, DEFAULT_API_URL) ?: DEFAULT_API_URL
             typelessEngine?.updateApiUrl(apiUrl)
+
+            // 语音激活
+            val voiceActivation = prefs.getBoolean(PREF_VOICE_ACTIVATION, false)
+            typelessEngine?.voiceActivationEnabled = voiceActivation
+
+            // 唤醒词 / 结束词
+            val wakeWord = prefs.getString(PREF_WAKE_WORD, DEFAULT_WAKE_WORD) ?: DEFAULT_WAKE_WORD
+            val endWord = prefs.getString(PREF_END_WORD, DEFAULT_END_WORD) ?: DEFAULT_END_WORD
+            typelessEngine?.setWakeWord(wakeWord)
+            typelessEngine?.setEndWord(endWord)
         } catch (e: Exception) {
             apiUrl = DEFAULT_API_URL
         }
@@ -169,12 +208,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         setStatusDot("idle")
 
         typelessEngine?.stopListening()
-        updateStatus("⏹️ 录音结束，处理中...")
+        updateStatus("⏹️ 录音结束")
+    }
+
+    private fun isVoiceActivationEnabled(): Boolean {
+        return try {
+            val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+            prefs.getBoolean(PREF_VOICE_ACTIVATION, false)
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun setStatusDot(state: String) {
         try {
             val drawableRes = when (state) {
+                "monitoring" -> android.R.drawable.presence_online
                 "recording" -> R.drawable.status_dot_recording
                 "processing" -> R.drawable.status_dot_processing
                 "error" -> R.drawable.status_dot_error
@@ -228,7 +277,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 keyboard.isShifted = !keyboard.isShifted
             }
             Keyboard.KEYCODE_MODE_CHANGE -> {
-                // 可以切换到中文语音模式
                 showSettings()
             }
             Keyboard.KEYCODE_DONE, Keyboard.KEYCODE_ENTER -> {
@@ -246,9 +294,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     )
                 )
             }
-            // 中文切换键
+            // 中文切换键 -> 触发语音
             -1 -> {
-                // 触发语音输入
                 toggleRecording()
             }
             else -> {
@@ -260,14 +307,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
-    override fun onPress(primaryCode: Int) {
-        // 按下时的视觉反馈
-    }
-
-    override fun onRelease(primaryCode: Int) {
-        // 释放时的处理
-    }
-
+    override fun onPress(primaryCode: Int) {}
+    override fun onRelease(primaryCode: Int) {}
     override fun onText(text: CharSequence?) {
         val inputConnection = currentInputConnection ?: return
         inputConnection.commitText(text, 1)
