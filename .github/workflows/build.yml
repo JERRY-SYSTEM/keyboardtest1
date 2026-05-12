@@ -1,4 +1,4 @@
-name: Build Cesia APK
+name: Build Android APK
 
 on:
   push:
@@ -8,52 +8,39 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
-    
-    - name: Set up JDK 17
+
+    - name: Setup Java
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
-    
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-    
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Check Android SDK
+      run: |
+        sdkmanager --list_installed
+        # 明确安装项目需要的 SDK 版本
+        sdkmanager "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" "platform-tools"
+
+    - name: Setup Gradle Wrapper
+      run: chmod +x ./gradlew
+
     - name: Build APK
       run: |
-        chmod +x ./gradlew
+        export ANDROID_HOME=$ANDROID_SDK_ROOT
         ./gradlew assembleDebug --no-daemon --stacktrace
-    
-    - name: Upload Debug APK
+
+    - name: Check APK Output
+      run: find app/build/outputs/apk -name "*.apk" -ls
+
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: cesia-input-method-debug
+        name: cesia-input-method
         path: app/build/outputs/apk/debug/app-debug.apk
-    
-    - name: Create Release
-      if: success()
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v${{ github.run_number }}
-        name: Cesia输入法 v${{ github.run_number }}
-        body: |
-          🎉 Cesia输入法自动构建版本
-          
-          ## 安装步骤
-          1. 下载 app-debug.apk
-          2. 安装到手机（允许未知来源）
-          3. 设置 → 语言和输入法 → 启用 "Cesia输入法"
-          
-          ## 功能
-          - 基础输入法
-          - 唤醒词 "Hey Typeless" / 结束词 "Typeless Over"
-          - API润色服务
-          - 手动按钮模式
-        files: app/build/outputs/apk/debug/app-debug.apk
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
