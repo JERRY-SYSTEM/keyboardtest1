@@ -68,7 +68,7 @@ cygwin=false
 msys=false
 darwin=false
 nonStop=false
-case "`unescape \"\`uname\`\"`" in
+case "$(uname)" in
   CYGWIN* )
     cygwin=true
     ;;
