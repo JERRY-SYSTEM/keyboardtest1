@@ -19,27 +19,27 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
+    - name: Setup Gradle
+      run: |
+        # 强制使用系统 gradle 生成 wrapper (确保 JAR 正确)
+        apt-get update -qq && apt-get install -y gradle 2>/dev/null || true
+        gradle wrapper --gradle-version 8.5 --no-daemon 2>/dev/null || true
+
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Check Android SDK
+    - name: Install Android SDK 34
       run: |
-        sdkmanager --list_installed
-        # 明确安装项目需要的 SDK 版本
         sdkmanager "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" "platform-tools"
-
-    - name: Setup Gradle Wrapper
-      run: chmod +x ./gradlew
 
     - name: Build APK
       run: |
+        chmod +x ./gradlew
         export ANDROID_HOME=$ANDROID_SDK_ROOT
         ./gradlew assembleDebug --no-daemon --stacktrace
 
-    - name: Check APK Output
-      run: find app/build/outputs/apk -name "*.apk" -ls
-
     - name: Upload Artifact
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: cesia-input-method
