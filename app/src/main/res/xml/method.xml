@@ -3,12 +3,13 @@
     android:settingsActivity="com.cesia.input.SettingsActivity">
     
     <sub-type
-        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeLocale=""
         android:imeSubtypeMode="keyboard"
         android:isAsciiCapable="true" />
     
     <sub-type
-        android:imeSubtypeLocale="zh_CN"
-        android:imeSubtypeMode="keyboard" />
+        android:imeSubtypeLocale=""
+        android:imeSubtypeMode="keyboard"
+        android:isAsciiCapable="true" />
     
 </input-method>
