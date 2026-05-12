@@ -127,17 +127,6 @@ class TypelessEngine(
         } else {
             log("❌ FallbackRecognizer 初始化失败")
         }
-
-        // 绑定唤醒词事件
-        wakeWordDetector?.onWakeWord = { word ->
-            log("🔥 检测到唤醒词: \"$word\"")
-            _state.value = State.LISTENING
-            service.commitText(word, 1)
-        }
-        wakeWordDetector?.onEndWord = { word ->
-            log("🏁 检测到结束词: \"$word\"")
-            // 结束词触发后应自动处理
-        }
     }
 
     /**
@@ -162,11 +151,8 @@ class TypelessEngine(
      * 停止监听
      */
     fun stopListening() {
-        if (voiceActivationEnabled) {
-            wakeWordDetector?.stopActiveSession()
-        } else {
-            fallbackRecognizer?.stopListening()
-        }
+        fallbackRecognizer?.stopListening()
+        wakeWordDetector?.stop()
         _state.value = State.IDLE
         log("⏹ 已停止")
     }
@@ -176,7 +162,7 @@ class TypelessEngine(
      */
     private fun startWakeWordMonitoring() {
         if (!voiceActivationEnabled) return
-        wakeWordDetector?.startMonitoring()
+        wakeWordDetector?.start()
         _state.value = State.MONITORING
         log("📡 开启唤醒词监听")
     }
