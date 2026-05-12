@@ -221,6 +221,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun setStatusDot(state: String) {
+        if (!::statusDot.isInitialized) return
         try {
             val drawableRes = when (state) {
                 "monitoring" -> android.R.drawable.presence_online
