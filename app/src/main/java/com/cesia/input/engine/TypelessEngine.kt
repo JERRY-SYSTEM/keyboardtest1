@@ -261,7 +261,7 @@ class TypelessEngine(
 
         // 已经以标点结尾的，不处理
         val hasEnding = trimmed.lastOrNull()?.let { c ->
-            c in setOf('。', '！', '？', '，', '；', '：', '.', '!', '?', ',',';',')'')
+            c in setOf('。', '！', '？', '，', '；', '：', '.', '!', '?', ',', ';')
         } ?: false
         if (hasEnding) return trimmed
 
