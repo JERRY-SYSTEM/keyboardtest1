@@ -94,7 +94,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 绑定按钮事件
         setupButtonListeners()
 
-        updateStatus("就绪 - 点击麦克风或说唤醒词")
+        updateStatus("Cesia 已就绪")
         setStatusDot("idle")
 
         return view
@@ -194,9 +194,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun startRecording() {
         isRecording = true
         micButton.isActivated = true
-        micButton.text = "⏺ 录音中..."
+        micButton.text = "⏹️ 再次点击完成"
         setStatusDot("recording")
-        updateStatus("🎤 正在录音，请说话...")
+        updateStatus("🎤 正在收听，请说话...")
 
         typelessEngine?.startListening()
     }
@@ -204,11 +204,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun stopRecording() {
         isRecording = false
         micButton.isActivated = false
-        micButton.text = "🎤 说话"
+        micButton.text = "🎤 点击开始说话"
         setStatusDot("idle")
 
         typelessEngine?.stopListening()
-        updateStatus("⏹️ 录音结束")
+        updateStatus("正在识别...")
     }
 
     private fun isVoiceActivationEnabled(): Boolean {
@@ -267,9 +267,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ========================
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
-        val inputConnection = currentInputConnection ?: return
-
         when (primaryCode) {
+            // 重写/清屏 —— 删除光标前的所有文本
+            -201 -> {
+                val ic = currentInputConnection ?: return
+                ic.deleteSurroundingText(Integer.MAX_VALUE, 0)
+            }
+            // 纸飞机发送 —— 发送回车键
+            -200 -> {
+                val ic = currentInputConnection ?: return
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+            }
             Keyboard.KEYCODE_DELETE -> {
                 val ic = currentInputConnection ?: return
                 ic.deleteSurroundingText(1, 0)
@@ -282,12 +291,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             Keyboard.KEYCODE_DONE -> {
                 val ic = currentInputConnection ?: return
-                ic.sendKeyEvent(
-                    KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
-                )
-                ic.sendKeyEvent(
-                    KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)
-                )
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
             }
             else -> {
                 try {

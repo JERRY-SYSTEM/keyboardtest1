@@ -86,26 +86,22 @@ class TypelessEngine(
             fallbackRecognizer?.results?.collect { result ->
                 when (result) {
                     is FallbackRecognizer.Result.Success -> {
-                        log("📝 识别成功: ${result.text.take(50)}...")
+                        log("📝 识别成功: ${result.text.take(50)}")
                         polishAndCommit(result.text)
                     }
                     is FallbackRecognizer.Result.Partial -> {
-                        log("📝 部分识别: ${result.text}")
+                        // 实时部分结果，只显示在状态栏不弹窗
+                    }
+                    is FallbackRecognizer.Result.Recognizing -> {
+                        // 识别中状态
+                        log("🔄 ${result.text}")
                     }
                     is FallbackRecognizer.Result.Error -> {
-                        log("❌ 识别错误: ${result.message}")
+                        log("❌ ${result.message}")
                         _state.value = State.ERROR
-                        engineScope.launch(Dispatchers.Main) {
-                            Toast.makeText(
-                                context,
-                                "语音识别失败: ${result.message}",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
                     }
                     is FallbackRecognizer.Result.NoMatch -> {
-                        log("🔇 未识别到语音")
-                        _state.value = State.ERROR
+                        // 无匹配时不报错，保持待机
                     }
                 }
             }
@@ -243,12 +239,40 @@ class TypelessEngine(
             return
         }
         _state.value = State.COMMITTING
-        ic.commitText(text, 1)
-        log("📝 已上屏: $text")
+
+        // 自动添加标点符号
+        val finalText = addAutoPunctuation(text)
+
+        ic.commitText(finalText, 1)
+        log("📝 已上屏: $finalText")
 
         engineScope.launch {
             delay(200)
             _state.value = State.IDLE
+        }
+    }
+
+    /**
+     * 自动添加标点符号
+     * 根据中文语境为语音识别结果添加句号/问号等
+     */
+    private fun addAutoPunctuation(text: String): String {
+        val trimmed = text.trim()
+
+        // 已经以标点结尾的，不处理
+        val hasEnding = trimmed.lastOrNull()?.let { c ->
+            c in setOf('。', '！', '？', '，', '；', '：', '.', '!', '?', ',',';',')'')
+        } ?: false
+        if (hasEnding) return trimmed
+
+        // 疑问句特征词 → 问号
+        val questionWords = listOf("吗", "呢", "吧", "什么", "多少", "谁", "哪里", "哪儿", "怎么", "为什么")
+        val isQuestion = questionWords.any { trimmed.contains(it) }
+
+        return if (isQuestion) {
+            "$trimmed？"
+        } else {
+            "$trimmed。"
         }
     }
 
