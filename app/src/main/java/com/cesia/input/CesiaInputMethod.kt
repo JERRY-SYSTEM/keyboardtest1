@@ -59,8 +59,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     override fun onCreate() {
-        super.onCreate()
         setTheme(R.style.Theme_Cesia)
+        super.onCreate()
     }
 
     override fun onCreateInputView(): View {
