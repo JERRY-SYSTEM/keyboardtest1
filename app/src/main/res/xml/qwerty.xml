@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
     android:keyWidth="10%p"
-    android:keyHeight="50dp">
+    android:keyHeight="48dp">
     
     <!-- 第一行 -->
     <Row>
@@ -32,7 +32,7 @@
     
     <!-- 第三行 -->
     <Row>
-        <Key android:codes="-1" android:keyLabel="↑" android:keyEdgeFlags="left" />
+        <Key android:codes="-1" android:keyLabel="⇧" android:keyWidth="15%p" android:keyEdgeFlags="left" />
         <Key android:codes="122" android:keyLabel="z" />
         <Key android:codes="120" android:keyLabel="x" />
         <Key android:codes="99" android:keyLabel="c" />
@@ -40,15 +40,14 @@
         <Key android:codes="98" android:keyLabel="b" />
         <Key android:codes="110" android:keyLabel="n" />
         <Key android:codes="109" android:keyLabel="m" />
-        <Key android:codes="-5" android:keyLabel="⌫" android:keyEdgeFlags="right" />
+        <Key android:codes="-5" android:keyLabel="⌫" android:keyWidth="15%p" android:keyEdgeFlags="right" />
     </Row>
     
     <!-- 第四行 -->
     <Row>
-        <Key android:codes="-16" android:keyLabel="中文" android:keyEdgeFlags="left" />
-        <Key android:codes="44" android:keyLabel="," />
-        <Key android:codes="32" android:keyLabel="空格" android:keyWidth="30%p" />
-        <Key android:codes="46" android:keyLabel="." />
+        <Key android:codes="44" android:keyLabel="," android:keyEdgeFlags="left" />
+        <Key android:codes="32" android:keyLabel="空格" android:keyWidth="50%p" />
+        <Key android:codes="46" android:keyLabel="。" />
         <Key android:codes="10" android:keyLabel="↵" android:keyEdgeFlags="right" />
     </Row>
     

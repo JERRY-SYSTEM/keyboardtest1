@@ -1,10 +1,14 @@
 package com.cesia.input
 
+import android.Manifest
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
@@ -41,6 +45,7 @@ class SettingsActivity : AppCompatActivity() {
         const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
         const val DEFAULT_WAKE_WORD = "Hey Typeless"
         const val DEFAULT_END_WORD = "Typeless Over"
+        const val PERMISSION_REQUEST_CODE = 1001
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,6 +56,9 @@ class SettingsActivity : AppCompatActivity() {
         initViews()
         loadSettings()
         setupListeners()
+
+        // 首次启动时请求录音权限
+        checkAndRequestPermission()
     }
 
     private fun initViews() {
@@ -63,6 +71,41 @@ class SettingsActivity : AppCompatActivity() {
         btnTestApi = findViewById(R.id.btn_test_api)
         tvStatus = findViewById(R.id.tv_api_status)
         tvLog = findViewById(R.id.tv_log)
+    }
+
+    private fun checkAndRequestPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                PERMISSION_REQUEST_CODE
+            )
+            appendLog("🔐 正在请求录音权限...")
+        } else {
+            appendLog("✅ 录音权限已授予")
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                appendLog("✅ 录音权限已授予")
+                Toast.makeText(this, "录音权限已授予 ✓", Toast.LENGTH_SHORT).show()
+            } else {
+                appendLog("❌ 录音权限被拒绝 — 语音功能将无法使用")
+                Toast.makeText(
+                    this,
+                    "录音权限被拒绝！请在设置中手动授权，否则语音功能无法使用",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     private fun loadSettings() {

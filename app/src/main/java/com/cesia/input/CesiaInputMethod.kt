@@ -289,10 +289,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)
                 )
             }
-            // 中文切换键 -> 触发语音
-            -1 -> {
-                toggleRecording()
-            }
             else -> {
                 try {
                     val code = primaryCode.toChar()

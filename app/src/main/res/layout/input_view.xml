@@ -16,7 +16,7 @@
         android:paddingBottom="4dp"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
-        android:background="#F5F5F5"
+        android:background="#FAFAFA"
         android:gravity="center_vertical">
 
         <View
@@ -86,10 +86,10 @@
             android:layout_width="0dp"
             android:layout_height="56dp"
             android:layout_weight="3"
-            android:text="🎤 说话"
-            android:textSize="15sp"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#6200EE"
+        android:text="🎤 说话"
+        android:textSize="15sp"
+        android:textColor="#333333"
+        android:backgroundTint="#E8E8E8"
             app:cornerRadius="28dp"
             android:elevation="2dp"
             android:stateListAnimator="@null" />

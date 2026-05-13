@@ -113,27 +113,56 @@ class PolishService(
                 val polished = json.getString("polished")
                 val original = json.optString("original", "")
                 val confidence = json.optDouble("confidence", 1.0).toFloat()
+                
+                // 如果 API 返回 placeholder 标记，视为润色失败
+                if (isPlaceholder(polished)) {
+                    return PolishResult.Error("API 返回空结果 (placeholder)")
+                }
+                
                 PolishResult.Success(original, polished, confidence)
             }
             // 格式2: { "result": "..." }
             else if (json.has("result")) {
                 val result = json.getString("result")
+                if (isPlaceholder(result)) {
+                    return PolishResult.Error("API 返回空结果 (placeholder)")
+                }
                 PolishResult.Success(body, result)
             }
             // 格式3: { "data": { "text": "..." } }
             else if (json.has("data")) {
                 val data = json.getJSONObject("data")
                 val text = data.optString("text", data.optString("polished", ""))
+                if (isPlaceholder(text)) {
+                    return PolishResult.Error("API 返回空结果 (placeholder)")
+                }
                 PolishResult.Success(body, text)
             }
-            // 格式4: 直接是字符串
+            // 格式4: 直接是字符串 — 如果 JSON 没有有效字段，返回错误
             else {
-                PolishResult.Success(body, json.toString())
+                return PolishResult.Error("API 返回格式不可解析")
             }
         } catch (e: Exception) {
             // 如果不是 JSON，直接作为润色后的文本返回
-            PolishResult.Success("", body.trim())
+            val trimmed = body.trim()
+            if (isPlaceholder(trimmed)) {
+                return PolishResult.Error("API 返回空结果 (placeholder)")
+            }
+            PolishResult.Success("", trimmed)
         }
+    }
+
+    /**
+     * 检测 API 返回是否为占位符文本
+     */
+    private fun isPlaceholder(text: String): Boolean {
+        val t = text.trim().lowercase()
+        return t == "polished_text" ||
+               t == "(polished_text)" ||
+               t == "<polished_text>" ||
+               t == "text" ||
+               t == "..." ||
+               t.isEmpty()
     }
 
     fun updateApiUrl(newUrl: String) {

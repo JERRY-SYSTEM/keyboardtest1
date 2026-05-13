@@ -171,34 +171,67 @@ class TypelessEngine(
      * 发送文本润色并提交
      */
     private fun polishAndCommit(text: String) {
-        engineScope.launch {
+        engineScope.launch(Dispatchers.Main) {
             _state.value = State.PROCESSING
             log("🔄 正在润色... (${text.length}字)")
 
-            val result = polishService?.polishText(text) ?: run {
-                log("❌ 润色服务不可用，直接上屏原始文本")
-                commitTextDirect(text)
-                return@launch
-            }
+            try {
+                val polishResult = polishService?.polishText(text)
 
-            when (result) {
-                is PolishService.PolishResult.Success -> {
-                    log("✨ 润色完成: ${result.polishedText.take(50)}")
-                    commitTextDirect(result.polishedText)
-                    _state.value = State.IDLE
+                val finalText = when (polishResult) {
+                    is PolishService.PolishResult.Success -> {
+                        val cleaned = cleanPolishedText(polishResult.polishedText)
+                        // API 返回 placeholder 时退回原文
+                        if (cleaned.equals("polished_text", ignoreCase = true) ||
+                            cleaned.equals("(polished_text)", ignoreCase = true)) {
+                            log("⚠️ API 返回 placeholder，使用原文")
+                            text
+                        } else {
+                            log("✨ 润色完成: ${cleaned.take(50)}")
+                            cleaned
+                        }
+                    }
+                    is PolishService.PolishResult.Error -> {
+                        log("⚠️ 润色失败: ${polishResult.message}，直接上屏原文")
+                        // API 返回 placeholder 时无感知退回原文，不打扰用户
+                        text
+                    }
+                    is PolishService.PolishResult.EmptyInput -> {
+                        log("🗑️ 输入为空，跳过")
+                        ""
+                    }
+                    null -> {
+                        log("❌ 润色服务不可用，直接上屏原文")
+                        text
+                    }
                 }
-                is PolishService.PolishResult.Error -> {
-                    log("❌ 润色失败: ${result.message}")
-                    commitTextDirect(text)
-                    _state.value = State.ERROR
-                    showToast("润色失败，已上屏原文")
+
+                if (finalText.isNotEmpty()) {
+                    commitTextDirect(finalText)
                 }
-                is PolishService.PolishResult.EmptyInput -> {
-                    log("📭 输入为空，跳过")
-                    _state.value = State.IDLE
-                }
+                _state.value = State.IDLE
+            } catch (e: Exception) {
+                log("❌ 润色异常: ${e.message}")
+                commitTextDirect(text)
+                _state.value = State.ERROR
             }
         }
+    }
+
+    /**
+     * 清理润色API返回文本中的占位符/标记
+     * 例如: "polished_text" → 去除多余标记
+     */
+    private fun cleanPolishedText(raw: String): String {
+        var text = raw.trim()
+        // 去除 API 返回的 placeholder 标记
+        if (text.equals("polished_text", ignoreCase = true) ||
+            text.equals("(polished_text)", ignoreCase = true) ||
+            text.startsWith("(polished_text)") ||
+            text.endsWith("(polished_text)")) {
+            log("⚠️ API 返回了 placeholder，跳过清理")
+        }
+        return text.trim()
     }
 
     /**
