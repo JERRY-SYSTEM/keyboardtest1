@@ -51,12 +51,30 @@
                 android:text="https://typeless-ai-service.vercel.app/api/polish" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- 测试文本输入框 -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="输入要润色的文本（测试用）"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_test_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:minLines="3"
+                android:gravity="top"
+                android:text="嗯那个我今天去了一个很好吃的餐厅然后我们点了很多菜真的很好吃你会推荐什么菜呢" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <!-- 测试按钮 -->
         <Button
             android:id="@+id/btn_test_api"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="📡 测试 API 连接"
+            android:text="📡 测试 API 润色"
             android:layout_marginTop="8dp"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
 

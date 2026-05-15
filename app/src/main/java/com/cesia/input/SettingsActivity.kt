@@ -27,6 +27,7 @@ import org.json.JSONObject
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var etApiUrl: TextInputEditText
+    private lateinit var etTestText: TextInputEditText
     private lateinit var btnSave: MaterialButton
     private lateinit var btnReset: MaterialButton
     private lateinit var btnTestApi: MaterialButton
@@ -62,6 +63,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun initViews() {
         etApiUrl = findViewById(R.id.et_api_url)
+        etTestText = findViewById(R.id.et_test_text)
         btnSave = findViewById(R.id.btn_save)
         btnReset = findViewById(R.id.btn_reset)
         btnTestApi = findViewById(R.id.btn_test_api)
@@ -133,14 +135,20 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun testApiConnection() {
+        val inputText = etTestText.text?.toString()?.trim() ?: ""
+        if (inputText.isEmpty()) {
+            Toast.makeText(this, "请先在文本框中输入要润色的文字", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         btnTestApi.isEnabled = false
         btnTestApi.text = "测试中..."
-        tvStatus.text = "🔄 正在测试..."
+        tvStatus.text = "🔄 正在润色..."
 
         Thread {
             try {
                 val json = JSONObject().apply {
-                    put("text", "你好世界")
+                    put("text", inputText)
                     put("language", "zh")
                 }
                 val request = Request.Builder()
@@ -153,21 +161,34 @@ class SettingsActivity : AppCompatActivity() {
 
                 runOnUiThread {
                     if (response.isSuccessful) {
-                        tvStatus.text = "✅ API 成功"
-                        appendLog("API 测试成功: $body")
+                        try {
+                            val respJson = JSONObject(body)
+                            val polished = respJson.optString("polished_text", "")
+                            if (polished.isNotEmpty() && polished != inputText) {
+                                etTestText.setText(polished)
+                                tvStatus.text = "✅ API 润色成功"
+                                appendLog("润色成功: $polished")
+                            } else {
+                                tvStatus.text = "⚠️ API 返回但内容无变化"
+                                appendLog("API 返回无变化: $body")
+                            }
+                        } catch (e: Exception) {
+                            tvStatus.text = "✅ API 成功 (原始响应)"
+                            appendLog("API 响应: $body")
+                        }
                     } else {
                         tvStatus.text = "❌ API 错误 ${response.code}"
-                        appendLog("API 失败: $body")
+                        appendLog("API 失败 (${response.code}): $body")
                     }
                     btnTestApi.isEnabled = true
-                    btnTestApi.text = "📡 测试 API"
+                    btnTestApi.text = "📡 测试 API 润色"
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     tvStatus.text = "❌ 网络错误"
                     appendLog("API 测试异常: ${e.message}")
                     btnTestApi.isEnabled = true
-                    btnTestApi.text = "📡 测试 API"
+                    btnTestApi.text = "📡 测试 API 润色"
                 }
             }
         }.start()
