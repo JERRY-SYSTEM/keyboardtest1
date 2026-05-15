@@ -1,11 +1,14 @@
 package com.cesia.input
 
 import android.Manifest
+import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -38,6 +41,7 @@ class SettingsActivity : AppCompatActivity() {
         .build()
 
     companion object {
+        const val PREF_API_URL = "api_url"
         const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
         const val PERMISSION_REQUEST_CODE = 1001
     }
