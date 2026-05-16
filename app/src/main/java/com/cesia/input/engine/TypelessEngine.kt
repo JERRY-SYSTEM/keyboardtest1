@@ -168,10 +168,12 @@ class TypelessEngine(
         }
     }
 
-    private suspend fun showToast(msg: String) {
-        withContext(Dispatchers.Main) {
-            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-        }
+    private fun showToast(msg: String) {
+        try {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            }
+        } catch (_: Exception) {}
     }
 
     private fun showError(msg: String) {
