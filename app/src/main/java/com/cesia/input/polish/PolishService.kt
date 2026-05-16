@@ -108,9 +108,9 @@ class PolishService(
         return try {
             val json = JSONObject(body)
 
-            // 格式1: { "polished": "..." }
-            if (json.has("polished")) {
-                val polished = json.getString("polished")
+            // 格式1: { "polished_text": "..." }
+            if (json.has("polished_text")) {
+                val polished = json.getString("polished_text")
                 val original = json.optString("original", "")
                 val confidence = json.optDouble("confidence", 1.0).toFloat()
                 

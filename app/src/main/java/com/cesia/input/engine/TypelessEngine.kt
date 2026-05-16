@@ -103,10 +103,10 @@ class TypelessEngine(
     /** 发送文本润色并提交 */
     private fun polishAndCommit(text: String) {
         engineScope.launch {
-            _state.value = State.PROCESSING
-            log("🔄 正在润色... (${text.length}字)")
-
             try {
+                withContext(Dispatchers.Main) { _state.value = State.PROCESSING }
+                log("🔄 正在润色... (${text.length}字)")
+
                 val polishResult = polishService?.polishText(text)
 
                 val finalText = when (polishResult) {
@@ -121,7 +121,7 @@ class TypelessEngine(
                         }
                     }
                     is PolishService.PolishResult.Error -> {
-                        log("⚠️ 润色失败，使用原文")
+                        log("⚠️ 润色失败: ${polishResult.message}，使用原文")
                         text
                     }
                     is PolishService.PolishResult.EmptyInput -> {
@@ -140,7 +140,7 @@ class TypelessEngine(
                 withContext(Dispatchers.Main) { _state.value = State.IDLE }
             } catch (e: Exception) {
                 log("❌ 润色异常: ${e.message}")
-                commitText(text)
+                try { commitText(text) } catch (_: Exception) {}
                 withContext(Dispatchers.Main) { _state.value = State.ERROR }
             }
         }
@@ -156,26 +156,21 @@ class TypelessEngine(
     }
 
     /** 提交文本到输入框 */
-    private fun commitText(text: String) {
+    private suspend fun commitText(text: String) {
         val ic = service.currentInputConnection ?: run {
             log("❌ 无输入框连接")
             return
         }
-        // 切换到主线程提交
-        runBlocking {
-            withContext(Dispatchers.Main) {
-                ic.commitText(text, 1)
-                log("✅ Cesia 已就绪")
-                _state.value = State.IDLE
-            }
+        withContext(Dispatchers.Main) {
+            ic.commitText(text, 1)
+            log("✅ 已上屏: ${text.take(50)}")
+            _state.value = State.IDLE
         }
     }
 
-    private fun showToast(msg: String) {
-        runBlocking {
-            withContext(Dispatchers.Main) {
-                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-            }
+    private suspend fun showToast(msg: String) {
+        withContext(Dispatchers.Main) {
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
     }
 
