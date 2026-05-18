@@ -46,7 +46,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var btnSettings: ImageButton
     private lateinit var btnDelete: ImageButton
     private lateinit var btnClipboard: ImageButton
-    private lateinit var btnMagic: ImageButton
+    private lateinit var btnMagic: com.google.android.material.button.MaterialButton
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
 
@@ -265,8 +265,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun showClipboard() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            switchToPreviousInputMethod()
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val text = clip.getItemAt(0).text?.toString() ?: ""
+                if (text.isNotEmpty()) {
+                    currentInputConnection?.commitText(text, 1)
+                    updateStatus("📋 已粘贴: ${text.take(20)}...")
+                } else {
+                    updateStatus("📋 剪贴板为空")
+                }
+            } else {
+                updateStatus("📋 剪贴板为空")
+            }
+        } catch (e: Exception) {
+            updateStatus("📋 粘贴失败")
         }
     }
 
@@ -639,12 +653,39 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     // 中文模式：字母键走拼音输入
                     handleChineseInput(primaryCode)
                 } else {
-                    // 普通字符键
+                    // 普通字符键（中文模式下自动转换标点）
                     var char = primaryCode.toChar()
                     if (isCapsLock && char.isLowerCase()) {
                         char = char.uppercaseChar()
                     }
-                    currentInputConnection?.commitText(char.toString(), 1)
+                    val charStr = if (isChineseMode) {
+                        when (char) {
+                            ',' -> "，"
+                            '.' -> "。"
+                            '!' -> "！"
+                            '?' -> "？"
+                            ';' -> "；"
+                            ':' -> "："
+                            '(' -> "（"
+                            ')' -> "）"
+                            '[' -> "【"
+                            ']' -> "】"
+                            '{' -> "｛"
+                            '}' -> "｝"
+                            '<' -> "《"
+                            '>' -> "》"
+                            '"' -> "「"
+                            ''' -> "『"
+                            '\' -> "、"
+                            '|' -> "｜"
+                            '~' -> "～"
+                            '`' -> "·"
+                            else -> char.toString()
+                        }
+                    } else {
+                        char.toString()
+                    }
+                    currentInputConnection?.commitText(charStr, 1)
                 }
             }
         }

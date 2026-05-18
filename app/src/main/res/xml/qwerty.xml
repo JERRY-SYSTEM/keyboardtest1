@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
     android:keyWidth="10%p"
-    android:keyHeight="46dp"
-    android:verticalGap="0dp">
+    android:keyHeight="42dp"
+    android:verticalGap="4dp">
 
     <!-- 第一行：数字 + 字母（q-p） -->
     <Row>
@@ -63,10 +63,10 @@
         <Key android:codes="-100" android:keyLabel="符" android:keyWidth="10%p" android:keyEdgeFlags="left" />
         <Key android:codes="-101" android:keyLabel="中" android:keyWidth="8%p" />
         <Key android:codes="44" android:keyLabel="，" android:keyWidth="8%p" />
-        <Key android:codes="32" android:keyLabel="空格" android:keyWidth="22%p" />
+        <Key android:codes="32" android:keyLabel="空格" android:keyWidth="20%p" />
         <Key android:codes="46" android:keyLabel="。" android:keyWidth="8%p" />
         <Key android:codes="10" android:keyLabel="↵" android:keyWidth="10%p" />
-        <Key android:codes="-200" android:keyLabel="发送" android:keyWidth="18%p" android:keyEdgeFlags="right" />
+        <Key android:codes="-200" android:keyLabel="发送" android:keyWidth="20%p" android:keyEdgeFlags="right" />
     </Row>
 
 </Keyboard>
