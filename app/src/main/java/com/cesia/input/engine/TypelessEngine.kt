@@ -44,6 +44,9 @@ class TypelessEngine(
     // 魔法模式回调（识别到指令后触发）
     var onMagicResult: ((String) -> Unit)? = null
 
+    // 润色完成回调（用于统计）
+    var onPolishComplete: ((String, String) -> Unit)? = null
+
     // 是否处于魔法模式
     var magicMode: Boolean = false
 
@@ -146,6 +149,10 @@ class TypelessEngine(
                 }
 
                 if (finalText.isNotEmpty()) {
+                    // 触发润色完成回调（用于统计）
+                    if (finalText != text) {
+                        onPolishComplete?.invoke(text, finalText)
+                    }
                     commitText(finalText)
                 }
                 withContext(Dispatchers.Main) { _state.value = State.IDLE }

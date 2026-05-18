@@ -15,6 +15,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.TextView
 import com.cesia.input.engine.TypelessEngine
+import com.cesia.input.stats.PolishStatsManager
 
 /**
  * Cesia 输入法 — 语音自动润色上屏
@@ -47,6 +48,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     // 核心组件
     private var typelessEngine: TypelessEngine? = null
+    private lateinit var statsManager: PolishStatsManager
 
     // 状态
     private var isRecording = false
@@ -58,6 +60,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var longPressRunnable: Runnable? = null
     private var currentLongPressKey: Keyboard.Key? = null
     private var longPressTriggered = false
+
+    // 退格键长按连续删除
+    private var backspaceHandler = Handler(Looper.getMainLooper())
+    private var backspaceRunnable: Runnable? = null
 
     // 魔法模式
     private var magicMode = false
@@ -99,6 +105,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         keyboardView.isPreviewEnabled = true
 
         // 初始化引擎
+        statsManager = PolishStatsManager(this)
         typelessEngine = TypelessEngine(this, this).also { engine ->
             engine.onLogMessage = { msg ->
                 Handler(Looper.getMainLooper()).post { updateStatus(msg) }
@@ -107,6 +114,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 Handler(Looper.getMainLooper()).post {
                     handleMagicResult(recognizedText)
                 }
+            }
+            engine.onPolishComplete = { inputText, outputText ->
+                statsManager.addRecord(inputText, outputText)
             }
             engine.initialize()
         }
@@ -385,6 +395,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             if (key != null && !key.popupCharacters.isNullOrEmpty()) {
                 startLongPressDetection(key)
             }
+        }
+        // 退格键长按连续删除
+        if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
+            backspaceRunnable = object : Runnable {
+                override fun run() {
+                    currentInputConnection?.deleteSurroundingText(1, 0)
+                    backspaceHandler.postDelayed(this, 80)
+                }
+            }
+            backspaceHandler.postDelayed(backspaceRunnable!!, 400)
         }
     }
 
