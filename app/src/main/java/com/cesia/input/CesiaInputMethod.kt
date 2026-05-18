@@ -46,7 +46,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var btnSettings: ImageButton
     private lateinit var btnDelete: ImageButton
     private lateinit var btnSwitchIme: ImageButton
-    private lateinit var btnMagic: ImageButton
+    private lateinit var btnMagic: com.google.android.material.button.MaterialButton
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
 
@@ -67,6 +67,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isSymbolMode = false
     private var isCapsLock = false
     private var isChineseMode = false
+    private var isProcessingResult = false  // 正在处理识别结果（润色中）
+    private var lastMicClickTime = 0L  // 防抖
 
     // 长按检测
     private var longPressHandler = Handler(Looper.getMainLooper())
@@ -145,6 +147,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             engine.onPolishComplete = { inputText, outputText ->
                 statsManager.addRecord(inputText, outputText)
+            }
+            // 识别结果返回时标记为处理中
+            engine.onResultProcessing = {
+                Handler(Looper.getMainLooper()).post {
+                    isProcessingResult = true
+                    setStatusDot("processing")
+                }
+            }
+            // 润色完成时取消处理中标记
+            engine.onResultCommitted = {
+                Handler(Looper.getMainLooper()).post {
+                    isProcessingResult = false
+                    isRecording = false
+                    micButton.isActivated = false
+                    micButton.text = "🎤 点击开始说话"
+                    setStatusDot("idle")
+                    updateStatus("✅ 润色完成")
+                }
             }
             engine.initialize()
         }
@@ -354,7 +374,21 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 录音 ========================
 
     private fun toggleRecording() {
-        if (isRecording) stopRecording() else startRecording()
+        // 防抖：300ms内不重复响应
+        val now = System.currentTimeMillis()
+        if (now - lastMicClickTime < 300) return
+        lastMicClickTime = now
+
+        if (isRecording) {
+            // 如果正在处理识别结果，不中断，等其自然完成
+            if (isProcessingResult) {
+                updateStatus("⏳ 正在润色中，请稍候...")
+                return
+            }
+            stopRecording()
+        } else {
+            startRecording()
+        }
     }
 
     private fun startRecording() {
@@ -511,10 +545,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== KeyboardView 回调 ========================
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
+        // 先检查是否长按触发过，再cancel
+        val wasLongPressed = longPressTriggered
         cancelLongPress()
 
-        if (longPressTriggered) {
-            longPressTriggered = false
+        if (wasLongPressed) {
             return
         }
 

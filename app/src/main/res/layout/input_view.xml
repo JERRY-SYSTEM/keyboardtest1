@@ -9,6 +9,7 @@
 
     <!-- 状态栏 -->
     <LinearLayout
+        android:id="@+id/status_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -17,14 +18,15 @@
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:background="#EEEEEE"
-        android:gravity="center_vertical">
+        android:gravity="top">
 
         <View
             android:id="@+id/v_status_dot"
             android:layout_width="6dp"
             android:layout_height="6dp"
             android:background="@drawable/status_dot_idle"
-            android:layout_marginEnd="6dp" />
+            android:layout_marginEnd="6dp"
+            android:layout_marginTop="2dp" />
 
         <TextView
             android:id="@+id/tv_status"
@@ -32,10 +34,11 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="就绪"
-            android:textSize="10sp"
-            android:textColor="#888888"
-            android:singleLine="true"
-            android:ellipsize="end" />
+            android:textSize="11sp"
+            android:textColor="#555555"
+            android:maxLines="6"
+            android:ellipsize="end"
+            android:lineSpacingMultiplier="1.2" />
 
         <ImageButton
             android:id="@+id/btn_settings"
@@ -162,7 +165,7 @@
         android:keyTextColor="#333333"
         android:keyBackground="@drawable/key_background"
         android:popupLayout="@layout/key_preview"
-        android:keyTextSize="17sp"
+        android:keyTextSize="15sp"
         android:verticalGap="3dp"
         android:horizontalGap="2dp" />
 
@@ -176,18 +179,19 @@
         android:gravity="center_vertical">
 
         <!-- 魔法按钮（语音修改） -->
-        <ImageButton
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_magic"
             android:layout_width="0dp"
             android:layout_height="44dp"
             android:layout_weight="0.6"
             android:text="✨"
-            android:background="@drawable/button_background"
-            android:backgroundTint="#334466"
-            android:tint="#55AAFF"
+            android:textSize="18sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#4CAF50"
             android:contentDescription="语音修改"
-            android:scaleType="centerInside"
-            android:layout_marginEnd="3dp" />
+            android:stateListAnimator="@null"
+            android:layout_marginEnd="3dp"
+            app:cornerRadius="8dp" />
 
         <!-- 切换输入法按钮 -->
         <ImageButton

@@ -6,11 +6,13 @@ import org.json.JSONObject
 
 /**
  * 轻量级拼音输入引擎
- * 内置常用字拼音字典（~8000字），支持全拼输入和候选词选择
+ * 内置常用字拼音字典（~8000字）+ 常用词组字典（~700条）
+ * 支持全拼输入、词组匹配和候选词选择
  */
 class PinyinEngine(context: Context) {
 
     private val pinyinMap = mutableMapOf<String, String>()
+    private val phraseMap = mutableMapOf<String, String>()
     private var currentPinyin = StringBuilder()
     private var candidates = listOf<String>()
     private var candidatePages = listOf<List<String>>()
@@ -18,6 +20,7 @@ class PinyinEngine(context: Context) {
 
     init {
         loadDictionary(context)
+        loadPhrases(context)
     }
 
     private fun loadDictionary(context: Context) {
@@ -30,6 +33,19 @@ class PinyinEngine(context: Context) {
             Log.d("PinyinEngine", "拼音字典加载完成: ${pinyinMap.size} 个拼音条目")
         } catch (e: Exception) {
             Log.e("PinyinEngine", "拼音字典加载失败", e)
+        }
+    }
+
+    private fun loadPhrases(context: Context) {
+        try {
+            val jsonStr = context.assets.open("pinyin_phrases.json").bufferedReader().readText()
+            val json = JSONObject(jsonStr)
+            for (key in json.keys()) {
+                phraseMap[key] = json.getString(key)
+            }
+            Log.d("PinyinEngine", "词组字典加载完成: ${phraseMap.size} 个词组条目")
+        } catch (e: Exception) {
+            Log.e("PinyinEngine", "词组字典加载失败", e)
         }
     }
 
@@ -119,21 +135,14 @@ class PinyinEngine(context: Context) {
     }
 
     /**
-     * 选择候选词，返回选中的字并清空拼音
+     * 选择候选词，返回选中的词/字并清空拼音
+     * @param index 全局索引（页码*每页数量+页内索引）
      */
     fun selectCandidate(index: Int): String {
-        val cands = getCandidates()
-        if (index < 0 || index >= cands.size) return ""
-        val selected = cands[index]
+        if (index < 0 || index >= candidates.size) return ""
+        val selected = candidates[index]
         clear()
         return selected
-    }
-
-    /**
-     * 直接输入标点符号（当拼音串为空时）
-     */
-    fun isPunctuation(c: Char): Boolean {
-        return c in "\uFF0C\u3002\uFF01\uFF1F\u3001\uFF1B\uFF1A\u201C\u201D\u2018\u2019\uFF08\uFF09\u3010\u3011\u300A\u300B\u2026\u2014\uFF5E"
     }
 
     private fun updateCandidates() {
@@ -145,29 +154,46 @@ class PinyinEngine(context: Context) {
             return
         }
 
-        // 精确匹配
-        val exactMatch = pinyinMap[pinyin]
-        if (exactMatch != null) {
-            // 将字符串拆分为单个字符
-            val chars = exactMatch.map { it.toString() }
-            candidates = chars
-        } else {
-            // 前缀匹配：找所有以当前拼音开头的条目
-            val prefixMatches = mutableListOf<String>()
-            for ((key, value) in pinyinMap) {
-                if (key.startsWith(pinyin)) {
-                    prefixMatches.addAll(value.map { it.toString() })
-                }
-            }
-            // 去重并限制数量
-            candidates = prefixMatches.distinct().take(30)
+        val allCandidates = mutableListOf<String>()
+
+        // 1. 优先匹配词组（精确匹配）
+        val exactPhrase = phraseMap[pinyin]
+        if (exactPhrase != null) {
+            allCandidates.add(exactPhrase)
         }
 
-        // 分页，每页9个
+        // 2. 匹配单字（精确匹配）
+        val exactChars = pinyinMap[pinyin]
+        if (exactChars != null) {
+            // 将字符串拆分为单个字符，最多取前5个
+            exactChars.take(5).forEach { allCandidates.add(it.toString()) }
+        }
+
+        // 3. 前缀匹配词组
+        for ((key, value) in phraseMap) {
+            if (key.startsWith(pinyin) && key != pinyin) {
+                allCandidates.add(value)
+            }
+        }
+
+        // 4. 前缀匹配单字
+        if (allCandidates.size < 10) {
+            for ((key, value) in pinyinMap) {
+                if (key.startsWith(pinyin) && key != pinyin) {
+                    value.forEach { allCandidates.add(it.toString()) }
+                    if (allCandidates.size >= 20) break
+                }
+            }
+        }
+
+        // 去重并限制数量
+        candidates = allCandidates.distinct().take(30)
+
+        // 分页，每页5个
         if (candidates.isEmpty()) {
             candidatePages = emptyList()
         } else {
-            candidatePages = candidates.chunked(9)
+            candidatePages = candidates.chunked(5)
         }
         currentPage = 0
     }

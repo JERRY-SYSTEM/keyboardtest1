@@ -47,6 +47,12 @@ class TypelessEngine(
     // 润色完成回调（用于统计）
     var onPolishComplete: ((String, String) -> Unit)? = null
 
+    // 识别结果开始处理回调
+    var onResultProcessing: (() -> Unit)? = null
+
+    // 润色结果已上屏回调
+    var onResultCommitted: (() -> Unit)? = null
+
     // 是否处于魔法模式
     var magicMode: Boolean = false
 
@@ -118,7 +124,10 @@ class TypelessEngine(
     private fun polishAndCommit(text: String) {
         engineScope.launch {
             try {
-                withContext(Dispatchers.Main) { _state.value = State.PROCESSING }
+                withContext(Dispatchers.Main) {
+                    _state.value = State.PROCESSING
+                    onResultProcessing?.invoke()  // 通知开始处理
+                }
                 log("🔄 正在润色... (${text.length}字)")
 
                 val polishResult = polishService?.polishText(text)
@@ -154,12 +163,19 @@ class TypelessEngine(
                         onPolishComplete?.invoke(text, finalText)
                     }
                     commitText(finalText)
+                    // 通知润色结果已上屏
+                    withContext(Dispatchers.Main) {
+                        onResultCommitted?.invoke()
+                    }
                 }
                 withContext(Dispatchers.Main) { _state.value = State.IDLE }
             } catch (e: Exception) {
                 log("❌ 润色异常: ${e.message}")
                 try { commitText(text) } catch (_: Exception) {}
-                withContext(Dispatchers.Main) { _state.value = State.ERROR }
+                withContext(Dispatchers.Main) {
+                    _state.value = State.ERROR
+                    onResultCommitted?.invoke()  // 异常时也要重置状态
+                }
             }
         }
     }
