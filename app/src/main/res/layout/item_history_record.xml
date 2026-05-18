@@ -49,6 +49,16 @@
         android:ellipsize="end"
         android:layout_marginTop="2dp" />
 
+    <TextView
+        android:id="@+id/tv_expand_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="点击展开"
+        android:textSize="11sp"
+        android:textColor="#4488FF"
+        android:layout_marginTop="4dp"
+        android:visibility="gone" />
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"

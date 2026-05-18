@@ -10,7 +10,8 @@ data class PolishRecord(
     val inputText: String,
     val outputText: String,
     val inputChars: Int,
-    val outputChars: Int
+    val outputChars: Int,
+    val voiceDurationMs: Long = 0  // 语音输入时长（毫秒）
 )
 
 class PolishStatsManager(context: Context) {
@@ -30,10 +31,40 @@ class PolishStatsManager(context: Context) {
         get() = prefs.getInt("total_polish_count", 0)
         set(value) = prefs.edit().putInt("total_polish_count", value).apply()
 
-    fun addRecord(inputText: String, outputText: String) {
+    // 语音统计
+    var totalVoiceDurationMs: Long
+        get() = prefs.getLong("total_voice_duration_ms", 0L)
+        set(value) = prefs.edit().putLong("total_voice_duration_ms", value).apply()
+
+    var totalVoiceChars: Int
+        get() = prefs.getInt("total_voice_chars", 0)
+        set(value) = prefs.edit().putInt("total_voice_chars", value).apply()
+
+    // 计算属性：节省的时间（秒）
+    // 假设打字速度为每分钟60字，语音输入速度为每分钟200字
+    val savedTimeSeconds: Long
+        get() {
+            if (totalVoiceChars == 0) return 0
+            val typingTimeMinutes = totalVoiceChars / 60.0  // 打字需要的时间（分钟）
+            val voiceTimeMinutes = totalVoiceDurationMs / 60000.0  // 语音实际用时（分钟）
+            val savedMinutes = typingTimeMinutes - voiceTimeMinutes
+            return (savedMinutes * 60).toLong().coerceAtLeast(0)
+        }
+
+    // 计算属性：语音输入速度（字/分钟）
+    val voiceSpeedPerMinute: Int
+        get() {
+            if (totalVoiceDurationMs == 0L) return 0
+            val minutes = totalVoiceDurationMs / 60000.0
+            return (totalVoiceChars / minutes).toInt()
+        }
+
+    fun addRecord(inputText: String, outputText: String, voiceDurationMs: Long = 0) {
         totalInputChars += inputText.length
         totalOutputChars += outputText.length
         totalPolishCount++
+        totalVoiceDurationMs += voiceDurationMs
+        totalVoiceChars += inputText.length
 
         // 保存记录（最多100条）
         val records = getRecords().toMutableList()
@@ -42,9 +73,9 @@ class PolishStatsManager(context: Context) {
             inputText = inputText,
             outputText = outputText,
             inputChars = inputText.length,
-            outputChars = outputText.length
+            outputChars = outputText.length,
+            voiceDurationMs = voiceDurationMs
         ))
-        // 只保留最近100条
         val trimmed = records.take(100)
         saveRecords(trimmed)
     }
@@ -60,7 +91,8 @@ class PolishStatsManager(context: Context) {
                 inputText = obj.getString("input"),
                 outputText = obj.getString("output"),
                 inputChars = obj.getInt("inputChars"),
-                outputChars = obj.getInt("outputChars")
+                outputChars = obj.getInt("outputChars"),
+                voiceDurationMs = obj.optLong("voiceDurationMs", 0)
             ))
         }
         return list
@@ -70,7 +102,10 @@ class PolishStatsManager(context: Context) {
         recordsPrefs.edit().putString("records", "[]").apply()
         prefs.edit().putInt("total_input_chars", 0)
             .putInt("total_output_chars", 0)
-            .putInt("total_polish_count", 0).apply()
+            .putInt("total_polish_count", 0)
+            .putLong("total_voice_duration_ms", 0L)
+            .putInt("total_voice_chars", 0)
+            .apply()
     }
 
     fun deleteRecord(index: Int) {
@@ -90,6 +125,7 @@ class PolishStatsManager(context: Context) {
                 put("output", r.outputText)
                 put("inputChars", r.inputChars)
                 put("outputChars", r.outputChars)
+                put("voiceDurationMs", r.voiceDurationMs)
             })
         }
         recordsPrefs.edit().putString("records", arr.toString()).apply()

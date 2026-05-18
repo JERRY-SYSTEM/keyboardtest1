@@ -45,7 +45,7 @@ class TypelessEngine(
     var onMagicResult: ((String) -> Unit)? = null
 
     // 润色完成回调（用于统计）
-    var onPolishComplete: ((String, String) -> Unit)? = null
+    var onPolishComplete: ((String, String, Long) -> Unit)? = null
 
     // 识别结果开始处理回调
     var onResultProcessing: (() -> Unit)? = null
@@ -160,7 +160,7 @@ class TypelessEngine(
                 if (finalText.isNotEmpty()) {
                     // 触发润色完成回调（用于统计）
                     if (finalText != text) {
-                        onPolishComplete?.invoke(text, finalText)
+                        onPolishComplete?.invoke(text, finalText, 0L)
                     }
                     commitText(finalText)
                     // 通知润色结果已上屏

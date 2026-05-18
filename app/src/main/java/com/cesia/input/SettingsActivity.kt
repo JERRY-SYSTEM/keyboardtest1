@@ -79,6 +79,12 @@ class SettingsActivity : AppCompatActivity() {
         tvStatus = findViewById(R.id.tv_api_status)
         tvLog = findViewById(R.id.tv_log)
         tvVersion = findViewById(R.id.tv_version)
+        // 语音统计
+        try {
+            findViewById<TextView>(R.id.tv_stat_voice_time)
+            findViewById<TextView>(R.id.tv_stat_saved_time)
+            findViewById<TextView>(R.id.tv_stat_voice_speed)
+        } catch (_: Exception) {}
         tvStatInputChars = findViewById(R.id.tv_stat_input_chars)
         tvStatOutputChars = findViewById(R.id.tv_stat_output_chars)
         tvStatCount = findViewById(R.id.tv_stat_count)
@@ -387,6 +393,19 @@ class SettingsActivity : AppCompatActivity() {
         tvStatInputChars.text = statsManager.totalInputChars.toString()
         tvStatOutputChars.text = statsManager.totalOutputChars.toString()
         tvStatCount.text = statsManager.totalPolishCount.toString()
+        refreshVoiceStats()
+    }
+
+    private fun refreshVoiceStats() {
+        try {
+            val voiceTimeMin = statsManager.totalVoiceDurationMs / 60000
+            val savedTimeMin = statsManager.savedTimeSeconds / 60
+            val speed = statsManager.voiceSpeedPerMinute
+
+            findViewById<TextView>(R.id.tv_stat_voice_time)?.text = "${voiceTimeMin}分钟"
+            findViewById<TextView>(R.id.tv_stat_saved_time)?.text = "${savedTimeMin}分钟"
+            findViewById<TextView>(R.id.tv_stat_voice_speed)?.text = "${speed}字/分"
+        } catch (_: Exception) {}
     }
 
     private fun appendLog(msg: String) {

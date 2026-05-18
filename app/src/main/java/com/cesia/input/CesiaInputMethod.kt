@@ -45,7 +45,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var micButton: MaterialButton
     private lateinit var btnSettings: ImageButton
     private lateinit var btnDelete: ImageButton
-    private lateinit var btnSwitchIme: ImageButton
+    private lateinit var btnClipboard: ImageButton
     private lateinit var btnMagic: com.google.android.material.button.MaterialButton
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
@@ -69,6 +69,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isChineseMode = false
     private var isProcessingResult = false  // 正在处理识别结果（润色中）
     private var lastMicClickTime = 0L  // 防抖
+    private var voiceStartTime = 0L  // 语音开始时间
 
     // 长按检测
     private var longPressHandler = Handler(Looper.getMainLooper())
@@ -106,7 +107,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         micButton = view.findViewById(R.id.btn_mic)
         btnSettings = view.findViewById(R.id.btn_settings)
         btnDelete = view.findViewById(R.id.btn_delete)
-        btnSwitchIme = view.findViewById(R.id.btn_switch_ime)
+        btnClipboard = view.findViewById(R.id.btn_switch_ime)
         btnMagic = view.findViewById(R.id.btn_magic)
         statusDot = view.findViewById(R.id.v_status_dot)
         statusText = view.findViewById(R.id.tv_status)
@@ -146,7 +147,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
             engine.onPolishComplete = { inputText, outputText ->
-                statsManager.addRecord(inputText, outputText)
+                val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0
+                statsManager.addRecord(inputText, outputText, duration)
             }
             // 识别结果返回时标记为处理中
             engine.onResultProcessing = {
@@ -257,12 +259,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
 
-        btnSwitchIme.setOnClickListener { switchToNextInputMethod() }
+        btnClipboard.setOnClickListener { showClipboard() }
 
         btnMagic.setOnClickListener { startMagicMode() }
     }
 
-    private fun switchToNextInputMethod() {
+    private fun showClipboard() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             switchToPreviousInputMethod()
         }
@@ -339,17 +341,33 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 pinyinEngine.clear()
                 updateCandidateBar()
             }
-            // 输出字符（中文标点）
-            val charStr = when (c) {
-                ',' -> "，"
-                '.' -> "。"
-                '!' -> "！"
-                '?' -> "？"
-                ';' -> "；"
-                ':' -> "："
-                '(' -> "（"
-                ')' -> "）"
-                else -> c.toString()
+            // 输出字符（中文模式下自动转换标点）
+            val charStr = if (isChineseMode) {
+                when (c) {
+                    ',' -> "，"
+                    '.' -> "。"
+                    '!' -> "！"
+                    '?' -> "？"
+                    ';' -> "；"
+                    ':' -> "："
+                    '(' -> "（"
+                    ')' -> "）"
+                    '[' -> "【"
+                    ']' -> "】"
+                    '{' -> "｛"
+                    '}' -> "｝"
+                    '<' -> "《"
+                    '>' -> "》"
+                    '"' -> "「"
+                    '\'' -> "『"
+                    '\\' -> "、"
+                    '|' -> "｜"
+                    '~' -> "～"
+                    '`' -> "·"
+                    else -> c.toString()
+                }
+            } else {
+                c.toString()
             }
             currentInputConnection?.commitText(charStr, 1)
         }
@@ -396,6 +414,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         micButton.isActivated = true
         micButton.text = "⏹️ 再次点击完成"
         setStatusDot("recording")
+        // 录音时隐藏键盘区域，状态栏扩展覆盖
+        keyboardView.visibility = View.GONE
+        candidateBar.visibility = View.GONE
+        voiceStartTime = System.currentTimeMillis()
         updateStatus("🎤 正在收听，请说话...")
         typelessEngine?.startListening(continuous = true)
     }
@@ -406,6 +428,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         micButton.text = "🎤 点击开始说话"
         setStatusDot("idle")
         typelessEngine?.stopListening()
+        // 恢复键盘区域
+        keyboardView.visibility = View.VISIBLE
         updateStatus("Cesia 已就绪")
     }
 
@@ -700,7 +724,40 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } catch (_: Exception) {}
     }
 
+    private var statusLines = mutableListOf<String>()
+
     private fun updateStatus(msg: String) {
-        try { statusText.text = msg } catch (_: Exception) {}
+        try {
+            if (isRecording) {
+                // 录音时追加文字
+                if (msg.startsWith("🎤") || msg.startsWith("⏳") || msg.startsWith("🔄") || msg.startsWith("✅")) {
+                    // 状态消息，替换最后一行或添加
+                    if (statusLines.isNotEmpty() && !statusLines.last().startsWith("📝")) {
+                        statusLines[statusLines.size - 1] = msg
+                    } else {
+                        statusLines.add(msg)
+                    }
+                } else if (msg.startsWith("📝") || msg.startsWith("🎤")) {
+                    // 识别结果，追加
+                    statusLines.add(msg)
+                } else {
+                    // 其他消息，替换最后一行
+                    if (statusLines.isNotEmpty()) {
+                        statusLines[statusLines.size - 1] = msg
+                    } else {
+                        statusLines.add(msg)
+                    }
+                }
+                // 限制行数
+                while (statusLines.size > 20) {
+                    statusLines.removeAt(0)
+                }
+                statusText.text = statusLines.joinToString("\n")
+            } else {
+                statusLines.clear()
+                statusLines.add(msg)
+                statusText.text = msg
+            }
+        } catch (_: Exception) {}
     }
 }

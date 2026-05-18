@@ -156,38 +156,34 @@ class PinyinEngine(context: Context) {
 
         val allCandidates = mutableListOf<String>()
 
-        // 1. 优先匹配词组（精确匹配）
+        // 1. 单字精确匹配（最高优先级，确保单字始终可见）
+        val exactChars = pinyinMap[pinyin]
+        if (exactChars != null) {
+            exactChars.forEach { allCandidates.add(it.toString()) }
+        }
+
+        // 2. 词组精确匹配
         val exactPhrase = phraseMap[pinyin]
         if (exactPhrase != null) {
             allCandidates.add(exactPhrase)
         }
 
-        // 2. 匹配单字（精确匹配）
-        val exactChars = pinyinMap[pinyin]
-        if (exactChars != null) {
-            // 将字符串拆分为单个字符，最多取前5个
-            exactChars.take(5).forEach { allCandidates.add(it.toString()) }
-        }
-
-        // 3. 前缀匹配词组
+        // 3. 前缀匹配词组（补充）
         for ((key, value) in phraseMap) {
             if (key.startsWith(pinyin) && key != pinyin) {
                 allCandidates.add(value)
             }
         }
 
-        // 4. 前缀匹配单字
-        if (allCandidates.size < 10) {
-            for ((key, value) in pinyinMap) {
-                if (key.startsWith(pinyin) && key != pinyin) {
-                    value.forEach { allCandidates.add(it.toString()) }
-                    if (allCandidates.size >= 20) break
-                }
+        // 4. 前缀匹配单字（补充）
+        for ((key, value) in pinyinMap) {
+            if (key.startsWith(pinyin) && key != pinyin) {
+                value.forEach { allCandidates.add(it.toString()) }
             }
         }
 
-        // 去重并限制数量
-        candidates = allCandidates.distinct().take(30)
+        // 去重并限制数量（单字优先，所以单字在前面）
+        candidates = allCandidates.distinct().take(40)
 
         // 分页，每页5个
         if (candidates.isEmpty()) {

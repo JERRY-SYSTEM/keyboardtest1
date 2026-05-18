@@ -107,11 +107,15 @@ class HistoryActivity : AppCompatActivity() {
         private val onDelete: (Int) -> Unit
     ) : RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
 
+        // 记录每条是否展开
+        private val expandedPositions = mutableSetOf<Int>()
+
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
             val tvTime: TextView = view.findViewById(R.id.tv_record_time)
             val tvInput: TextView = view.findViewById(R.id.tv_record_input)
             val tvOutput: TextView = view.findViewById(R.id.tv_record_output)
             val btnDelete: ImageButton = view.findViewById(R.id.btn_delete_record)
+            val tvExpandHint: TextView = view.findViewById(R.id.tv_expand_hint)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -124,8 +128,42 @@ class HistoryActivity : AppCompatActivity() {
             val record = records[position]
             val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
             holder.tvTime.text = sdf.format(Date(record.timestamp))
+
+            val isExpanded = expandedPositions.contains(position)
+
+            // 原文
             holder.tvInput.text = record.inputText
+            holder.tvInput.maxLines = if (isExpanded) Int.MAX_VALUE else 2
+
+            // 润色结果
             holder.tvOutput.text = record.outputText
+            holder.tvOutput.maxLines = if (isExpanded) Int.MAX_VALUE else 3
+
+            // 判断是否需要显示"展开"提示
+            val inputTooLong = record.inputText.length > 60
+            val outputTooLong = record.outputText.length > 80
+            val canExpand = inputTooLong || outputTooLong
+
+            if (canExpand && !isExpanded) {
+                holder.tvExpandHint.visibility = View.VISIBLE
+                holder.tvExpandHint.text = "▼ 点击展开全文"
+            } else if (isExpanded) {
+                holder.tvExpandHint.visibility = View.VISIBLE
+                holder.tvExpandHint.text = "▲ 点击收起"
+            } else {
+                holder.tvExpandHint.visibility = View.GONE
+            }
+
+            // 点击展开/收起
+            holder.itemView.setOnClickListener {
+                if (expandedPositions.contains(position)) {
+                    expandedPositions.remove(position)
+                } else {
+                    expandedPositions.add(position)
+                }
+                notifyItemChanged(position)
+            }
+
             holder.btnDelete.setOnClickListener { onDelete(position) }
         }
 

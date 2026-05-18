@@ -62,7 +62,7 @@
 
     <!-- 第五行：切换回字母 + 空格 + 删除 + 回车 -->
     <Row>
-        <Key android:codes="-100" android:keyLabel="ABC" android:keyWidth="15%p" android:keyEdgeFlags="left" />
+        <Key android:codes="-100" android:keyLabel="ABC" android:keyWidth="18%p" android:keyEdgeFlags="left" />
         <Key android:codes="32" android:keyLabel="空格" android:keyWidth="40%p" />
         <Key android:codes="-5" android:keyLabel="⌫" android:keyWidth="15%p" />
         <Key android:codes="10" android:keyLabel="↵" android:keyWidth="15%p" android:keyEdgeFlags="right" />
