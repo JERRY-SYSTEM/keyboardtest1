@@ -107,7 +107,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         micButton = view.findViewById(R.id.btn_mic)
         btnSettings = view.findViewById(R.id.btn_settings)
         btnDelete = view.findViewById(R.id.btn_delete)
-        btnClipboard = view.findViewById(R.id.btn_switch_ime)
+        btnClipboard = view.findViewById(R.id.btn_clipboard)
         btnMagic = view.findViewById(R.id.btn_magic)
         statusDot = view.findViewById(R.id.v_status_dot)
         statusText = view.findViewById(R.id.tv_status)
@@ -146,7 +146,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     handleMagicResult(recognizedText)
                 }
             }
-            engine.onPolishComplete = { inputText, outputText ->
+            engine.onPolishComplete = { inputText, outputText, _ ->
                 val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0
                 statsManager.addRecord(inputText, outputText, duration)
             }

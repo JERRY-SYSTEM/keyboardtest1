@@ -112,6 +112,91 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- ==================== 语音统计 ==================== -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🎙️ 语音输入统计"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="#FFF3E0"
+            android:padding="12dp"
+            android:layout_marginBottom="8dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/tv_stat_voice_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0分钟"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#FF8800" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="语音时长"
+                    android:textSize="11sp"
+                    android:textColor="#888" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/tv_stat_saved_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0分钟"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#44AA44" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="节省时间"
+                    android:textSize="11sp"
+                    android:textColor="#888" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/tv_stat_voice_speed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0字/分"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#AA44FF" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="输入速度"
+                    android:textSize="11sp"
+                    android:textColor="#888" />
+            </LinearLayout>
+        </LinearLayout>
+
         <Button
             android:id="@+id/btn_history"
             android:layout_width="match_parent"
