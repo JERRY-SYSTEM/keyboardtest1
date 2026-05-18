@@ -15,6 +15,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
+import com.cesia.input.stats.PolishStatsManager
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -35,6 +36,11 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
     private lateinit var tvVersion: TextView
+    private lateinit var tvStatInputChars: TextView
+    private lateinit var tvStatOutputChars: TextView
+    private lateinit var tvStatCount: TextView
+    private lateinit var btnHistory: Button
+    private lateinit var statsManager: PolishStatsManager
 
     private val prefs by lazy { getSharedPreferences("cesia_settings", MODE_PRIVATE) }
 
@@ -54,9 +60,11 @@ class SettingsActivity : AppCompatActivity() {
         setTitle("Cesia 输入法设置")
 
         initViews()
+        statsManager = PolishStatsManager(this)
         loadSettings()
         setupListeners()
         showVersion()
+        refreshStats()
 
         checkAndRequestPermission()
     }
@@ -71,6 +79,10 @@ class SettingsActivity : AppCompatActivity() {
         tvStatus = findViewById(R.id.tv_api_status)
         tvLog = findViewById(R.id.tv_log)
         tvVersion = findViewById(R.id.tv_version)
+        tvStatInputChars = findViewById(R.id.tv_stat_input_chars)
+        tvStatOutputChars = findViewById(R.id.tv_stat_output_chars)
+        tvStatCount = findViewById(R.id.tv_stat_count)
+        btnHistory = findViewById(R.id.btn_history)
     }
 
     private fun showVersion() {
@@ -132,6 +144,10 @@ class SettingsActivity : AppCompatActivity() {
         btnTestApi.setOnClickListener { testApiConnection() }
 
         btnUpdate.setOnClickListener { checkForUpdates() }
+
+        btnHistory.setOnClickListener {
+            startActivity(Intent(this, HistoryActivity::class.java))
+        }
     }
 
     private fun testApiConnection() {
@@ -360,6 +376,17 @@ class SettingsActivity : AppCompatActivity() {
 
         btnUpdate.isEnabled = true
         btnUpdate.text = "🔄 检查更新"
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshStats()
+    }
+
+    private fun refreshStats() {
+        tvStatInputChars.text = statsManager.totalInputChars.toString()
+        tvStatOutputChars.text = statsManager.totalOutputChars.toString()
+        tvStatCount.text = statsManager.totalPolishCount.toString()
     }
 
     private fun appendLog(msg: String) {

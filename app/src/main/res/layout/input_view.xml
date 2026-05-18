@@ -48,6 +48,110 @@
             android:padding="4dp" />
     </LinearLayout>
 
+    <!-- 候选词栏（中文模式显示） -->
+    <LinearLayout
+        android:id="@+id/candidate_bar"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:orientation="horizontal"
+        android:background="#F0F0F0"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_composing"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="#4488FF"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:singleLine="true" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="20dp"
+            android:background="#CCCCCC"
+            android:layout_marginEnd="4dp" />
+
+        <TextView
+            android:id="@+id/tv_candidate_1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="15sp"
+            android:textColor="#333333"
+            android:background="?android:attr/selectableItemBackground"
+            android:singleLine="true" />
+
+        <TextView
+            android:id="@+id/tv_candidate_2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="15sp"
+            android:textColor="#333333"
+            android:background="?android:attr/selectableItemBackground"
+            android:singleLine="true" />
+
+        <TextView
+            android:id="@+id/tv_candidate_3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="15sp"
+            android:textColor="#333333"
+            android:background="?android:attr/selectableItemBackground"
+            android:singleLine="true" />
+
+        <TextView
+            android:id="@+id/tv_candidate_4"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="15sp"
+            android:textColor="#333333"
+            android:background="?android:attr/selectableItemBackground"
+            android:singleLine="true" />
+
+        <TextView
+            android:id="@+id/tv_candidate_5"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="15sp"
+            android:textColor="#333333"
+            android:background="?android:attr/selectableItemBackground"
+            android:singleLine="true" />
+
+        <ImageButton
+            android:id="@+id/btn_candidate_prev"
+            android:layout_width="32dp"
+            android:layout_height="match_parent"
+            android:src="@android:drawable/ic_media_previous"
+            android:background="?android:attr/selectableItemBackground"
+            android:scaleType="centerInside"
+            android:padding="4dp"
+            android:contentDescription="上一页候选词" />
+
+        <ImageButton
+            android:id="@+id/btn_candidate_next"
+            android:layout_width="32dp"
+            android:layout_height="match_parent"
+            android:src="@android:drawable/ic_media_next"
+            android:background="?android:attr/selectableItemBackground"
+            android:scaleType="centerInside"
+            android:padding="4dp"
+            android:contentDescription="下一页候选词" />
+    </LinearLayout>
+
     <!-- 键盘区域 -->
     <com.cesia.input.ui.CustomKeyboardView
         android:id="@+id/keyboard_view"
@@ -79,6 +183,8 @@
             android:layout_weight="0.6"
             android:text="✨"
             android:background="@drawable/button_background"
+            android:backgroundTint="#334466"
+            android:tint="#55AAFF"
             android:contentDescription="语音修改"
             android:scaleType="centerInside"
             android:layout_marginEnd="3dp" />

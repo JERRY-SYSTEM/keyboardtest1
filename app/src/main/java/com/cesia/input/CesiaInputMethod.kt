@@ -3,7 +3,6 @@ package com.cesia.input
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.inputmethodservice.Keyboard
-import com.cesia.input.ui.CustomKeyboardView
 import android.inputmethodservice.KeyboardView
 import android.os.Build
 import android.os.Handler
@@ -13,47 +12,61 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.TextView
+import com.cesia.input.engine.PinyinEngine
 import com.cesia.input.engine.TypelessEngine
 import com.cesia.input.stats.PolishStatsManager
+import com.google.android.material.button.MaterialButton
 
 /**
- * Cesia 输入法 — 语音自动润色上屏
+ * Cesia 输入法 — 语音自动润色上屏 + 中文拼音输入
  *
  * 键盘布局：
  * - 第一行：数字 1-0
  * - 第二至四行：QWERTY 字母键，每个键有小符号标注
- * - 第五行：符号切换键 + 标点 + 空格 + 回车 + 发送
+ * - 第五行：符号切换 + 中/英切换 + 标点 + 空格 + 回车 + 发送
  *
  * 功能：
  * - 点击符号键 → 切换到符号键盘
  * - 长按字母键 → Fn 效果，输出对应符号
- * - 左下角按钮 → 加载已输入文字 → 语音指令修改 → API 润色替换
+ * - 退格键长按 → 快速连续删除
+ * - 中/英切换 → 中文拼音输入模式
+ * - 左下角魔法按钮 → 语音指令修改文字
  */
 class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionListener {
 
     // 视图
-    private lateinit var keyboardView: CustomKeyboardView
+    private lateinit var keyboardView: com.cesia.input.ui.CustomKeyboardView
     private lateinit var qwertyKeyboard: Keyboard
     private lateinit var symbolKeyboard: Keyboard
     private var currentKeyboard: Keyboard? = null
 
-    private lateinit var micButton: com.google.android.material.button.MaterialButton
+    private lateinit var micButton: MaterialButton
     private lateinit var btnSettings: ImageButton
     private lateinit var btnDelete: ImageButton
     private lateinit var btnSwitchIme: ImageButton
-    private lateinit var btnMagic: ImageButton  // 左下角魔法按钮（语音修改）
+    private lateinit var btnMagic: ImageButton
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
+
+    // 候选词栏
+    private lateinit var candidateBar: LinearLayout
+    private lateinit var tvComposing: TextView
+    private lateinit var tvCandidates: Array<TextView>
+    private lateinit var btnCandidatePrev: ImageButton
+    private lateinit var btnCandidateNext: ImageButton
 
     // 核心组件
     private var typelessEngine: TypelessEngine? = null
     private lateinit var statsManager: PolishStatsManager
+    private lateinit var pinyinEngine: PinyinEngine
 
     // 状态
     private var isRecording = false
     private var isSymbolMode = false
     private var isCapsLock = false
+    private var isChineseMode = false
 
     // 长按检测
     private var longPressHandler = Handler(Looper.getMainLooper())
@@ -76,6 +89,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         const val PREF_API_URL = "api_url"
         const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
         const val KEYCODE_SWITCH_SYMBOL = -100
+        const val KEYCODE_SWITCH_LANG = -101
     }
 
     override fun onCreate() {
@@ -95,6 +109,19 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         statusDot = view.findViewById(R.id.v_status_dot)
         statusText = view.findViewById(R.id.tv_status)
 
+        // 候选词栏
+        candidateBar = view.findViewById(R.id.candidate_bar)
+        tvComposing = view.findViewById(R.id.tv_composing)
+        tvCandidates = arrayOf(
+            view.findViewById(R.id.tv_candidate_1),
+            view.findViewById(R.id.tv_candidate_2),
+            view.findViewById(R.id.tv_candidate_3),
+            view.findViewById(R.id.tv_candidate_4),
+            view.findViewById(R.id.tv_candidate_5")
+        )
+        btnCandidatePrev = view.findViewById(R.id.btn_candidate_prev)
+        btnCandidateNext = view.findViewById(R.id.btn_candidate_next)
+
         // 初始化键盘
         qwertyKeyboard = Keyboard(this, R.xml.qwerty)
         symbolKeyboard = Keyboard(this, R.xml.symbols)
@@ -106,6 +133,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // 初始化引擎
         statsManager = PolishStatsManager(this)
+        pinyinEngine = PinyinEngine(this)
         typelessEngine = TypelessEngine(this, this).also { engine ->
             engine.onLogMessage = { msg ->
                 Handler(Looper.getMainLooper()).post { updateStatus(msg) }
@@ -123,11 +151,74 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         loadSettings()
         setupButtonListeners()
+        setupCandidateBar()
 
         updateStatus("Cesia 已就绪")
         setStatusDot("idle")
 
         return view
+    }
+
+    private fun setupCandidateBar() {
+        // 候选词点击
+        for (i in tvCandidates.indices) {
+            val index = i
+            tvCandidates[i].setOnClickListener {
+                if (isChineseMode && pinyinEngine.hasCandidates()) {
+                    val selected = pinyinEngine.selectCandidate(
+                        pinyinEngine.getCurrentPage() * 5 + index
+                    )
+                    if (selected.isNotEmpty()) {
+                        currentInputConnection?.commitText(selected, 1)
+                        updateCandidateBar()
+                    }
+                }
+            }
+        }
+
+        // 翻页按钮
+        btnCandidatePrev.setOnClickListener {
+            if (isChineseMode && pinyinEngine.hasCandidates()) {
+                pinyinEngine.prevPage()
+                updateCandidateBar()
+            }
+        }
+
+        btnCandidateNext.setOnClickListener {
+            if (isChineseMode && pinyinEngine.hasCandidates()) {
+                pinyinEngine.nextPage()
+                updateCandidateBar()
+            }
+        }
+    }
+
+    private fun updateCandidateBar() {
+        if (!isChineseMode || !pinyinEngine.isComposing()) {
+            candidateBar.visibility = View.GONE
+            return
+        }
+
+        val candidates = pinyinEngine.getCandidates()
+        if (candidates.isEmpty()) {
+            candidateBar.visibility = View.GONE
+            return
+        }
+
+        candidateBar.visibility = View.VISIBLE
+        tvComposing.text = pinyinEngine.getCurrentPinyin()
+
+        for (i in tvCandidates.indices) {
+            if (i < candidates.size) {
+                tvCandidates[i].text = candidates[i]
+                tvCandidates[i].visibility = View.VISIBLE
+            } else {
+                tvCandidates[i].visibility = View.INVISIBLE
+            }
+        }
+
+        // 更新翻页按钮状态
+        btnCandidatePrev.isEnabled = pinyinEngine.getCurrentPage() > 0
+        btnCandidateNext.isEnabled = pinyinEngine.getCurrentPage() < pinyinEngine.getPageCount() - 1
     }
 
     private fun setupButtonListeners() {
@@ -139,12 +230,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnSettings.setOnClickListener { showSettings() }
 
         btnDelete.setOnClickListener {
-            currentInputConnection?.deleteSurroundingText(Integer.MAX_VALUE, 0)
+            if (isChineseMode && pinyinEngine.isComposing()) {
+                handleChineseBackspace()
+            } else {
+                currentInputConnection?.deleteSurroundingText(Integer.MAX_VALUE, 0)
+            }
         }
 
         btnSwitchIme.setOnClickListener { switchToNextInputMethod() }
 
-        // 魔法按钮：加载已输入文字 → 语音修改指令
         btnMagic.setOnClickListener { startMagicMode() }
     }
 
@@ -168,6 +262,92 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             typelessEngine?.updateApiUrl(apiUrl)
         } catch (_: Exception) {
             apiUrl = DEFAULT_API_URL
+        }
+    }
+
+    // ======================== 中/英切换 ========================
+
+    private fun toggleChineseMode() {
+        isChineseMode = !isChineseMode
+        if (isChineseMode) {
+            // 切换到中文模式
+            isSymbolMode = false
+            currentKeyboard = qwertyKeyboard
+            keyboardView.keyboard = qwertyKeyboard
+            keyboardView.invalidateAllKeys()
+            pinyinEngine.clear()
+            candidateBar.visibility = View.GONE
+            updateStatus("中文拼音模式")
+        } else {
+            // 切换到英文模式
+            pinyinEngine.clear()
+            candidateBar.visibility = View.GONE
+            updateStatus("英文模式")
+        }
+    }
+
+    // ======================== 中文拼音输入处理 ========================
+
+    private fun handleChineseInput(primaryCode: Int) {
+        val c = primaryCode.toChar()
+
+        if (c in 'a'..'z') {
+            // 输入拼音字母
+            val pinyin = pinyinEngine.inputLetter(c)
+            updateCandidateBar()
+            // 显示拼音串在状态栏
+            updateStatus("拼音: $pinyin")
+        } else if (c == ' ') {
+            // 空格：选择第一个候选词或直接输入空格
+            if (pinyinEngine.hasCandidates()) {
+                val selected = pinyinEngine.selectCandidate(0)
+                currentInputConnection?.commitText(selected, 1)
+            } else {
+                currentInputConnection?.commitText(" ", 1)
+            }
+            pinyinEngine.clear()
+            updateCandidateBar()
+        } else {
+            // 其他字符（数字、标点等）：如果有候选词先上屏，再输出字符
+            if (pinyinEngine.isComposing()) {
+                val selected = if (pinyinEngine.hasCandidates()) {
+                    pinyinEngine.selectCandidate(0)
+                } else {
+                    pinyinEngine.getCurrentPinyin()
+                }
+                currentInputConnection?.commitText(selected, 1)
+                pinyinEngine.clear()
+                updateCandidateBar()
+            }
+            // 输出字符（中文标点）
+            val charStr = when (c) {
+                ',' -> "，"
+                '.' -> "。"
+                '!' -> "！"
+                '?' -> "？"
+                ';' -> "；"
+                ':' -> "："
+                '(' -> "（"
+                ')' -> "）"
+                else -> c.toString()
+            }
+            currentInputConnection?.commitText(charStr, 1)
+        }
+    }
+
+    private fun handleChineseBackspace() {
+        if (pinyinEngine.isComposing()) {
+            val pinyin = pinyinEngine.backspace()
+            if (pinyin.isEmpty()) {
+                pinyinEngine.clear()
+                candidateBar.visibility = View.GONE
+                updateStatus("中文拼音模式")
+            } else {
+                updateCandidateBar()
+                updateStatus("拼音: $pinyin")
+            }
+        } else {
+            currentInputConnection?.deleteSurroundingText(1, 0)
         }
     }
 
@@ -198,7 +378,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 魔法模式 ========================
 
     private fun startMagicMode() {
-        // 获取当前输入框的全部文字
         val ic = currentInputConnection ?: run {
             updateStatus("❌ 无输入框连接")
             return
@@ -212,7 +391,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             return
         }
 
-        // 进入魔法模式
         magicOriginalText = fullText
         magicMode = true
         typelessEngine?.magicMode = true
@@ -227,7 +405,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleMagicResult(recognizedText: String) {
-        // 退出魔法模式
         magicMode = false
         typelessEngine?.magicMode = false
         isRecording = false
@@ -245,7 +422,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         Log.d("CesiaMagic", "指令: $instruction")
         updateStatus("🔄 正在处理修改指令...")
 
-        // 构建魔法 prompt 并调用 API
         val prompt = buildMagicPrompt(magicOriginalText, instruction)
         val polishService = typelessEngine?.getPolishService()
 
@@ -274,7 +450,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun replaceInputText(newText: String) {
         val ic = currentInputConnection ?: return
-        // 选中全部文字然后替换
         ic.performContextMenuAction(android.R.id.selectAll)
         ic.commitText(newText, 1)
     }
@@ -284,6 +459,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun switchToSymbolKeyboard() {
         if (!isSymbolMode) {
             isSymbolMode = true
+            isChineseMode = false
+            pinyinEngine.clear()
+            candidateBar.visibility = View.GONE
             currentKeyboard = symbolKeyboard
             keyboardView.keyboard = symbolKeyboard
             keyboardView.invalidateAllKeys()
@@ -309,19 +487,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         cancelLongPress()
         currentLongPressKey = key
         longPressRunnable = Runnable {
-            // 长按触发：输出 popupCharacters 中的符号
             val popup = key.popupCharacters
             if (!popup.isNullOrEmpty()) {
                 val symbol = popup[0].toString()
                 currentInputConnection?.commitText(symbol, 1)
                 Log.d("Cesia", "Fn 长按输出: $symbol")
-                // 震动反馈
                 keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                 longPressTriggered = true
             }
             currentLongPressKey = null
         }.also {
-            longPressHandler.postDelayed(it, 400) // 400ms 长按阈值
+            longPressHandler.postDelayed(it, 400)
         }
     }
 
@@ -346,22 +522,44 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             KEYCODE_SWITCH_SYMBOL -> {
                 toggleKeyboard()
             }
+            KEYCODE_SWITCH_LANG -> {
+                toggleChineseMode()
+            }
             -1 -> { // Shift
                 isCapsLock = !isCapsLock
                 qwertyKeyboard.isShifted = isCapsLock
                 keyboardView.invalidateAllKeys()
             }
             -5 -> { // 删除
-                currentInputConnection?.deleteSurroundingText(1, 0)
+                if (isChineseMode) {
+                    handleChineseBackspace()
+                } else {
+                    currentInputConnection?.deleteSurroundingText(1, 0)
+                }
             }
             -200 -> { // 发送
+                // 如果有未上屏的拼音，先上屏
+                if (isChineseMode && pinyinEngine.isComposing()) {
+                    val text = if (pinyinEngine.hasCandidates()) {
+                        pinyinEngine.selectCandidate(0)
+                    } else {
+                        pinyinEngine.getCurrentPinyin()
+                    }
+                    currentInputConnection?.commitText(text, 1)
+                    pinyinEngine.clear()
+                    updateCandidateBar()
+                }
                 currentInputConnection?.apply {
                     sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
                     sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
                 }
             }
             Keyboard.KEYCODE_DELETE -> {
-                currentInputConnection?.deleteSurroundingText(1, 0)
+                if (isChineseMode) {
+                    handleChineseBackspace()
+                } else {
+                    currentInputConnection?.deleteSurroundingText(1, 0)
+                }
             }
             Keyboard.KEYCODE_SHIFT -> {
                 isCapsLock = !isCapsLock
@@ -371,26 +569,31 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             Keyboard.KEYCODE_DONE -> {
                 currentInputConnection?.apply {
                     sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                    sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                    sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
                 }
             }
             Keyboard.KEYCODE_MODE_CHANGE -> {
                 toggleKeyboard()
             }
             else -> {
-                // 普通字符键
-                var char = primaryCode.toChar()
-                if (isCapsLock && char.isLowerCase()) {
-                    char = char.uppercaseChar()
+                if (isChineseMode && primaryCode in 97..122) {
+                    // 中文模式：字母键走拼音输入
+                    handleChineseInput(primaryCode)
+                } else {
+                    // 普通字符键
+                    var char = primaryCode.toChar()
+                    if (isCapsLock && char.isLowerCase()) {
+                        char = char.uppercaseChar()
+                    }
+                    currentInputConnection?.commitText(char.toString(), 1)
                 }
-                currentInputConnection?.commitText(char.toString(), 1)
             }
         }
     }
 
     override fun onPress(primaryCode: Int) {
-        // 检测长按 Fn 效果
-        if (primaryCode > 0 && !isSymbolMode) {
+        // 检测长按 Fn 效果（仅在英文模式）
+        if (primaryCode > 0 && !isSymbolMode && !isChineseMode) {
             val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
             if (key != null && !key.popupCharacters.isNullOrEmpty()) {
                 startLongPressDetection(key)
@@ -400,7 +603,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
             backspaceRunnable = object : Runnable {
                 override fun run() {
-                    currentInputConnection?.deleteSurroundingText(1, 0)
+                    if (isChineseMode) {
+                        handleChineseBackspace()
+                    } else {
+                        currentInputConnection?.deleteSurroundingText(1, 0)
+                    }
                     backspaceHandler.postDelayed(this, 80)
                 }
             }
@@ -410,6 +617,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onRelease(primaryCode: Int) {
         cancelLongPress()
+        backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
+        backspaceRunnable = null
     }
 
     override fun onText(text: CharSequence?) {
