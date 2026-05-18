@@ -46,7 +46,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var btnSettings: ImageButton
     private lateinit var btnDelete: ImageButton
     private lateinit var btnClipboard: ImageButton
-    private lateinit var btnMagic: com.google.android.material.button.MaterialButton
+    private lateinit var btnMagic: ImageButton
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
 

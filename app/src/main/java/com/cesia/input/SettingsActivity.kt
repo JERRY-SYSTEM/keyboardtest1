@@ -36,6 +36,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
     private lateinit var tvVersion: TextView
+    private var tvStatVoiceTime: TextView? = null
+    private var tvStatSavedTime: TextView? = null
+    private var tvStatVoiceSpeed: TextView? = null
     private lateinit var tvStatInputChars: TextView
     private lateinit var tvStatOutputChars: TextView
     private lateinit var tvStatCount: TextView
@@ -81,9 +84,9 @@ class SettingsActivity : AppCompatActivity() {
         tvVersion = findViewById(R.id.tv_version)
         // 语音统计
         try {
-            findViewById<TextView>(R.id.tv_stat_voice_time)
-            findViewById<TextView>(R.id.tv_stat_saved_time)
-            findViewById<TextView>(R.id.tv_stat_voice_speed)
+            tvStatVoiceTime = findViewById(R.id.tv_stat_voice_time)
+            tvStatSavedTime = findViewById(R.id.tv_stat_saved_time)
+            tvStatVoiceSpeed = findViewById(R.id.tv_stat_voice_speed)
         } catch (_: Exception) {}
         tvStatInputChars = findViewById(R.id.tv_stat_input_chars)
         tvStatOutputChars = findViewById(R.id.tv_stat_output_chars)
@@ -402,9 +405,9 @@ class SettingsActivity : AppCompatActivity() {
             val savedTimeMin = statsManager.savedTimeSeconds / 60
             val speed = statsManager.voiceSpeedPerMinute
 
-            findViewById<TextView>(R.id.tv_stat_voice_time)?.text = "${voiceTimeMin}分钟"
-            findViewById<TextView>(R.id.tv_stat_saved_time)?.text = "${savedTimeMin}分钟"
-            findViewById<TextView>(R.id.tv_stat_voice_speed)?.text = "${speed}字/分"
+            tvStatVoiceTime?.text = "${voiceTimeMin}分钟"
+            tvStatSavedTime?.text = "${savedTimeMin}分钟"
+            tvStatVoiceSpeed?.text = "${speed}字/分"
         } catch (_: Exception) {}
     }
 
