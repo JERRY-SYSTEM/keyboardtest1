@@ -50,7 +50,7 @@ android {
 
     buildTypes {
         debug {
-            // 使用Android默认debug签名，无需配置keystore
+            signingConfig signingConfigs.debug
         }
         release {
             minifyEnabled false
