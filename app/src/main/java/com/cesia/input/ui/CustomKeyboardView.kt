@@ -28,13 +28,13 @@ class CustomKeyboardView @JvmOverloads constructor(
         for (key in keys) {
             if (!key.popupCharacters.isNullOrEmpty()) {
                 val symbol = key.popupCharacters[0].toString()
-                // 调大符号：0.45f，最大28f（原0.35f/18f，增大约10个单位）
+                // 调大符号：0.45f，最大28f
                 val textSize = (key.height * 0.45f).coerceIn(16f, 28f)
                 subsidiaryPaint.textSize = textSize
 
-                // 往左下方移动：离右边+2px，离底部+2px
-                val x = key.x + key.width - 12f
-                val y = key.y + key.height - 2f
+                // 右上角：右边留6px，顶部留4px+文字高度偏移
+                val x = key.x + key.width - 6f
+                val y = key.y + textSize + 4f
 
                 canvas.drawText(symbol, x, y, subsidiaryPaint)
             }

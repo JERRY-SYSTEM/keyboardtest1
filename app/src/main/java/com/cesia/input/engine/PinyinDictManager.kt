@@ -27,9 +27,9 @@ class PinyinDictManager(private val context: Context) {
         const val PREF_DICT_SOURCE = "dict_source"
         const val PREF_LAST_SYNC = "last_sync"
 
-        // 词库下载源（可配置）
-        const val DEFAULT_DICT_URL = "https://raw.githubusercontent.com/harviex/cesia-input-method/main/dict/pinyin_dict_full.json"
-        const val DEFAULT_PHRASES_URL = "https://raw.githubusercontent.com/harviex/cesia-input-method/main/dict/pinyin_phrases_full.json"
+        // 词库下载源 - 从GitHub仓库assets目录下载
+        const val DEFAULT_DICT_URL = "https://raw.githubusercontent.com/harviex/cesia-input-method/main/app/src/main/assets/pinyin_dict.json"
+        const val DEFAULT_PHRASES_URL = "https://raw.githubusercontent.com/harviex/cesia-input-method/main/app/src/main/assets/pinyin_phrases.json"
 
         // 本地词库文件
         const val LOCAL_DICT_FILE = "pinyin_dict.json"

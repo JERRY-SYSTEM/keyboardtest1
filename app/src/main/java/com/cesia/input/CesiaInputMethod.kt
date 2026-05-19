@@ -321,17 +321,26 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun showAiStylePicker() {
         val styles = arrayOf("自然", "幽默", "圆滑", "官方", "简洁", "正式", "亲切", "犀利")
-        AlertDialog.Builder(this)
-            .setTitle("🎭 选择AI回复风格")
-            .setItems(styles) { _, which ->
-                aiReplyStyle = styles[which]
-                getSharedPreferences("cesia_settings", MODE_PRIVATE)
-                    .edit().putString(PREF_AI_STYLE, aiReplyStyle).apply()
-                updateStatus("✅ 已切换为「$aiReplyStyle」风格")
-                Toast.makeText(this, "已切换为「$aiReplyStyle」风格", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        try {
+            AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+                .setTitle("🎭 选择AI回复风格")
+                .setItems(styles) { _, which ->
+                    aiReplyStyle = styles[which]
+                    getSharedPreferences("cesia_settings", MODE_PRIVATE)
+                        .edit().putString(PREF_AI_STYLE, aiReplyStyle).apply()
+                    updateStatus("✅ 已切换为「$aiReplyStyle」风格")
+                    Toast.makeText(this, "已切换为「$aiReplyStyle」风格", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        } catch (e: Exception) {
+            // 如果弹窗失败，直接切换到下一个风格
+            val currentIdx = styles.indexOf(aiReplyStyle)
+            aiReplyStyle = styles[(currentIdx + 1) % styles.size]
+            getSharedPreferences("cesia_settings", MODE_PRIVATE)
+                .edit().putString(PREF_AI_STYLE, aiReplyStyle).apply()
+            updateStatus("✅ 已切换为「$aiReplyStyle」风格")
+        }
     }
 
     private fun triggerAiReply() {
@@ -349,13 +358,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val textBefore = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val textAfter = ic.getTextAfterCursor(2000, 0)?.toString() ?: ""
 
-        if (textBefore.isEmpty() && textAfter.isEmpty()) {
-            updateStatus("⚠️ 输入框为空，无法分析上下文")
+        // 如果输入框为空，尝试从EditorInfo获取hint作为上下文
+        var contextText = textBefore + textAfter
+        if (contextText.isEmpty()) {
+            val editorInfo = currentInputEditorInfo
+            val hint = editorInfo?.hintText?.toString() ?: ""
+            if (hint.isNotEmpty()) {
+                contextText = "【输入框提示】$hint"
+            }
+        }
+
+        // 如果仍然为空，提示用户
+        if (contextText.isEmpty()) {
+            updateStatus("💡 输入框为空，AI无法获取上下文。请先输入一些文字，或长按切换风格后重试。")
             return
         }
 
         isAiProcessing = true
-        updateStatus("🤖 AI正在分析上下文...")
+        updateStatus("🤖 AI正在分析上下文并生成建议...")
         setStatusDot("processing")
 
         // 构建AI提示
@@ -373,16 +393,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     if (result != null && result.isNotEmpty()) {
                         // 将AI生成的回复上屏
                         ic.commitText(result, 1)
-                        updateStatus("✅ AI回复已生成（$aiReplyStyle 风格）")
+                        updateStatus("✅ AI已生成建议内容（$aiReplyStyle 风格）")
                     } else {
-                        updateStatus("⚠️ AI未生成有效回复")
+                        updateStatus("⚠️ AI未生成有效内容，请重试")
                     }
                 }
             } catch (e: Exception) {
                 Handler(Looper.getMainLooper()).post {
                     isAiProcessing = false
                     setStatusDot("idle")
-                    updateStatus("❌ AI回复失败: ${e.message}")
+                    updateStatus("❌ AI生成失败: ${e.message}")
                 }
             }
         }.start()
@@ -755,10 +775,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     pinyinEngine.clear()
                     updateCandidateBar()
                 }
-                currentInputConnection?.apply {
-                    sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                    sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-                }
+                // 执行发送动作
+                currentInputConnection?.performEditorAction(EditorInfo.IME_ACTION_SEND)
             }
             Keyboard.KEYCODE_DELETE -> {
                 if (isChineseMode) {
