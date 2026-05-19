@@ -17,10 +17,78 @@ class PinyinEngine(context: Context) {
     private var candidates = listOf<String>()
     private var candidatePages = listOf<List<String>>()
     private var currentPage = 0
+    private var dictManager: PinyinDictManager? = null
 
     init {
-        loadDictionary(context)
-        loadPhrases(context)
+        // 先尝试从外部文件加载（用户导入或下载的词库）
+        val externalLoaded = tryLoadExternalDict(context)
+        if (!externalLoaded) {
+            // 回退到内置词库
+            loadDictionary(context)
+            loadPhrases(context)
+        }
+    }
+
+    /**
+     * 尝试从外部文件加载词库
+     */
+    private fun tryLoadExternalDict(context: Context): Boolean {
+        try {
+            dictManager = PinyinDictManager(context)
+            val dictPath = dictManager?.getDictFilePath()
+            val phrasesPath = dictManager?.getPhrasesFilePath()
+
+            if (dictPath == null && phrasesPath == null) return false
+
+            var loaded = false
+
+            if (dictPath != null) {
+                try {
+                    val jsonStr = java.io.File(dictPath).readText()
+                    val json = JSONObject(jsonStr)
+                    for (key in json.keys()) {
+                        pinyinMap[key] = json.getString(key)
+                    }
+                    Log.d("PinyinEngine", "外部拼音字典加载完成: ${pinyinMap.size} 个拼音条目")
+                    loaded = true
+                } catch (e: Exception) {
+                    Log.e("PinyinEngine", "外部拼音字典加载失败", e)
+                }
+            }
+
+            if (phrasesPath != null) {
+                try {
+                    val jsonStr = java.io.File(phrasesPath).readText()
+                    val json = JSONObject(jsonStr)
+                    for (key in json.keys()) {
+                        phraseMap[key] = json.getString(key)
+                    }
+                    Log.d("PinyinEngine", "外部词组字典加载完成: ${phraseMap.size} 个词组条目")
+                    loaded = true
+                } catch (e: Exception) {
+                    Log.e("PinyinEngine", "外部词组字典加载失败", e)
+                }
+            }
+
+            return loaded
+        } catch (e: Exception) {
+            Log.e("PinyinEngine", "尝试加载外部词库失败", e)
+            return false
+        }
+    }
+
+    /**
+     * 重新加载词库（下载/导入新词库后调用）
+     */
+    fun reloadDict(context: Context) {
+        pinyinMap.clear()
+        phraseMap.clear()
+        val externalLoaded = tryLoadExternalDict(context)
+        if (!externalLoaded) {
+            loadDictionary(context)
+            loadPhrases(context)
+        }
+        clear()
     }
 
     private fun loadDictionary(context: Context) {

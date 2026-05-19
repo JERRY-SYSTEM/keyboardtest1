@@ -15,10 +15,12 @@ import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import com.cesia.input.engine.PinyinEngine
 import com.cesia.input.engine.TypelessEngine
 import com.cesia.input.stats.PolishStatsManager
 import com.google.android.material.button.MaterialButton
+import android.widget.Toast
 
 /**
  * Cesia 输入法 — 语音自动润色上屏 + 中文拼音输入
@@ -86,18 +88,33 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var magicMode = false
     private var magicOriginalText = ""
 
+    // AI自动回复
+    private var aiReplyStyle = "自然" // 自然, 幽默, 圆滑, 官方, 简洁
+    private var isAiProcessing = false
+
+    // 主题
+    private var isDarkTheme = false
+
     // 设置
     private var apiUrl = "https://typeless-ai-service.vercel.app/api/polish"
 
     companion object {
         const val PREF_API_URL = "api_url"
+        const val PREF_THEME_MODE = "theme_mode"
+        const val PREF_AI_STYLE = "ai_reply_style"
         const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
         const val KEYCODE_SWITCH_SYMBOL = -100
         const val KEYCODE_SWITCH_LANG = -101
+        const val THEME_LIGHT = 0
+        const val THEME_DARK = 1
     }
 
     override fun onCreate() {
-        setTheme(R.style.Theme_Cesia)
+        // 读取主题设置
+        val themeMode = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+            .getInt(PREF_THEME_MODE, THEME_LIGHT)
+        isDarkTheme = themeMode == THEME_DARK
+        setTheme(if (isDarkTheme) R.style.Theme_Cesia_Dark else R.style.Theme_Cesia)
         super.onCreate()
     }
 
@@ -173,13 +190,48 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
 
         loadSettings()
+        // 加载AI回复风格
+        aiReplyStyle = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+            .getString(PREF_AI_STYLE, "自然") ?: "自然"
         setupButtonListeners()
         setupCandidateBar()
+
+        // 应用主题到键盘视图
+        applyKeyboardTheme()
 
         updateStatus("Cesia 已就绪")
         setStatusDot("idle")
 
         return view
+    }
+
+    private fun applyKeyboardTheme() {
+        if (isDarkTheme) {
+            keyboardView.setBackgroundColor(0xFF0F0F23.toInt())
+            keyboardView.keyTextColor = 0xFFE0E0E0.toInt()
+            // 状态栏
+            (statusText.parent as? View)?.setBackgroundColor(0xFF1A1A2E.toInt())
+            statusText.setTextColor(0xFFE0E0E0.toInt())
+            // 候选词栏
+            candidateBar.setBackgroundColor(0xFF16213E.toInt())
+            tvComposing.setTextColor(0xFF4488FF.toInt())
+            for (tv in tvCandidates) {
+                tv.setTextColor(0xFFE0E0E0.toInt())
+            }
+            // 底部按钮栏
+            (btnClipboard.parent as? View)?.setBackgroundColor(0xFF1A1A2E.toInt())
+        } else {
+            keyboardView.setBackgroundColor(0xFFE8E8E8.toInt())
+            keyboardView.keyTextColor = 0xFF333333.toInt()
+            (statusText.parent as? View)?.setBackgroundColor(0xFFEEEEEE.toInt())
+            statusText.setTextColor(0xFF555555.toInt())
+            candidateBar.setBackgroundColor(0xFFF0F0F0.toInt())
+            tvComposing.setTextColor(0xFF4488FF.toInt())
+            for (tv in tvCandidates) {
+                tv.setTextColor(0xFF333333.toInt())
+            }
+            (btnClipboard.parent as? View)?.setBackgroundColor(0xFFE0E0E0.toInt())
+        }
     }
 
     private fun setupCandidateBar() {
@@ -260,29 +312,111 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
 
-        btnClipboard.setOnClickListener { showClipboard() }
+        // AI自动回复按钮：短按=读取上下文并生成回复，长按=切换语言风格
+        btnClipboard.setOnClickListener { triggerAiReply() }
+        btnClipboard.setOnLongClickListener { showAiStylePicker(); true }
 
         btnMagic.setOnClickListener { startMagicMode() }
     }
 
-    private fun showClipboard() {
-        try {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            val clip = clipboard.primaryClip
-            if (clip != null && clip.itemCount > 0) {
-                val text = clip.getItemAt(0).text?.toString() ?: ""
-                if (text.isNotEmpty()) {
-                    currentInputConnection?.commitText(text, 1)
-                    updateStatus("📋 已粘贴: ${text.take(20)}...")
-                } else {
-                    updateStatus("📋 剪贴板为空")
-                }
-            } else {
-                updateStatus("📋 剪贴板为空")
+    // ======================== AI自动回复 ========================
+
+    private fun showAiStylePicker() {
+        val styles = arrayOf("自然", "幽默", "圆滑", "官方", "简洁", "正式", "亲切", "犀利")
+        AlertDialog.Builder(this)
+            .setTitle("🎭 选择AI回复风格")
+            .setItems(styles) { _, which ->
+                aiReplyStyle = styles[which]
+                getSharedPreferences("cesia_settings", MODE_PRIVATE)
+                    .edit().putString(PREF_AI_STYLE, aiReplyStyle).apply()
+                updateStatus("✅ 已切换为「$aiReplyStyle」风格")
+                Toast.makeText(this, "已切换为「$aiReplyStyle」风格", Toast.LENGTH_SHORT).show()
             }
-        } catch (e: Exception) {
-            updateStatus("📋 粘贴失败")
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun triggerAiReply() {
+        if (isAiProcessing) {
+            updateStatus("⏳ AI正在处理中，请稍候...")
+            return
         }
+
+        val ic = currentInputConnection ?: run {
+            updateStatus("❌ 无输入框连接")
+            return
+        }
+
+        // 读取上下文：获取输入框前后文字
+        val textBefore = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
+        val textAfter = ic.getTextAfterCursor(2000, 0)?.toString() ?: ""
+
+        if (textBefore.isEmpty() && textAfter.isEmpty()) {
+            updateStatus("⚠️ 输入框为空，无法分析上下文")
+            return
+        }
+
+        isAiProcessing = true
+        updateStatus("🤖 AI正在分析上下文...")
+        setStatusDot("processing")
+
+        // 构建AI提示
+        val context = buildContext(textBefore, textAfter)
+        val prompt = buildAiReplyPrompt(context, aiReplyStyle)
+
+        // 调用润色API进行AI回复生成
+        val polishService = typelessEngine?.getPolishService()
+        Thread {
+            try {
+                val result = polishService?.polishWithPrompt(prompt)
+                Handler(Looper.getMainLooper()).post {
+                    isAiProcessing = false
+                    setStatusDot("idle")
+                    if (result != null && result.isNotEmpty()) {
+                        // 将AI生成的回复上屏
+                        ic.commitText(result, 1)
+                        updateStatus("✅ AI回复已生成（$aiReplyStyle 风格）")
+                    } else {
+                        updateStatus("⚠️ AI未生成有效回复")
+                    }
+                }
+            } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post {
+                    isAiProcessing = false
+                    setStatusDot("idle")
+                    updateStatus("❌ AI回复失败: ${e.message}")
+                }
+            }
+        }.start()
+    }
+
+    private fun buildContext(before: String, after: String): String {
+        val sb = StringBuilder()
+        if (before.isNotEmpty()) {
+            sb.append("【前面已有的内容】\n$before\n\n")
+        }
+        if (after.isNotEmpty()) {
+            sb.append("【后面已有的内容】\n$after\n\n")
+        }
+        return sb.toString()
+    }
+
+    private fun buildAiReplyPrompt(context: String, style: String): String {
+        val styleDesc = when (style) {
+            "幽默" -> "用幽默风趣的方式回复，适当使用俏皮话和轻松的语气"
+            "圆滑" -> "用圆滑得体的方式回复，措辞委婉，不得罪人"
+            "官方" -> "用官方正式的语气回复，措辞严谨规范"
+            "简洁" -> "用简洁明了的方式回复，言简意赅，不废话"
+            "正式" -> "用正式商务的语气回复，专业得体"
+            "亲切" -> "用亲切温暖的方式回复，语气温和友好"
+            "犀利" -> "用犀利直接的方式回复，观点鲜明，一针见血"
+            else -> "用自然流畅的方式回复，语气自然"
+        }
+        return "你是一个智能回复助手。请根据以下聊天上下文，生成一条合适的回复。\n\n" +
+                "要求：$styleDesc\n" +
+                "只输出回复内容本身，不要解释。\n\n" +
+                "$context\n" +
+                "请生成合适的回复："
     }
 
     private fun showSettings() {
@@ -737,6 +871,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         loadSettings()
+        // 重新加载主题（可能在设置中切换了）
+        val themeMode = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+            .getInt(PREF_THEME_MODE, THEME_LIGHT)
+        isDarkTheme = themeMode == THEME_DARK
+        applyKeyboardTheme()
+        // 重新加载AI风格
+        aiReplyStyle = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+            .getString(PREF_AI_STYLE, "自然") ?: "自然"
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

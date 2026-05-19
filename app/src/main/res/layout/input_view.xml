@@ -126,6 +126,8 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="4dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
         android:background="#E0E0E0"
         android:gravity="center_vertical">
 
@@ -141,10 +143,12 @@
             android:backgroundTint="#FF03DAC5"
             android:contentDescription="语音修改"
             android:stateListAnimator="@null"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
             android:layout_marginEnd="3dp"
             app:cornerRadius="8dp" />
 
-        <!-- 剪贴板按钮（替代原来的输入法切换） -->
+        <!-- 剪贴板按钮（AI自动回复） -->
         <ImageButton
             android:id="@+id/btn_clipboard"
             android:layout_width="0dp"
@@ -153,7 +157,7 @@
             android:src="@android:drawable/ic_menu_edit"
             android:background="@drawable/button_background"
             android:scaleType="centerInside"
-            android:contentDescription="剪贴板"
+            android:contentDescription="AI自动回复"
             android:layout_marginEnd="3dp" />
 
         <!-- 麦克风/语音按钮 -->
@@ -169,6 +173,8 @@
             app:cornerRadius="25dp"
             android:elevation="1dp"
             android:stateListAnimator="@null"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
             android:layout_marginEnd="3dp" />
 
         <!-- 删除按钮 -->

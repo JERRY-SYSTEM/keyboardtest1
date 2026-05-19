@@ -272,6 +272,105 @@
             android:layout_marginTop="16dp"
             android:layout_marginBottom="16dp" />
 
+        <!-- ==================== 主题设置 ==================== -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🎨 主题设置"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tv_theme_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="☀️ 当前：明亮模式"
+            android:textSize="13sp"
+            android:textColor="#666666"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_theme_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🌙 切换到黑暗模式"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_marginBottom="16dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#E0E0E0"
+            android:layout_marginBottom="16dp" />
+
+        <!-- ==================== 词库管理 ==================== -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📚 词库管理"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tv_dict_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="加载中..."
+            android:textSize="12sp"
+            android:textColor="#666666"
+            android:background="#F5F5F5"
+            android:padding="10dp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_download_dict"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📥 下载最新词库"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="4dp">
+
+            <Button
+                android:id="@+id/btn_import_dict"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="📂 导入词库"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btn_export_dict"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="📤 导出词库"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btn_cloud_backup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="☁️ 云端备份/恢复"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_marginBottom="16dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#E0E0E0"
+            android:layout_marginBottom="16dp" />
+
         <!-- ==================== OTA 更新 ==================== -->
         <TextView
             android:layout_width="wrap_content"
