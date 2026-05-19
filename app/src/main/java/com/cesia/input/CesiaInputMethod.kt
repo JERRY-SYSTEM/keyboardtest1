@@ -12,6 +12,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -320,23 +321,57 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== AI自动回复 ========================
 
     private fun showAiStylePicker() {
-        val styles = arrayOf("自然", "幽默", "圆滑", "官方", "简洁", "正式", "亲切", "犀利")
+        val styles = listOf(
+            Triple("自然", "🌿", "自然流畅的语气"),
+            Triple("幽默", "😄", "幽默风趣的表达"),
+            Triple("圆滑", "🎭", "圆滑得体的措辞"),
+            Triple("官方", "📋", "官方正式的语气"),
+            Triple("简洁", "✂️", "简洁明了不废话"),
+            Triple("正式", "👔", "正式商务的风格"),
+            Triple("亲切", "🤗", "亲切温暖的语气"),
+            Triple("犀利", "🔥", "犀利直接的观点")
+        )
+
         try {
-            AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-                .setTitle("🎭 选择AI回复风格")
-                .setItems(styles) { _, which ->
-                    aiReplyStyle = styles[which]
+            // 创建自定义弹窗布局
+            val inflater = android.view.LayoutInflater.from(this)
+            val dialogView = inflater.inflate(R.layout.dialog_ai_style_picker, null)
+
+            val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+                .setView(dialogView)
+                .setTitle("🎭 选择写作风格")
+                .setNegativeButton("取消", null)
+                .create()
+
+            // 动态生成风格选项
+            val container = dialogView.findViewById<LinearLayout>(R.id.style_container)
+            for ((name, icon, desc) in styles) {
+                val item = inflater.inflate(R.layout.item_ai_style, container, false)
+                item.findViewById<TextView>(R.id.tv_style_icon).text = icon
+                item.findViewById<TextView>(R.id.tv_style_name).text = name
+                item.findViewById<TextView>(R.id.tv_style_desc).text = desc
+
+                // 高亮当前选中的风格
+                if (name == aiReplyStyle) {
+                    item.setBackgroundColor(0xFFE0F7FA.toInt())
+                }
+
+                item.setOnClickListener {
+                    aiReplyStyle = name
                     getSharedPreferences("cesia_settings", MODE_PRIVATE)
                         .edit().putString(PREF_AI_STYLE, aiReplyStyle).apply()
                     updateStatus("✅ 已切换为「$aiReplyStyle」风格")
-                    Toast.makeText(this, "已切换为「$aiReplyStyle」风格", Toast.LENGTH_SHORT).show()
+                    dialog.dismiss()
                 }
-                .setNegativeButton("取消", null)
-                .show()
+                container.addView(item)
+            }
+
+            dialog.show()
         } catch (e: Exception) {
-            // 如果弹窗失败，直接切换到下一个风格
-            val currentIdx = styles.indexOf(aiReplyStyle)
-            aiReplyStyle = styles[(currentIdx + 1) % styles.size]
+            // 降级：如果弹窗失败，直接切换到下一个风格
+            val styleNames = styles.map { it.first }
+            val currentIdx = styleNames.indexOf(aiReplyStyle)
+            aiReplyStyle = styleNames.getOrElse((currentIdx + 1) % styleNames.size) { "自然" }
             getSharedPreferences("cesia_settings", MODE_PRIVATE)
                 .edit().putString(PREF_AI_STYLE, aiReplyStyle).apply()
             updateStatus("✅ 已切换为「$aiReplyStyle」风格")
@@ -358,31 +393,61 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val textBefore = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
         val textAfter = ic.getTextAfterCursor(2000, 0)?.toString() ?: ""
 
-        // 如果输入框为空，尝试从EditorInfo获取hint作为上下文
-        var contextText = textBefore + textAfter
-        if (contextText.isEmpty()) {
-            val editorInfo = currentInputEditorInfo
-            val hint = editorInfo?.hintText?.toString() ?: ""
-            if (hint.isNotEmpty()) {
-                contextText = "【输入框提示】$hint"
-            }
-        }
+        // 构建上下文
+        val context = buildContext(textBefore, textAfter)
 
-        // 如果仍然为空，提示用户
-        if (contextText.isEmpty()) {
-            updateStatus("💡 输入框为空，AI无法获取上下文。请先输入一些文字，或长按切换风格后重试。")
+        // 如果输入框为空，尝试从EditorInfo获取更多上下文
+        if (textBefore.isEmpty() && textAfter.isEmpty()) {
+            val editorInfo = currentInputEditorInfo
+            val hints = mutableListOf<String>()
+
+            // 尝试读取hint
+            editorInfo?.hintText?.toString()?.takeIf { it.isNotEmpty() }?.let {
+                hints.add("输入框提示：$it")
+            }
+
+            // 尝试读取label（有些App会设置）
+            editorInfo?.label?.toString()?.takeIf { it.isNotEmpty() }?.let {
+                hints.add("应用标签：$it")
+            }
+
+            // 尝试读取packageName来判断当前App
+            editorInfo?.packageName?.let { pkg ->
+                val appName = when {
+                    pkg.contains("wechat") -> "微信"
+                    pkg.contains("qq") -> "QQ"
+                    pkg.contains("whatsapp") -> "WhatsApp"
+                    pkg.contains("telegram") -> "Telegram"
+                    pkg.contains("line") -> "LINE"
+                    else -> pkg
+                }
+                hints.add("当前应用：$appName")
+            }
+
+            if (hints.isNotEmpty()) {
+                // 有hint信息，用它作为上下文
+                val hintContext = hints.joinToString("\n")
+                isAiProcessing = true
+                updateStatus("🤖 AI正在根据应用信息生成建议...")
+                setStatusDot("processing")
+                val prompt = buildAiReplyPrompt("【应用信息】\n$hintContext", aiReplyStyle)
+                executeAiPrompt(prompt, ic)
+                return
+            }
+
+            // 完全无法获取上下文
+            updateStatus("💡 输入框为空且无法获取聊天上下文。\n提示：在微信等聊天App中，先点击输入框让光标出现，再点击AI写作按钮。\n或长按切换写作风格后重试。")
             return
         }
 
         isAiProcessing = true
         updateStatus("🤖 AI正在分析上下文并生成建议...")
         setStatusDot("processing")
-
-        // 构建AI提示
-        val context = buildContext(textBefore, textAfter)
         val prompt = buildAiReplyPrompt(context, aiReplyStyle)
+        executeAiPrompt(prompt, ic)
+    }
 
-        // 调用润色API进行AI回复生成
+    private fun executeAiPrompt(prompt: String, ic: android.view.inputmethod.InputConnection) {
         val polishService = typelessEngine?.getPolishService()
         Thread {
             try {
@@ -391,7 +456,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     isAiProcessing = false
                     setStatusDot("idle")
                     if (result != null && result.isNotEmpty()) {
-                        // 将AI生成的回复上屏
                         ic.commitText(result, 1)
                         updateStatus("✅ AI已生成建议内容（$aiReplyStyle 风格）")
                     } else {
@@ -654,11 +718,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             try {
                 val result = polishService?.polishWithPrompt(prompt)
                 Handler(Looper.getMainLooper()).post {
-                    if (result != null && result.isNotEmpty() && result != magicOriginalText) {
-                        replaceInputText(result)
-                        updateStatus("✅ 修改完成")
+                    if (result != null && result.isNotEmpty()) {
+                        if (result == magicOriginalText) {
+                            updateStatus("⚠️ 修改结果与原文相同，可能指令不够明确")
+                        } else {
+                            replaceInputText(result)
+                            updateStatus("✅ 修改完成")
+                        }
                     } else {
-                        updateStatus("⚠️ 修改结果为空或无变化")
+                        updateStatus("⚠️ API返回为空，请检查网络或稍后重试")
                     }
                 }
             } catch (e: Exception) {

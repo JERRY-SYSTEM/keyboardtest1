@@ -146,8 +146,14 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showVersion() {
         try {
-            val pInfo = packageManager.getPackageInfo(packageName, 0)
-            tvVersion.text = "版本: ${pInfo.versionName}"
+            val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            val versionName = pInfo.versionName ?: "未知"
+            tvVersion.text = "版本: $versionName"
         } catch (_: Exception) {
             tvVersion.text = "版本: 未知"
         }

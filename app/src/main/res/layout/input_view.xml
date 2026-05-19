@@ -148,7 +148,7 @@
             android:layout_marginEnd="3dp"
             app:cornerRadius="8dp" />
 
-        <!-- 剪贴板按钮（AI自动回复） -->
+        <!-- 自动写作按钮（AI写作） -->
         <ImageButton
             android:id="@+id/btn_clipboard"
             android:layout_width="0dp"
@@ -157,7 +157,8 @@
             android:src="@android:drawable/ic_menu_edit"
             android:background="@drawable/button_background"
             android:scaleType="centerInside"
-            android:contentDescription="AI自动回复"
+            android:padding="10dp"
+            android:contentDescription="AI自动写作"
             android:layout_marginEnd="3dp" />
 
         <!-- 麦克风/语音按钮 -->
@@ -166,7 +167,7 @@
             android:layout_width="0dp"
             android:layout_height="50dp"
             android:layout_weight="3"
-            android:text="🎤 点击开始说话"
+            android:text="🎙️ 点击开始说话"
             android:textSize="13sp"
             android:textColor="#333333"
             android:backgroundTint="#D0D0D0"
