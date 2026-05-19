@@ -147,7 +147,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun showVersion() {
         try {
             val pInfo = packageManager.getPackageInfo(packageName, 0)
-            tvVersion.text = "版本: ${pInfo.versionName} (${pInfo.versionCode})"
+            tvVersion.text = "版本: ${pInfo.versionName}"
         } catch (_: Exception) {
             tvVersion.text = "版本: 未知"
         }
