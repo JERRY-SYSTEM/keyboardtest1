@@ -44,10 +44,12 @@ jobs:
         id: version
         run: |
           # Format: v1.0.{commit_count}
+          # versionName = 1.0.{commit_count} (用户可见版本号)
+          # versionCode = commit_count (内部递增整数)
           COUNT=$(git rev-list --count HEAD)
           VERSION="1.0.$COUNT"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          # Update versionCode/versionName in build.gradle
+          # 确保build.gradle中的版本号与Actions一致
           sed -i "s/versionCode .*/versionCode $COUNT/" app/build.gradle
           sed -i 's/versionName .*/versionName "'$VERSION'"/' app/build.gradle
           echo "VERSION=$VERSION" >> $GITHUB_ENV
