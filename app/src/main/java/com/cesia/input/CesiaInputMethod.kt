@@ -208,7 +208,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun applyKeyboardTheme() {
         if (isDarkTheme) {
             keyboardView.setBackgroundColor(0xFF0F0F23.toInt())
-            keyboardView.keyTextColor = 0xFFE0E0E0.toInt()
             // 状态栏
             (statusText.parent as? View)?.setBackgroundColor(0xFF1A1A2E.toInt())
             statusText.setTextColor(0xFFE0E0E0.toInt())
@@ -222,7 +221,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             (btnClipboard.parent as? View)?.setBackgroundColor(0xFF1A1A2E.toInt())
         } else {
             keyboardView.setBackgroundColor(0xFFE8E8E8.toInt())
-            keyboardView.keyTextColor = 0xFF333333.toInt()
             (statusText.parent as? View)?.setBackgroundColor(0xFFEEEEEE.toInt())
             statusText.setTextColor(0xFF555555.toInt())
             candidateBar.setBackgroundColor(0xFFF0F0F0.toInt())
