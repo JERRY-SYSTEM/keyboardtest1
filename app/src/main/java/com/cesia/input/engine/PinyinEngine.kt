@@ -61,7 +61,9 @@ class PinyinEngine(context: Context) {
                     val jsonStr = java.io.File(phrasesPath).readText()
                     val json = JSONObject(jsonStr)
                     for (key in json.keys()) {
-                        phraseMap[key] = json.getString(key)
+                        val value = json.getString(key)
+                        // Store as-is: either "词1,词2" compact format or raw string
+                        phraseMap[key] = value
                     }
                     Log.d("PinyinEngine", "外部词组字典加载完成: ${phraseMap.size} 个词组条目")
                     loaded = true
@@ -230,16 +232,20 @@ class PinyinEngine(context: Context) {
             exactChars.forEach { allCandidates.add(it.toString()) }
         }
 
-        // 2. 词组精确匹配
+        // 2. 词组精确匹配（支持逗号分隔的多个词组）
         val exactPhrase = phraseMap[pinyin]
         if (exactPhrase != null) {
-            allCandidates.add(exactPhrase)
+            exactPhrase.split(",").forEach { phrase ->
+                if (phrase.isNotEmpty()) allCandidates.add(phrase)
+            }
         }
 
         // 3. 前缀匹配词组（补充）
         for ((key, value) in phraseMap) {
             if (key.startsWith(pinyin) && key != pinyin) {
-                allCandidates.add(value)
+                value.split(",").forEach { phrase ->
+                    if (phrase.isNotEmpty()) allCandidates.add(phrase)
+                }
             }
         }
 

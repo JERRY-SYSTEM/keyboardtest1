@@ -831,7 +831,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     currentInputConnection?.deleteSurroundingText(1, 0)
                 }
             }
-            -200 -> { // 发送
+            -200 -> { // 发送（纸飞机）
                 // 如果有未上屏的拼音，先上屏
                 if (isChineseMode && pinyinEngine.isComposing()) {
                     val text = if (pinyinEngine.hasCandidates()) {
@@ -843,8 +843,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     pinyinEngine.clear()
                     updateCandidateBar()
                 }
-                // 执行发送动作
-                currentInputConnection?.performEditorAction(EditorInfo.IME_ACTION_SEND)
+                // 发送：先尝试IME_ACTION_SEND，如果当前App不支持则发送Enter键
+                val ic = currentInputConnection ?: return@onKey
+                val editorInfo = currentInputEditorInfo
+                val imeOptions = editorInfo?.imeOptions ?: 0
+                val action = imeOptions and android.view.inputmethod.EditorInfo.IME_MASK_ACTION
+                val hasSendAction = action == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                        || action == android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                if (hasSendAction) {
+                    ic.performEditorAction(action)
+                } else {
+                    // 回退：发送Enter键事件（换行）
+                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                    ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                }
             }
             Keyboard.KEYCODE_DELETE -> {
                 if (isChineseMode) {

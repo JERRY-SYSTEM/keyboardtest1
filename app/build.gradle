@@ -40,6 +40,12 @@ android {
 
     // 签名配置
     signingConfigs {
+        debug {
+            storeFile file("/tmp/cesia-debug.keystore")
+            storePassword "cesiacesia"
+            keyAlias "cesiadebug"
+            keyPassword "cesiacesia"
+        }
         release {
             storeFile file("cesia-release.keystore")
             storePassword System.getenv("KEYSTORE_PASSWORD") ?: "cesia2026"

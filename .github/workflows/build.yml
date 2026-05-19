@@ -30,23 +30,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Generate debug keystore
+      - name: Restore debug keystore
         run: |
-          # 生成Android debug keystore（如果不存在）
-          KEYSTORE_PATH="$HOME/.android/debug.keystore"
-          if [ ! -f "$KEYSTORE_PATH" ]; then
-            mkdir -p "$HOME/.android"
-            keytool -genkey -v \
-              -keystore "$KEYSTORE_PATH" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
-          echo "Debug keystore ready at $KEYSTORE_PATH"
+          # 从GitHub Secret恢复固定keystore，确保每次构建签名一致
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > /tmp/cesia-debug.keystore
+          echo "Keystore restored"
 
       - name: Build APK with Gradle
         run: ./gradlew assembleDebug --no-daemon
