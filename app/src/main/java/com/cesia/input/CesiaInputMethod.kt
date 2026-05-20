@@ -759,38 +759,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      * 润色识别完成的文字
      */
     private fun polishRecognizedText(text: String) {
-        val polishService = typelessEngine?.getPolishService()
-        // polishText 是 suspend 函数，需要在协程中调用
-        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
-        scope.launch {
-            try {
-                val result = polishService?.polishText(text)
-                Handler(Looper.getMainLooper()).post {
-                    isProcessingResult = false
-                    val finalText = when (result) {
-                        is com.cesia.input.polish.PolishService.PolishResult.Success -> {
-                            val cleaned = result.polishedText.trim()
-                            if (cleaned.isNotEmpty()) cleaned else text
-                        }
-                        else -> text
-                    }
-                    // 上屏
-                    currentInputConnection?.commitText(finalText, 1)
-                    // 统计
-                    val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0
-                    statsManager.addRecord(text, finalText, duration)
-                    updateStatus("✅ 润色完成")
-                    resetToIdle()
-                }
-            } catch (e: Exception) {
-                Handler(Looper.getMainLooper()).post {
-                    isProcessingResult = false
-                    // 润色失败，上屏原文
-                    currentInputConnection?.commitText(text, 1)
-                    updateStatus("⚠️ 润色失败，已上屏原文")
-                    resetToIdle()
-                }
-            }
+        isProcessingResult = true
+        typelessEngine?.polishTextAsync(text) { finalText ->
+            isProcessingResult = false
+            // 上屏
+            currentInputConnection?.commitText(finalText, 1)
+            // 统计
+            val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0
+            statsManager.addRecord(text, finalText, duration)
+            updateStatus("✅ 润色完成")
+            resetToIdle()
         }
     }
 

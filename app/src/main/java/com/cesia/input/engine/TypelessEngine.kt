@@ -233,6 +233,30 @@ class TypelessEngine(
     /** 获取 PolishService（供魔法模式使用） */
     fun getPolishService(): PolishService? = polishService
 
+    /** 润色文字并上屏（供外部调用，自动处理协程） */
+    fun polishTextAsync(text: String, callback: (String) -> Unit) {
+        engineScope.launch {
+            try {
+                val result = polishService?.polishText(text)
+                val finalText = when (result) {
+                    is PolishService.PolishResult.Success -> {
+                        val cleaned = cleanPolishedText(result.polishedText)
+                        if (cleaned.isNotEmpty()) cleaned else text
+                    }
+                    else -> text
+                }
+                withContext(Dispatchers.Main) {
+                    callback(finalText)
+                }
+            } catch (e: Exception) {
+                log("❌ 润色异常: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    callback(text)
+                }
+            }
+        }
+    }
+
     /** 更新 API URL */
     fun updateApiUrl(url: String) { polishService?.updateApiUrl(url) }
 
