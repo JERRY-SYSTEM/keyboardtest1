@@ -107,8 +107,11 @@ class TypelessEngine(
     }
 
     /** 初始化引擎 */
-    fun initialize() {
+    fun initialize(apiKey: String? = null) {
         polishService = PolishService(engineScope)
+        if (!apiKey.isNullOrEmpty()) {
+            polishService?.updateApiKey(apiKey)
+        }
         fallbackRecognizer = FallbackRecognizer(context)
 
         if (fallbackRecognizer?.init() == true) {

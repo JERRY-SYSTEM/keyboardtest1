@@ -104,13 +104,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isDarkTheme = false
 
     // 设置
-    private var apiUrl = "https://typeless-ai-service.vercel.app/api/polish"
+    private var apiUrl = "https://openrouter.ai/api/v1/chat/completions"
 
     companion object {
         const val PREF_API_URL = "api_url"
         const val PREF_THEME_MODE = "theme_mode"
         const val PREF_AI_STYLE = "ai_reply_style"
-        const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
+        const val PREF_OPENROUTER_KEY = "openrouter_api_key"
+        const val DEFAULT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
         const val KEYCODE_SWITCH_SYMBOL = -100
         const val KEYCODE_SWITCH_LANG = -101
         const val THEME_LIGHT = 0
@@ -251,7 +252,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                 }
             }
-            engine.initialize()
+            engine.initialize(getOpenRouterApiKey())
         }
 
         loadSettings()
@@ -590,9 +591,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
             apiUrl = prefs.getString(PREF_API_URL, DEFAULT_API_URL) ?: DEFAULT_API_URL
             typelessEngine?.updateApiUrl(apiUrl)
+            val apiKey = prefs.getString(PREF_OPENROUTER_KEY, "") ?: ""
+            typelessEngine?.getPolishService()?.updateApiKey(apiKey)
         } catch (_: Exception) {
             apiUrl = DEFAULT_API_URL
         }
+    }
+
+    private fun getOpenRouterApiKey(): String {
+        val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+        return prefs.getString(PREF_OPENROUTER_KEY, "") ?: ""
     }
 
     // ======================== 中/英切换 ========================
@@ -608,12 +616,30 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             pinyinEngine.clear()
             candidateBar.visibility = View.GONE
             updateStatus("中文拼音模式")
+            // 更新中/英切换按钮标签：中文模式下显示"英"（点击切英文）
+            updateLangSwitchKeyLabel("英")
         } else {
             // 切换到英文模式
             pinyinEngine.clear()
             candidateBar.visibility = View.GONE
             updateStatus("英文模式")
+            // 更新中/英切换按钮标签：英文模式下显示"中"（点击切中文）
+            updateLangSwitchKeyLabel("中")
         }
+    }
+
+    /**
+     * 更新中/英切换键的显示文字
+     */
+    private fun updateLangSwitchKeyLabel(label: String) {
+        val keyboard = currentKeyboard ?: return
+        for (key in keyboard.keys) {
+            if (key.codes.isNotEmpty() && key.codes[0] == KEYCODE_SWITCH_LANG) {
+                key.label = label
+                break
+            }
+        }
+        keyboardView.invalidateAllKeys()
     }
 
     // ======================== 中文拼音输入处理 ========================

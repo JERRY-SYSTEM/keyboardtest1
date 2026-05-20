@@ -33,6 +33,7 @@ import java.util.*
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var etApiUrl: TextInputEditText
+    private lateinit var etApiKey: TextInputEditText
     private lateinit var etTestText: TextInputEditText
     private lateinit var btnSave: MaterialButton
     private lateinit var btnReset: MaterialButton
@@ -61,6 +62,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnCloudBackup: Button
     private lateinit var tvDictInfo: TextView
 
+    // 检查更新
+    private lateinit var btnCheckUpdate: Button
+    private lateinit var vUpdateDot: View
+
     private val prefs by lazy { getSharedPreferences("cesia_settings", MODE_PRIVATE) }
 
     private val testClient = OkHttpClient.Builder()
@@ -69,7 +74,7 @@ class SettingsActivity : AppCompatActivity() {
 
     companion object {
         const val PREF_API_URL = "api_url"
-        const val DEFAULT_API_URL = "https://typeless-ai-service.vercel.app/api/polish"
+        const val DEFAULT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
         const val PERMISSION_REQUEST_CODE = 1001
         const val PREF_THEME_MODE = "theme_mode"
         const val THEME_LIGHT = 0
@@ -97,6 +102,9 @@ class SettingsActivity : AppCompatActivity() {
         updateThemeUI()
 
         checkAndRequestPermission()
+
+        // 每天自动检查一次更新
+        checkUpdateDaily()
     }
 
     private fun applyTheme() {
@@ -110,6 +118,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun initViews() {
         etApiUrl = findViewById(R.id.et_api_url)
+        etApiKey = findViewById(R.id.et_openrouter_key)
         etTestText = findViewById(R.id.et_test_text)
         btnSave = findViewById(R.id.btn_save)
         btnReset = findViewById(R.id.btn_reset)
@@ -140,6 +149,12 @@ class SettingsActivity : AppCompatActivity() {
             btnExportDict = findViewById(R.id.btn_export_dict)
             btnCloudBackup = findViewById(R.id.btn_cloud_backup)
             tvDictInfo = findViewById(R.id.tv_dict_info)
+        } catch (_: Exception) {}
+
+        // 检查更新
+        try {
+            btnCheckUpdate = findViewById(R.id.btn_check_update)
+            vUpdateDot = findViewById(R.id.v_update_dot)
         } catch (_: Exception) {}
     }
 
@@ -201,6 +216,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun loadSettings() {
         etApiUrl.setText(prefs.getString(PREF_API_URL, DEFAULT_API_URL))
+        etApiKey.setText(prefs.getString("openrouter_api_key", ""))
         appendLog("已加载设置")
     }
 
@@ -211,9 +227,14 @@ class SettingsActivity : AppCompatActivity() {
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 etApiUrl.error = "URL 必须以 http:// 或 https:// 开头"; return@setOnClickListener
             }
-            prefs.edit().putString(PREF_API_URL, url).apply()
+            val apiKey = etApiKey.text?.toString()?.trim() ?: ""
+            prefs.edit()
+                .putString(PREF_API_URL, url)
+                .putString("openrouter_api_key", apiKey)
+                .apply()
             tvStatus.text = "✓ 设置已保存"
             appendLog("💾 API: $url")
+            appendLog("🔑 API Key: ${if (apiKey.isNotEmpty()) "已设置(${apiKey.take(8)}...)" else "未设置"}")
             Toast.makeText(this, "设置已保存 ✓", Toast.LENGTH_SHORT).show()
         }
 
@@ -239,6 +260,9 @@ class SettingsActivity : AppCompatActivity() {
         btnImportDict?.setOnClickListener { showImportDialog() }
         btnExportDict?.setOnClickListener { exportDict() }
         btnCloudBackup?.setOnClickListener { showCloudBackupDialog() }
+
+        // 检查更新
+        btnCheckUpdate?.setOnClickListener { checkForUpdates() }
     }
 
     // ======================== 主题切换 ========================
@@ -614,56 +638,82 @@ class SettingsActivity : AppCompatActivity() {
 
         Thread {
             try {
-                val json = JSONObject().apply {
-                    put("text", inputText)
-                    put("language", "zh")
-                }
                 val apiUrl = etApiUrl.text?.toString()?.trim() ?: DEFAULT_API_URL
-                val requestBody = json.toString().toRequestBody("application/json".toMediaType())
+                val isOr = apiUrl.contains("openrouter.ai")
 
-                // 带重试的请求（最多3次，遇到429等待后重试）
-                var response: okhttp3.Response? = null
-                var lastBody = ""
-                for (attempt in 1..3) {
-                    val request = Request.Builder()
+                val request = if (isOr) {
+                    // OpenRouter 格式
+                    val messages = JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("role", "system")
+                            put("content", "你是一个中文文本润色助手。请将用户输入的口语化文字润色为通顺、简洁的书面语。只输出润色后的文字，不要解释。")
+                        })
+                        put(JSONObject().apply {
+                            put("role", "user")
+                            put("content", inputText)
+                        })
+                    }
+                    val json = JSONObject().apply {
+                        put("model", "google/gemma-2-9b-it:free")
+                        put("messages", messages)
+                        put("temperature", 0.3)
+                        put("max_tokens", 512)
+                    }
+                    val apiKey = etApiKey.text?.toString()?.trim() ?: ""
+                    Request.Builder()
                         .url(apiUrl)
-                        .addHeader("User-Agent", "CesiaIME/1.0")
-                        .addHeader("Accept", "application/json")
-                        .post(requestBody)
+                        .post(json.toString().toRequestBody("application/json".toMediaType()))
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Authorization", "Bearer $apiKey")
+                        .addHeader("HTTP-Referer", "https://github.com/harviex/cesia-input-method")
                         .build()
-                    response = testClient.newCall(request).execute()
-                    lastBody = response.body?.string() ?: ""
-                    // 如果不是429，直接跳出
-                    if (response.code != 429) break
-                    // 429 限流，等待后重试
-                    appendLog("第 $attempt 次请求被限流(429)，等待 ${attempt * 2} 秒后重试...")
-                    Thread.sleep(attempt * 2000L)
-                    response.close()
+                } else {
+                    // 自定义 API 格式
+                    val json = JSONObject().apply {
+                        put("text", inputText)
+                        put("language", "zh")
+                    }
+                    Request.Builder()
+                        .url(apiUrl)
+                        .post(json.toString().toRequestBody("application/json".toMediaType()))
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("User-Agent", "CesiaIME/1.0")
+                        .build()
                 }
 
-                val body = lastBody
-                val respCode = response?.code ?: 0
+                val response = testClient.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+                val respCode = response.code
 
                 runOnUiThread {
                     if (respCode in 200..299) {
                         try {
                             val respJson = JSONObject(body)
-                            val polished = respJson.optString("polished_text", "")
+                            val polished = if (isOr) {
+                                // OpenRouter 响应格式
+                                val choices = respJson.optJSONArray("choices")
+                                if (choices != null && choices.length() > 0) {
+                                    choices.getJSONObject(0).getJSONObject("message").getString("content").trim()
+                                } else ""
+                            } else {
+                                // 自定义 API 响应格式
+                                respJson.optString("polished_text", "")
+                            }
                             if (polished.isNotEmpty() && polished != inputText) {
                                 etTestText.setText(polished)
                                 tvStatus.text = "✅ API 润色成功"
                                 appendLog("润色成功: $polished")
                             } else {
                                 tvStatus.text = "⚠️ API 返回但内容无变化"
-                                appendLog("API 返回无变化: $body")
+                                appendLog("API 返回无变化: ${body.take(200)}")
                             }
                         } catch (e: Exception) {
                             tvStatus.text = "✅ API 成功 (原始响应)"
-                            appendLog("API 响应: $body")
+                            appendLog("API 响应: ${body.take(200)}")
                         }
                     } else {
                         tvStatus.text = "❌ API 错误 $respCode"
-                        appendLog("API 失败 ($respCode): $body")
+                        appendLog("API 失败 ($respCode): ${body.take(200)}")
                     }
                     btnTestApi.isEnabled = true
                     btnTestApi.text = "📡 测试 API 润色"
@@ -713,5 +763,93 @@ class SettingsActivity : AppCompatActivity() {
             val newLog = (current + "\n[$timestamp] $msg").lines().takeLast(50).joinToString("\n")
             tvLog.text = newLog
         }
+    }
+
+    // ======================== 检查更新 ========================
+
+    private fun checkUpdateDaily() {
+        val lastCheck = prefs.getLong("last_update_check", 0)
+        val now = System.currentTimeMillis()
+        if (now - lastCheck > 24 * 60 * 60 * 1000L) {
+            checkForUpdates()
+        }
+    }
+
+    private fun checkForUpdates() {
+        prefs.edit().putLong("last_update_check", System.currentTimeMillis()).apply()
+        btnCheckUpdate?.isEnabled = false
+        btnCheckUpdate?.text = "检查中..."
+        appendLog("🔍 检查更新...")
+
+        Thread {
+            try {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val request = Request.Builder()
+                    .url("https://api.github.com/repos/harviex/cesia-input-method/releases/latest")
+                    .addHeader("User-Agent", "CesiaIME/1.0")
+                    .get()
+                    .build()
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+
+                runOnUiThread {
+                    btnCheckUpdate?.isEnabled = true
+                    btnCheckUpdate?.text = "检查更新"
+                }
+
+                if (!response.isSuccessful) {
+                    appendLog("❌ 检查更新失败: ${response.code}")
+                    return@Thread
+                }
+
+                val json = JSONObject(body)
+                val latestVersion = json.optString("tag_name", "").removePrefix("v")
+                val releaseUrl = json.optString("html_url", "")
+                val releaseNotes = json.optString("body", "")
+
+                val currentVersion = try {
+                    val pInfo = packageManager.getPackageInfo(packageName, 0)
+                    pInfo.versionName ?: "0"
+                } catch (_: Exception) { "0" }
+
+                appendLog("当前版本: $currentVersion, 最新版本: $latestVersion")
+
+                runOnUiThread {
+                    if (latestVersion.isNotEmpty() && latestVersion != currentVersion) {
+                        vUpdateDot?.visibility = View.VISIBLE
+                        showUpdateDialog(latestVersion, releaseUrl, releaseNotes)
+                    } else {
+                        vUpdateDot?.visibility = View.GONE
+                        tvStatus.text = "✅ 已是最新版本 ($currentVersion)"
+                        appendLog("✅ 已是最新版本")
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    btnCheckUpdate?.isEnabled = true
+                    btnCheckUpdate?.text = "检查更新"
+                    appendLog("❌ 检查更新异常: ${e.message}")
+                }
+            }
+        }.start()
+    }
+
+    private fun showUpdateDialog(version: String, url: String, notes: String) {
+        try {
+            AlertDialog.Builder(this)
+                .setTitle("🎉 发现新版本 $version")
+                .setMessage("当前版本已不是最新。\n\n更新内容:\n${notes.take(500)}")
+                .setPositiveButton("前往下载") { _, _ ->
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton("稍后", null)
+                .show()
+        } catch (_: Exception) {}
     }
 }

@@ -6,17 +6,20 @@ import kotlinx.coroutines.flow.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * 调用 Typeless AI 润色 API 的服务
- * 支持 WeNet VAD 模式下分片上传 + 整段润色两种模式
+ * 调用 AI 润色 API 的服务
+ * 支持两种后端：
+ * 1. OpenRouter (默认) — 免费模型，不限流
+ * 2. 自定义 API — 兼容 {text, language} -> {polished_text} 格式
  */
 class PolishService(
     private val scope: CoroutineScope,
-    private var apiUrl: String = "https://typeless-ai-service.vercel.app/api/polish"
+    private var apiUrl: String = DEFAULT_OPENROUTER_URL
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -37,49 +40,17 @@ class PolishService(
     private val _results = MutableSharedFlow<PolishResult>(replay = 0)
     val results = _results.asSharedFlow()
 
-    /**
-     * 同步调用润色 API
-     * @param text 识别出的原始文本
-     * @return 润色后的结果
-     */
+    /** 同步调用润色 API */
     suspend fun polishText(text: String): PolishResult = withContext(Dispatchers.IO) {
         if (text.isBlank() || text.length < 2) {
             return@withContext PolishResult.EmptyInput
         }
 
         try {
-            val json = JSONObject().apply {
-                put("text", text)
-                put("language", "zh")
-            }
-
-            val requestBody = json.toString()
-                .toRequestBody("application/json".toMediaType())
-
-            val request = Request.Builder()
-                .url(apiUrl)
-                .post(requestBody)
-                .addHeader("Content-Type", "application/json")
-                .build()
-
-            Log.d("PolishService", "请求 API: $apiUrl, 文本长度: ${text.length}")
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string() ?: "未知错误"
-                    Log.e("PolishService", "API 请求失败: ${response.code} - $errorBody")
-                    return@withContext PolishResult.Error(
-                        "API 错误(${response.code}): ${errorBody.take(200)}",
-                        isNetworkError = response.code in 400..599
-                    )
-                }
-
-                val body = response.body?.string() ?: return@withContext PolishResult.Error("响应为空")
-
-                // 解析响应
-                val result = parsePolishResponse(body)
-                Log.d("PolishService", "润色结果: $result")
-                result
+            if (isOpenRouterUrl(apiUrl)) {
+                polishWithOpenRouter(text)
+            } else {
+                polishWithCustomApi(text)
             }
         } catch (e: IOException) {
             Log.e("PolishService", "网络错误", e)
@@ -90,20 +61,122 @@ class PolishService(
         }
     }
 
-    /**
-     * 使用 WeNet 分片识别 + 流式上传
-     * 适用于需要实时反馈的场景
-     */
-    suspend fun polishChunks(chunks: List<String>): PolishResult = withContext(Dispatchers.IO) {
-        if (chunks.isEmpty()) return@withContext PolishResult.EmptyInput
-        val fullText = chunks.joinToString("")
-        return@withContext polishText(fullText)
+    /** 判断是否为 OpenRouter URL */
+    private fun isOpenRouterUrl(url: String): Boolean {
+        return url.contains("openrouter.ai")
     }
 
-    /**
-     * 解析润色 API 响应
-     * 支持多种响应格式
-     */
+    /** 调用 OpenRouter API */
+    private fun polishWithOpenRouter(text: String): PolishResult {
+        val apiKey = getOpenRouterApiKey()
+        if (apiKey.isNullOrEmpty()) {
+            return PolishResult.Error("OpenRouter API Key 未配置")
+        }
+
+        val systemPrompt = "你是一个中文文本润色助手。请将用户输入的口语化文字润色为通顺、简洁的书面语。只输出润色后的文字，不要解释，不要添加任何前缀或后缀。"
+
+        val messages = JSONArray().apply {
+            put(JSONObject().apply {
+                put("role", "system")
+                put("content", systemPrompt)
+            })
+            put(JSONObject().apply {
+                put("role", "user")
+                put("content", text)
+            })
+        }
+
+        val json = JSONObject().apply {
+            put("model", OPENROUTER_MODEL)
+            put("messages", messages)
+            put("temperature", 0.3)
+            put("max_tokens", 512)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(apiUrl)
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("HTTP-Referer", "https://github.com/harviex/cesia-input-method")
+            .addHeader("X-Title", "Cesia Input Method")
+            .build()
+
+        Log.d("PolishService", "OpenRouter 请求: ${text.take(50)}...")
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string() ?: "未知错误"
+                Log.e("PolishService", "OpenRouter 错误: ${response.code} - $errorBody")
+                return PolishResult.Error("API 错误(${response.code}): ${errorBody.take(200)}")
+            }
+
+            val respBody = response.body?.string()
+                ?: return PolishResult.Error("响应为空")
+
+            Log.d("PolishService", "OpenRouter 响应: ${respBody.take(200)}")
+
+            val respJson = JSONObject(respBody)
+            val choices = respJson.optJSONArray("choices")
+            if (choices != null && choices.length() > 0) {
+                val content = choices.getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+
+                if (content.isNotEmpty()) {
+                    return PolishResult.Success(text, content)
+                }
+            }
+
+            // 尝试其他格式
+            val content = respJson.optString("content", "")
+            if (content.isNotEmpty()) {
+                return PolishResult.Success(text, content)
+            }
+
+            return PolishResult.Error("OpenRouter 返回格式异常: ${respBody.take(200)}")
+        }
+    }
+
+    /** 调用自定义 API（兼容旧格式） */
+    private fun polishWithCustomApi(text: String): PolishResult {
+        val json = JSONObject().apply {
+            put("text", text)
+            put("language", "zh")
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(apiUrl)
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("User-Agent", "CesiaIME/1.0")
+            .build()
+
+        Log.d("PolishService", "自定义 API 请求: $apiUrl, 文本长度: ${text.length}")
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string() ?: "未知错误"
+                Log.e("PolishService", "API 请求失败: ${response.code} - $errorBody")
+                return PolishResult.Error(
+                    "API 错误(${response.code}): ${errorBody.take(200)}",
+                    isNetworkError = response.code in 400..599
+                )
+            }
+
+            val respBody = response.body?.string()
+                ?: return PolishResult.Error("响应为空")
+
+            val result = parsePolishResponse(respBody)
+            Log.d("PolishService", "润色结果: $result")
+            result
+        }
+    }
+
+    /** 解析自定义 API 响应 */
     private fun parsePolishResponse(body: String): PolishResult {
         return try {
             val json = JSONObject(body)
@@ -113,12 +186,11 @@ class PolishService(
                 val polished = json.getString("polished_text")
                 val original = json.optString("original", "")
                 val confidence = json.optDouble("confidence", 1.0).toFloat()
-                
-                // 如果 API 返回 placeholder 标记，视为润色失败
+
                 if (isPlaceholder(polished)) {
                     return PolishResult.Error("API 返回空结果 (placeholder)")
                 }
-                
+
                 PolishResult.Success(original, polished, confidence)
             }
             // 格式2: { "result": "..." }
@@ -138,12 +210,11 @@ class PolishService(
                 }
                 PolishResult.Success(body, text)
             }
-            // 格式4: 直接是字符串 — 如果 JSON 没有有效字段，返回错误
+            // 格式4: 直接是字符串
             else {
                 return PolishResult.Error("API 返回格式不可解析")
             }
         } catch (e: Exception) {
-            // 如果不是 JSON，直接作为润色后的文本返回
             val trimmed = body.trim()
             if (isPlaceholder(trimmed)) {
                 return PolishResult.Error("API 返回空结果 (placeholder)")
@@ -152,9 +223,6 @@ class PolishService(
         }
     }
 
-    /**
-     * 检测 API 返回是否为占位符文本
-     */
     private fun isPlaceholder(text: String): Boolean {
         val t = text.trim().lowercase()
         return t == "polished_text" ||
@@ -163,6 +231,18 @@ class PolishService(
                t == "text" ||
                t == "..." ||
                t.isEmpty()
+    }
+
+    /** 获取 OpenRouter API Key */
+    private fun getOpenRouterApiKey(): String? {
+        return _apiKey
+    }
+
+    private var _apiKey: String? = null
+
+    fun updateApiKey(key: String) {
+        _apiKey = key.trim()
+        Log.d("PolishService", "OpenRouter API Key 已更新")
     }
 
     fun updateApiUrl(newUrl: String) {
@@ -177,38 +257,82 @@ class PolishService(
         client.connectionPool.evictAll()
     }
 
-    /**
-     * 魔法模式：使用自定义 prompt 调用 API
-     * 用于语音指令修改文字
-     */
+    /** 魔法模式：使用自定义 prompt 调用 API */
     fun polishWithPrompt(prompt: String): String? {
         return try {
-            val json = JSONObject().apply {
-                put("text", prompt)
-                put("language", "zh")
-            }
-            val requestBody = json.toString()
-                .toRequestBody("application/json".toMediaType())
-            val request = Request.Builder()
-                .url(apiUrl)
-                .post(requestBody)
-                .addHeader("Content-Type", "application/json")
-                .build()
-            Log.d("PolishService", "魔法模式请求: ${prompt.take(100)}")
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.e("PolishService", "魔法模式 API 错误: ${response.code}")
-                    return null
-                }
-                val body = response.body?.string() ?: return null
-                val jsonResp = JSONObject(body)
-                val result = jsonResp.optString("polished_text", "")
-                Log.d("PolishService", "魔法模式结果: ${result.take(100)}")
-                result
+            if (isOpenRouterUrl(apiUrl)) {
+                polishWithPromptOpenRouter(prompt)
+            } else {
+                polishWithPromptCustom(prompt)
             }
         } catch (e: Exception) {
             Log.e("PolishService", "魔法模式异常", e)
             null
         }
+    }
+
+    private fun polishWithPromptOpenRouter(prompt: String): String? {
+        val apiKey = getOpenRouterApiKey() ?: return null
+
+        val messages = JSONArray().apply {
+            put(JSONObject().apply {
+                put("role", "user")
+                put("content", prompt)
+            })
+        }
+
+        val json = JSONObject().apply {
+            put("model", OPENROUTER_MODEL)
+            put("messages", messages)
+            put("temperature", 0.3)
+            put("max_tokens", 512)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(apiUrl)
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("HTTP-Referer", "https://github.com/harviex/cesia-input-method")
+            .addHeader("X-Title", "Cesia Input Method")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val respBody = response.body?.string() ?: return null
+            val respJson = JSONObject(respBody)
+            val choices = respJson.optJSONArray("choices") ?: return null
+            if (choices.length() > 0) {
+                return choices.getJSONObject(0).getJSONObject("message").getString("content").trim()
+            }
+            return null
+        }
+    }
+
+    private fun polishWithPromptCustom(prompt: String): String? {
+        val json = JSONObject().apply {
+            put("text", prompt)
+            put("language", "zh")
+        }
+        val requestBody = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(apiUrl)
+            .post(requestBody)
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val body = response.body?.string() ?: return null
+            val jsonResp = JSONObject(body)
+            return jsonResp.optString("polished_text", "")
+        }
+    }
+
+    companion object {
+        const val DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+        const val OPENROUTER_MODEL = "google/gemma-2-9b-it:free"
+        const val DEFAULT_CUSTOM_URL = "https://typeless-ai-service.vercel.app/api/polish"
     }
 }

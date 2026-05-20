@@ -253,7 +253,23 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="textUri"
-                android:text="https://typeless-ai-service.vercel.app/api/polish" />
+                android:text="https://openrouter.ai/api/v1/chat/completions" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- OpenRouter API Key -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="OpenRouter API Key (sk-or-v1-...)"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_openrouter_key"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword"
+                android:text="" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- 测试文本输入框 -->
