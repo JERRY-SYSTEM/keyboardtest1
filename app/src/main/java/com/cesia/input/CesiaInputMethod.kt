@@ -594,15 +594,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             // 显示拼音串在状态栏
             updateStatus("拼音: $pinyin")
         } else if (c == ' ') {
-            // 空格：选择第一个候选词或直接输入空格
-            if (pinyinEngine.hasCandidates()) {
-                val selected = pinyinEngine.selectCandidate(0)
-                currentInputConnection?.commitText(selected, 1)
+            // 空格：选择第一个候选词上屏
+            if (pinyinEngine.isComposing()) {
+                if (pinyinEngine.hasCandidates()) {
+                    // 有候选词：选择第一个候选词上屏
+                    val selected = pinyinEngine.selectCandidate(0)
+                    currentInputConnection?.commitText(selected, 1)
+                } else {
+                    // 没有候选词：将当前拼音串作为普通文字上屏
+                    val pinyin = pinyinEngine.getCurrentPinyin()
+                    currentInputConnection?.commitText(pinyin, 1)
+                }
+                pinyinEngine.clear()
+                updateCandidateBar()
             } else {
+                // 没有输入拼音，直接输入空格
                 currentInputConnection?.commitText(" ", 1)
             }
-            pinyinEngine.clear()
-            updateCandidateBar()
         } else {
             // 其他字符（数字、标点等）：如果有候选词先上屏，再输出字符
             if (pinyinEngine.isComposing()) {
