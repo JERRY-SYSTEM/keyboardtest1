@@ -352,82 +352,60 @@
             android:padding="10dp"
             android:layout_marginBottom="8dp" />
 
-        <Button
-            android:id="@+id/btn_download_dict"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="📥 下载最新词库"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_marginBottom="4dp" />
-
+        <!-- 词库按钮：一行四个 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="4dp">
+            android:layout_marginBottom="16dp">
+
+            <Button
+                android:id="@+id/btn_download_dict"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="📥下载"
+                android:textSize="11sp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginEnd="2dp" />
 
             <Button
                 android:id="@+id/btn_import_dict"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="📂 导入词库"
+                android:text="📂导入"
+                android:textSize="11sp"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_marginEnd="4dp" />
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="2dp" />
 
             <Button
                 android:id="@+id/btn_export_dict"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="📤 导出词库"
+                android:text="📤导出"
+                android:textSize="11sp"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_marginStart="4dp" />
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="2dp" />
+
+            <Button
+                android:id="@+id/btn_cloud_backup"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="☁️备份"
+                android:textSize="11sp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginStart="2dp" />
         </LinearLayout>
 
-        <Button
-            android:id="@+id/btn_cloud_backup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="☁️ 云端备份/恢复"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_marginBottom="16dp" />
-
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="#E0E0E0"
-            android:layout_marginBottom="16dp" />
-
-        <!-- ==================== OTA 更新 ==================== -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🔄 系统更新"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="从 GitHub Releases 检查并安装最新版本"
-            android:textSize="12sp"
-            android:textColor="#888888"
-            android:layout_marginBottom="8dp" />
-
-        <Button
-            android:id="@+id/btn_update"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="🔄 检查更新"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#E0E0E0"
-            android:layout_marginTop="16dp"
             android:layout_marginBottom="16dp" />
 
         <!-- ==================== 操作按钮 ==================== -->
@@ -453,29 +431,6 @@
                 android:layout_marginStart="8dp"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
         </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#E0E0E0"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp" />
-
-        <!-- ==================== 使用说明 ==================== -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="📋 使用说明"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="1. 切换到 Cesia 输入法\n2. 点击麦克风 🎤 → 说话 → 再次点击停止\n3. 识别结果自动润色后上屏\n\n💡 保持网络畅通，首次使用建议先测试 API 连接"
-            android:textSize="13sp"
-            android:lineSpacingMultiplier="1.4" />
 
         <View
             android:layout_width="match_parent"

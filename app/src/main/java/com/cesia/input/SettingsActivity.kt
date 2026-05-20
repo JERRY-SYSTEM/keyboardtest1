@@ -37,12 +37,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnSave: MaterialButton
     private lateinit var btnReset: MaterialButton
     private lateinit var btnTestApi: MaterialButton
-    private lateinit var btnUpdate: MaterialButton
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
     private lateinit var tvVersion: TextView
-    private lateinit var vUpdateDot: View
-    private lateinit var btnCheckUpdate: Button
     private var tvStatVoiceTime: TextView? = null
     private var tvStatSavedTime: TextView? = null
     private var tvStatVoiceSpeed: TextView? = null
@@ -100,9 +97,6 @@ class SettingsActivity : AppCompatActivity() {
         updateThemeUI()
 
         checkAndRequestPermission()
-
-        // 每日自动检查更新
-        checkUpdateDaily()
     }
 
     private fun applyTheme() {
@@ -120,14 +114,9 @@ class SettingsActivity : AppCompatActivity() {
         btnSave = findViewById(R.id.btn_save)
         btnReset = findViewById(R.id.btn_reset)
         btnTestApi = findViewById(R.id.btn_test_api)
-        btnUpdate = findViewById(R.id.btn_update)
         tvStatus = findViewById(R.id.tv_api_status)
         tvLog = findViewById(R.id.tv_log)
         tvVersion = findViewById(R.id.tv_version)
-        try {
-            vUpdateDot = findViewById(R.id.v_update_dot)
-            btnCheckUpdate = findViewById(R.id.btn_check_update)
-        } catch (_: Exception) {}
         try {
             tvStatVoiceTime = findViewById(R.id.tv_stat_voice_time)
             tvStatSavedTime = findViewById(R.id.tv_stat_saved_time)
@@ -174,11 +163,11 @@ class SettingsActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 pInfo.versionCode.toLong()
             }
-            // 版本号显示：始终显示 versionName，如果异常则显示 versionCode
+            // 版本号显示
             val displayText = when {
-                versionName != null && versionName != "null" && versionName.isNotEmpty() -> "版本: $versionName"
+                !versionName.isNullOrEmpty() && versionName != "null" -> "版本: $versionName"
                 versionCode > 0 -> "版本: 1.0.$versionCode"
-                else -> "版本: 1.0.1" // 兜底
+                else -> "版本: 开发版"
             }
             tvVersion.text = displayText
             Log.d("SettingsActivity", "版本信息: versionName=$versionName, versionCode=$versionCode")
@@ -236,9 +225,6 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         btnTestApi.setOnClickListener { testApiConnection() }
-        btnUpdate?.setOnClickListener { checkForUpdates() }
-        btnCheckUpdate?.setOnClickListener { checkForUpdates() }
-
         btnHistory.setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
@@ -632,16 +618,34 @@ class SettingsActivity : AppCompatActivity() {
                     put("text", inputText)
                     put("language", "zh")
                 }
-                val request = Request.Builder()
-                    .url(etApiUrl.text?.toString()?.trim() ?: DEFAULT_API_URL)
-                    .post(json.toString().toRequestBody("application/json".toMediaType()))
-                    .build()
+                val apiUrl = etApiUrl.text?.toString()?.trim() ?: DEFAULT_API_URL
+                val requestBody = json.toString().toRequestBody("application/json".toMediaType())
 
-                val response = testClient.newCall(request).execute()
-                val body = response.body?.string() ?: "空响应"
+                // 带重试的请求（最多3次，遇到429等待后重试）
+                var response: okhttp3.Response? = null
+                var lastBody = ""
+                for (attempt in 1..3) {
+                    val request = Request.Builder()
+                        .url(apiUrl)
+                        .addHeader("User-Agent", "CesiaIME/1.0")
+                        .addHeader("Accept", "application/json")
+                        .post(requestBody)
+                        .build()
+                    response = testClient.newCall(request).execute()
+                    lastBody = response.body?.string() ?: ""
+                    // 如果不是429，直接跳出
+                    if (response.code != 429) break
+                    // 429 限流，等待后重试
+                    appendLog("第 $attempt 次请求被限流(429)，等待 ${attempt * 2} 秒后重试...")
+                    Thread.sleep(attempt * 2000L)
+                    response.close()
+                }
+
+                val body = lastBody
+                val respCode = response?.code ?: 0
 
                 runOnUiThread {
-                    if (response.isSuccessful) {
+                    if (respCode in 200..299) {
                         try {
                             val respJson = JSONObject(body)
                             val polished = respJson.optString("polished_text", "")
@@ -658,15 +662,15 @@ class SettingsActivity : AppCompatActivity() {
                             appendLog("API 响应: $body")
                         }
                     } else {
-                        tvStatus.text = "❌ API 错误 ${response.code}"
-                        appendLog("API 失败 (${response.code}): $body")
+                        tvStatus.text = "❌ API 错误 $respCode"
+                        appendLog("API 失败 ($respCode): $body")
                     }
                     btnTestApi.isEnabled = true
                     btnTestApi.text = "📡 测试 API 润色"
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    tvStatus.text = "❌ 网络错误"
+                    tvStatus.text = "❌ 网络错误: ${e.message ?: "未知"}"
                     appendLog("API 测试异常: ${e.message}")
                     btnTestApi.isEnabled = true
                     btnTestApi.text = "📡 测试 API 润色"
@@ -674,203 +678,6 @@ class SettingsActivity : AppCompatActivity() {
             }
         }.start()
     }
-
-    // ======================== OTA 更新 ========================
-
-    private fun checkForUpdates() {
-        btnCheckUpdate.isEnabled = false
-        btnCheckUpdate.text = "检查中..."
-        tvStatus.text = "🔄 检查更新..."
-        appendLog("正在检查更新...")
-
-        Thread {
-            try {
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-
-                val request = Request.Builder()
-                    .url("https://api.github.com/repos/harviex/cesia-input-method/releases/latest")
-                    .get()
-                    .build()
-
-                val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: ""
-
-                runOnUiThread {
-                    try {
-                        val json = JSONObject(body)
-                        val remoteVersion = json.getString("tag_name")
-                        val assets = json.getJSONArray("assets")
-                        var downloadUrl = ""
-                        for (i in 0 until assets.length()) {
-                            val asset = assets.getJSONObject(i)
-                            val name = asset.getString("name")
-                            if (name.endsWith(".apk")) {
-                                downloadUrl = asset.getString("browser_download_url")
-                                break
-                            }
-                        }
-                        if (downloadUrl.isEmpty()) {
-                            tvStatus.text = "❌ Release 中未找到 APK 文件"
-                            btnCheckUpdate.isEnabled = true
-                            btnCheckUpdate.text = "检查更新"
-                            return@runOnUiThread
-                        }
-
-                        val pInfo = packageManager.getPackageInfo(packageName, 0)
-                        val currentVersion = pInfo.versionName ?: "0"
-
-                        // 保存检查时间和结果
-                        val hasUpdate = remoteVersion != currentVersion
-                        prefs.edit()
-                            .putLong("last_update_check", System.currentTimeMillis())
-                            .putBoolean("update_available", hasUpdate)
-                            .putString("latest_version", remoteVersion)
-                            .apply()
-
-                        // 更新红点显示
-                        vUpdateDot?.visibility = if (hasUpdate) View.VISIBLE else View.GONE
-
-                        if (hasUpdate) {
-                            tvStatus.text = "🎉 发现新版本: $remoteVersion（当前: $currentVersion）"
-                            appendLog("发现新版本: $remoteVersion")
-                            showUpdateDialog(remoteVersion, downloadUrl)
-                        } else {
-                            tvStatus.text = "✅ 已是最新版本 ($currentVersion)"
-                            appendLog("已是最新版本")
-                        }
-                    } catch (e: Exception) {
-                        tvStatus.text = "❌ 解析失败"
-                        appendLog("解析更新失败: ${e.message}")
-                    }
-                    btnCheckUpdate.isEnabled = true
-                    btnCheckUpdate.text = "检查更新"
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    tvStatus.text = "❌ 网络错误"
-                    appendLog("检查更新失败: ${e.message}")
-                    btnCheckUpdate.isEnabled = true
-                    btnCheckUpdate.text = "检查更新"
-                }
-            }
-        }.start()
-    }
-
-    /**
-     * 每日自动检查更新（如果今天还没检查过）
-     */
-    private fun checkUpdateDaily() {
-        val lastCheck = prefs.getLong("last_update_check", 0)
-        val now = System.currentTimeMillis()
-        val oneDayMs = 24 * 60 * 60 * 1000L
-
-        if (now - lastCheck > oneDayMs) {
-            // 超过一天没检查，自动检查
-            checkForUpdates()
-        } else {
-            // 今天已检查过，根据结果显示红点
-            val hasUpdate = prefs.getBoolean("update_available", false)
-            vUpdateDot?.visibility = if (hasUpdate) View.VISIBLE else View.GONE
-        }
-    }
-
-    private fun showUpdateDialog(version: String, downloadUrl: String) {
-        AlertDialog.Builder(this)
-            .setTitle("发现新版本 $version")
-            .setMessage("是否下载并安装新版本？")
-            .setPositiveButton("下载更新") { _, _ ->
-                downloadAndInstall(downloadUrl)
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun downloadAndInstall(url: String) {
-        tvStatus.text = "⏳ 正在下载..."
-        appendLog("开始下载更新...")
-        btnUpdate.isEnabled = false
-        btnUpdate.text = "下载中..."
-
-        Thread {
-            try {
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-
-                val request = Request.Builder().url(url).get().build()
-                val response = client.newCall(request).execute()
-
-                if (!response.isSuccessful) {
-                    runOnUiThread {
-                        tvStatus.text = "❌ 下载失败"
-                        appendLog("下载失败: HTTP ${response.code}")
-                        btnUpdate.isEnabled = true
-                        btnUpdate.text = "🔄 检查更新"
-                    }
-                    return@Thread
-                }
-
-                val apkBytes = response.body?.bytes()
-                    ?: throw RuntimeException("Empty response")
-
-                val apkFile = java.io.File(cacheDir, "cesia-update.apk")
-                apkFile.writeBytes(apkBytes)
-                appendLog("下载完成: ${apkFile.length() / 1024 / 1024}MB")
-
-                runOnUiThread {
-                    installApk(apkFile)
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    tvStatus.text = "❌ 下载异常"
-                    appendLog("下载异常: ${e.message}")
-                    btnUpdate.isEnabled = true
-                    btnUpdate.text = "🔄 检查更新"
-                }
-            }
-        }.start()
-    }
-
-    private fun installApk(apkFile: java.io.File) {
-        val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            androidx.core.content.FileProvider.getUriForFile(
-                this, "$packageName.fileprovider", apkFile)
-        } else {
-            android.net.Uri.fromFile(apkFile)
-        }
-
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        try {
-            startActivity(intent)
-            tvStatus.text = "✅ 已启动安装程序"
-            appendLog("已启动 APK 安装")
-        } catch (e: Exception) {
-            val fallback = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(android.net.Uri.fromFile(apkFile), "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try {
-                startActivity(fallback)
-                tvStatus.text = "✅ 已启动安装程序"
-                appendLog("已启动 APK 安装")
-            } catch (e2: Exception) {
-                tvStatus.text = "❌ 安装失败: ${e2.message}"
-                appendLog("安装失败: ${e2.message}")
-            }
-        }
-
-        btnUpdate.isEnabled = true
-        btnUpdate.text = "🔄 检查更新"
-    }
-
     // ======================== 统计 & 日志 ========================
 
     override fun onResume() {

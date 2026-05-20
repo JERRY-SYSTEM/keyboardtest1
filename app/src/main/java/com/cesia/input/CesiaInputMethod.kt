@@ -86,6 +86,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var longPressRunnable: Runnable? = null
     private var currentLongPressKey: Keyboard.Key? = null
     private var longPressTriggered = false
+    private var longPressConsumed = false  // 长按是否已被消费（防止 onKey 重复处理）
 
     // 退格键长按连续删除
     private var backspaceHandler = Handler(Looper.getMainLooper())
@@ -207,14 +208,32 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 Handler(Looper.getMainLooper()).post {
                     recognizedText = text
                     isRecording = false
-                    isWaitingForChoice = true
                     setStatusDot("idle")
-                    // 显示识别结果，等待用户选择
-                    updateStatus("📝 「$text」→ 选择 AI+ 润色 或 AI× 直接上屏")
-                    // 确保 AI+/AI× 按钮可见
-                    micButton.visibility = View.GONE
-                    btnMicAi.visibility = View.VISIBLE
-                    btnMicNoAi.visibility = View.VISIBLE
+
+                    // 如果用户已经选择了模式（录音中按了 AI+ 或 AI×），直接执行
+                    if (pendingAiMode == true) {
+                        // AI+ 模式：直接润色
+                        isWaitingForChoice = false
+                        hideAiChoiceButtons()
+                        updateStatus("🔄 正在润色...")
+                        setStatusDot("processing")
+                        isProcessingResult = true
+                        polishRecognizedText(recognizedText)
+                    } else if (pendingAiMode == false) {
+                        // AI× 模式：直接上屏
+                        isWaitingForChoice = false
+                        hideAiChoiceButtons()
+                        currentInputConnection?.commitText(recognizedText, 1)
+                        updateStatus("✅ 已上屏（未润色）")
+                        resetToIdle()
+                    } else {
+                        // 未选择模式：等待用户选择
+                        isWaitingForChoice = true
+                        updateStatus("📝 「$text」→ 选择 AI+ 润色 或 AI× 直接上屏")
+                        micButton.visibility = View.GONE
+                        btnMicAi.visibility = View.VISIBLE
+                        btnMicNoAi.visibility = View.VISIBLE
+                    }
                 }
             }
             engine.initialize()
@@ -944,8 +963,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 val symbol = popup[0].toString()
                 currentInputConnection?.commitText(symbol, 1)
                 Log.d("Cesia", "Fn 长按输出: $symbol")
-                keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                keyboardView.performHapticFeedback(android.view.inputmethod.HapticFeedbackConstants.LONG_PRESS)
                 longPressTriggered = true
+                longPressConsumed = false  // 重置消费标志
             }
             currentLongPressKey = null
         }.also {
@@ -957,19 +977,21 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         longPressRunnable?.let { longPressHandler.removeCallbacks(it) }
         longPressRunnable = null
         currentLongPressKey = null
-        longPressTriggered = false
+        // 注意：不清除 longPressTriggered，让 onKey 有机会检查
     }
 
     // ======================== KeyboardView 回调 ========================
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
-        // 先检查是否长按触发过，再cancel
-        val wasLongPressed = longPressTriggered
-        cancelLongPress()
-
+        // 先检查是否长按触发过
+        val wasLongPressed = longPressTriggered && !longPressConsumed
         if (wasLongPressed) {
+            // 长按已触发，标记为已消费，跳过此次按键
+            longPressConsumed = true
+            cancelLongPress()
             return
         }
+        cancelLongPress()
 
         when (primaryCode) {
             KEYCODE_SWITCH_SYMBOL -> {
@@ -1039,51 +1061,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 toggleKeyboard()
             }
             else -> {
-                if (isChineseMode && primaryCode in 97..122) {
-                    // 中文模式：字母键走拼音输入
+                if (isChineseMode) {
+                    // 中文模式：所有字符都走拼音输入处理
                     handleChineseInput(primaryCode)
                 } else {
-                    // 普通字符键（中文模式下自动转换标点）
+                    // 普通字符键
                     var char = primaryCode.toChar()
                     if (isCapsLock && char.isLowerCase()) {
                         char = char.uppercaseChar()
                     }
-                    val charStr: String = if (isChineseMode) {
-                        when (char) {
-                            ',' -> "，"
-                            '.' -> "。"
-                            '!' -> "！"
-                            '?' -> "？"
-                            ';' -> "；"
-                            ':' -> "："
-                            '(' -> "（"
-                            ')' -> "）"
-                            '[' -> "【"
-                            ']' -> "】"
-                            '{' -> "｛"
-                            '}' -> "｝"
-                            '<' -> "《"
-                            '>' -> "》"
-                            '\\' -> "\u3001"
-                            '\u0027' -> "『"
-                            '\\' -> "\u3001"
-                            '|' -> "｜"
-                            '~' -> "～"
-                            '`' -> "·"
-                            else -> char.toString()
-                        }
-                    } else {
-                        char.toString()
-                    }
-                    currentInputConnection?.commitText(charStr, 1)
+                    currentInputConnection?.commitText(char.toString(), 1)
                 }
             }
         }
     }
 
     override fun onPress(primaryCode: Int) {
-        // 检测长按 Fn 效果（仅在英文模式）
-        if (primaryCode > 0 && !isSymbolMode && !isChineseMode) {
+        // 检测长按 Fn 效果（英文模式和中文模式都支持）
+        if (primaryCode > 0 && !isSymbolMode) {
             val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
             if (key != null && !key.popupCharacters.isNullOrEmpty()) {
                 startLongPressDetection(key)
