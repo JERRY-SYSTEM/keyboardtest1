@@ -149,13 +149,18 @@ class FallbackRecognizer(private val context: Context) {
 
         try { recognizer?.stopListening() } catch (_: Exception) {}
 
-        // 连续模式：有积累文本就发送
-        if (continuousMode && accumulatedText.isNotEmpty()) {
+        // 连续模式：发送积累的文本（即使为空也要发送，避免 UI 卡住）
+        if (continuousMode) {
             val text = accumulatedText.toString()
             accumulatedText.clear()
-            Log.d("FR", "stopListening → emit ${text.length} chars")
+            Log.d("FR", "stopListening → emit '${text.length}' chars")
             CoroutineScope(Dispatchers.Main).launch {
-                _results.emit(Result.Success(text))
+                if (text.isNotEmpty()) {
+                    _results.emit(Result.Success(text))
+                } else {
+                    // 无积累文本时，发送空结果让 UI 知道已停止
+                    _results.emit(Result.NoMatch)
+                }
             }
         }
     }

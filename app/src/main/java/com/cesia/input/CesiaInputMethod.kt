@@ -215,24 +215,39 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         // AI+ 模式：直接润色
                         isWaitingForChoice = false
                         hideAiChoiceButtons()
-                        updateStatus("🔄 正在润色...")
-                        setStatusDot("processing")
-                        isProcessingResult = true
-                        polishRecognizedText(recognizedText)
+                        if (text.isEmpty()) {
+                            // 空文本无法润色，提示并重置
+                            updateStatus("⚠️ 未识别到文字")
+                            resetToIdle()
+                        } else {
+                            updateStatus("🔄 正在润色...")
+                            setStatusDot("processing")
+                            isProcessingResult = true
+                            polishRecognizedText(text)
+                        }
                     } else if (pendingAiMode == false) {
                         // AI× 模式：直接上屏
                         isWaitingForChoice = false
                         hideAiChoiceButtons()
-                        currentInputConnection?.commitText(recognizedText, 1)
-                        updateStatus("✅ 已上屏（未润色）")
+                        if (text.isNotEmpty()) {
+                            currentInputConnection?.commitText(text, 1)
+                            updateStatus("✅ 已上屏（未润色）")
+                        } else {
+                            updateStatus("⚠️ 未识别到文字")
+                        }
                         resetToIdle()
                     } else {
                         // 未选择模式：等待用户选择
-                        isWaitingForChoice = true
-                        updateStatus("📝 「$text」→ 选择 AI+ 润色 或 AI× 直接上屏")
-                        micButton.visibility = View.GONE
-                        btnMicAi.visibility = View.VISIBLE
-                        btnMicNoAi.visibility = View.VISIBLE
+                        if (text.isEmpty()) {
+                            updateStatus("⚠️ 未识别到文字，请重试")
+                            resetToIdle()
+                        } else {
+                            isWaitingForChoice = true
+                            updateStatus("📝 「$text」→ 选择 AI+ 润色 或 AI× 直接上屏")
+                            micButton.visibility = View.GONE
+                            btnMicAi.visibility = View.VISIBLE
+                            btnMicNoAi.visibility = View.VISIBLE
+                        }
                     }
                 }
             }

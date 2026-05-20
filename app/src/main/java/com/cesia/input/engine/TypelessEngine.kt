@@ -94,7 +94,12 @@ class TypelessEngine(
                         _state.value = State.ERROR
                     }
                     is FallbackRecognizer.Result.NoMatch -> {
-                        // 无匹配时不报错
+                        // 无匹配时，如果用户已选择模式（pendingAiMode != null），通知 UI
+                        if (!magicMode) {
+                            withContext(Dispatchers.Main) {
+                                onRecognitionComplete?.invoke("")
+                            }
+                        }
                     }
                 }
             }
