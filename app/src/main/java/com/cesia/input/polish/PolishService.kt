@@ -172,7 +172,7 @@ class PolishService(
 
             val result = parsePolishResponse(respBody)
             Log.d("PolishService", "润色结果: $result")
-            result
+            return result
         }
     }
 
