@@ -75,9 +75,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isCapsLock = false
     private var isChineseMode = false
     private var isProcessingResult = false  // 正在处理识别结果（润色中）
+    private var isWaitingForChoice = false  // 识别完成，等待用户选择 AI+/AI×
     private var lastMicClickTime = 0L  // 防抖
     private var voiceStartTime = 0L  // 语音开始时间
     private var pendingAiMode: Boolean? = null  // null=未选择, true=使用AI, false=不使用AI
+    private var recognizedText: String = ""  // 识别完成的文字（等待用户选择）
 
     // 长按检测
     private var longPressHandler = Handler(Looper.getMainLooper())
@@ -200,6 +202,21 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     updateStatus("✅ 已完成")
                 }
             }
+            // 识别完成回调（新流程：等待用户选择 AI+/AI×）
+            engine.onRecognitionComplete = { text ->
+                Handler(Looper.getMainLooper()).post {
+                    recognizedText = text
+                    isRecording = false
+                    isWaitingForChoice = true
+                    setStatusDot("idle")
+                    // 显示识别结果，等待用户选择
+                    updateStatus("📝 「$text」→ 选择 AI+ 润色 或 AI× 直接上屏")
+                    // 确保 AI+/AI× 按钮可见
+                    micButton.visibility = View.GONE
+                    btnMicAi.visibility = View.VISIBLE
+                    btnMicNoAi.visibility = View.VISIBLE
+                }
+            }
             engine.initialize()
         }
 
@@ -309,27 +326,26 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun setupButtonListeners() {
-        // 主麦克风按钮：点击开始录音，按钮变为AI/非AI选择
+        // 主麦克风按钮：点击立即开始录音
         micButton.setOnClickListener {
-            if (!isRecording) {
-                startRecordingWithChoice()
+            if (!isRecording && !isWaitingForChoice) {
+                startRecordingImmediately()
+            } else if (isWaitingForChoice) {
+                updateStatus("请点击 AI+ 或 AI× 选择处理方式")
             }
         }
         micButton.setOnLongClickListener {
-            if (isRecording) { stopRecordingWithAi(); true } else false
+            if (isRecording || isWaitingForChoice) {
+                resetToIdle()
+                true
+            } else false
         }
 
-        // AI识别按钮：录音+AI润色
-        btnMicAi.setOnClickListener {
-            pendingAiMode = true
-            startRecordingPhase()
-        }
+        // AI+ 按钮：使用 AI 润色
+        btnMicAi.setOnClickListener { onAiPlusSelected() }
 
-        // 不使用AI按钮：录音后直接上屏
-        btnMicNoAi.setOnClickListener {
-            pendingAiMode = false
-            startRecordingPhase()
-        }
+        // AI× 按钮：不使用 AI，直接上屏
+        btnMicNoAi.setOnClickListener { onAiCrossSelected() }
 
         btnSettings.setOnClickListener { showSettings() }
 
@@ -649,47 +665,144 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     // ======================== 录音 ========================
 
-    private fun startRecordingWithChoice() {
-        // 点击麦克风按钮后，显示AI/非AI选择按钮
-        micButton.visibility = View.GONE
-        btnMicAi.visibility = View.VISIBLE
-        btnMicNoAi.visibility = View.VISIBLE
-        updateStatus("选择模式：AI润色 或 直接上屏")
-    }
-
-    private fun startRecordingPhase() {
-        // 用户选择了AI模式后，开始录音
+    /**
+     * 点击麦克风按钮：立即开始录音，同时按钮变成 AI+/AI× 选择
+     */
+    private fun startRecordingImmediately() {
         isRecording = true
-        // 设置是否跳过润色
-        typelessEngine?.skipPolish = (pendingAiMode == false)
+        isWaitingForChoice = false
+        recognizedText = ""
+        pendingAiMode = null
         setStatusDot("recording")
         // 录音时隐藏键盘区域
         keyboardView.visibility = View.GONE
         candidateBar.visibility = View.GONE
         voiceStartTime = System.currentTimeMillis()
-        val modeText = if (pendingAiMode == true) "🎤 AI润色模式" else "🎤 直接上屏模式"
-        updateStatus("$modeText，正在收听...")
+        updateStatus("🎤 正在收听，请说话...")
         typelessEngine?.startListening(continuous = true)
+        // 录音开始后，按钮变成 AI+/AI× 选择
+        showAiChoiceButtons()
     }
 
-    private fun stopRecordingWithAi() {
-        // 如果正在处理识别结果，不中断
-        if (isProcessingResult) {
-            updateStatus("⏳ 正在处理中，请稍候...")
-            return
-        }
-        stopRecordingInternal()
+    /**
+     * 显示 AI+/AI× 选择按钮（隐藏主麦克风按钮）
+     */
+    private fun showAiChoiceButtons() {
+        micButton.visibility = View.GONE
+        btnMicAi.visibility = View.VISIBLE
+        btnMicNoAi.visibility = View.VISIBLE
     }
 
-    private fun stopRecordingInternal() {
-        isRecording = false
-        setStatusDot("idle")
-        typelessEngine?.stopListening()
-        // 恢复按钮状态
+    /**
+     * 恢复主麦克风按钮（隐藏 AI+/AI× 选择按钮）
+     */
+    private fun hideAiChoiceButtons() {
         micButton.visibility = View.VISIBLE
         btnMicAi.visibility = View.GONE
         btnMicNoAi.visibility = View.GONE
-        // 恢复键盘区域
+    }
+
+    /**
+     * AI+ 按钮点击：使用 AI 润色
+     */
+    private fun onAiPlusSelected() {
+        if (isWaitingForChoice && recognizedText.isNotEmpty()) {
+            // 识别完成，用户选择 AI+ → 润色
+            isWaitingForChoice = false
+            pendingAiMode = true
+            hideAiChoiceButtons()
+            updateStatus("🔄 正在润色...")
+            setStatusDot("processing")
+            isProcessingResult = true
+            // 调用润色
+            polishRecognizedText(recognizedText)
+        } else if (isRecording) {
+            // 录音中点击 AI+ → 停止录音，等待识别结果
+            stopRecordingAndWait()
+            pendingAiMode = true
+            updateStatus("⏳ 识别完成，正在润色...")
+        }
+    }
+
+    /**
+     * AI× 按钮点击：不使用 AI，直接上屏
+     */
+    private fun onAiCrossSelected() {
+        if (isWaitingForChoice && recognizedText.isNotEmpty()) {
+            // 识别完成，用户选择 AI× → 直接上屏
+            isWaitingForChoice = false
+            pendingAiMode = false
+            hideAiChoiceButtons()
+            // 直接上屏
+            currentInputConnection?.commitText(recognizedText, 1)
+            updateStatus("✅ 已上屏（未润色）")
+            resetToIdle()
+        } else if (isRecording) {
+            // 录音中点击 AI× → 停止录音，等待识别结果后直接上屏
+            stopRecordingAndWait()
+            pendingAiMode = false
+            updateStatus("⏳ 识别完成，直接上屏...")
+        }
+    }
+
+    /**
+     * 停止录音，等待识别结果
+     */
+    private fun stopRecordingAndWait() {
+        isRecording = false
+        typelessEngine?.stopListening()
+        setStatusDot("processing")
+        updateStatus("⏳ 正在识别...")
+    }
+
+    /**
+     * 润色识别完成的文字
+     */
+    private fun polishRecognizedText(text: String) {
+        val polishService = typelessEngine?.getPolishService()
+        Thread {
+            try {
+                val result = polishService?.polishText(text)
+                Handler(Looper.getMainLooper()).post {
+                    isProcessingResult = false
+                    val finalText = when (result) {
+                        is com.cesia.input.polish.PolishService.PolishResult.Success -> {
+                            val cleaned = result.polishedText.trim()
+                            if (cleaned.isNotEmpty()) cleaned else text
+                        }
+                        else -> text
+                    }
+                    // 上屏
+                    currentInputConnection?.commitText(finalText, 1)
+                    // 统计
+                    val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0
+                    statsManager.addRecord(text, finalText, duration)
+                    updateStatus("✅ 润色完成")
+                    resetToIdle()
+                }
+            } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post {
+                    isProcessingResult = false
+                    // 润色失败，上屏原文
+                    currentInputConnection?.commitText(text, 1)
+                    updateStatus("⚠️ 润色失败，已上屏原文")
+                    resetToIdle()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * 重置到空闲状态
+     */
+    private fun resetToIdle() {
+        isRecording = false
+        isWaitingForChoice = false
+        isProcessingResult = false
+        recognizedText = ""
+        pendingAiMode = null
+        setStatusDot("idle")
+        hideAiChoiceButtons()
         keyboardView.visibility = View.VISIBLE
         updateStatus("Cesia 已就绪")
     }
@@ -699,25 +812,27 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val now = System.currentTimeMillis()
         if (now - lastMicClickTime < 300) return
         lastMicClickTime = now
-        if (isRecording) {
+        if (isRecording || isWaitingForChoice) {
             if (isProcessingResult) {
-                updateStatus("⏳ 正在润色中，请稍候...")
+                updateStatus("⏳ 正在处理中，请稍候...")
                 return
             }
-            stopRecordingInternal()
+            // 录音中或等待选择时，点击主按钮无作用（应该点 AI+/AI×）
+            if (isWaitingForChoice) {
+                updateStatus("请点击 AI+ 或 AI× 选择处理方式")
+            }
         } else {
-            startRecordingWithChoice()
+            startRecordingImmediately()
         }
     }
 
     private fun startRecording() {
-        // 兼容魔法模式：直接开始录音（默认AI模式）
-        pendingAiMode = true
-        startRecordingPhase()
+        // 兼容魔法模式
+        startRecordingImmediately()
     }
 
     private fun stopRecording() {
-        stopRecordingInternal()
+        stopRecordingAndWait()
     }
 
     // ======================== 魔法模式 ========================

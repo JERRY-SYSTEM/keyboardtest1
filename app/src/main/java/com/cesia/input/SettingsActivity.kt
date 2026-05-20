@@ -40,6 +40,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
     private lateinit var tvVersion: TextView
+    private lateinit var vUpdateDot: View
+    private lateinit var btnCheckUpdate: Button
     private var tvStatVoiceTime: TextView? = null
     private var tvStatSavedTime: TextView? = null
     private var tvStatVoiceSpeed: TextView? = null
@@ -97,6 +99,9 @@ class SettingsActivity : AppCompatActivity() {
         updateThemeUI()
 
         checkAndRequestPermission()
+
+        // 每日自动检查更新
+        checkUpdateDaily()
     }
 
     private fun applyTheme() {
@@ -118,6 +123,10 @@ class SettingsActivity : AppCompatActivity() {
         tvStatus = findViewById(R.id.tv_api_status)
         tvLog = findViewById(R.id.tv_log)
         tvVersion = findViewById(R.id.tv_version)
+        try {
+            vUpdateDot = findViewById(R.id.v_update_dot)
+            btnCheckUpdate = findViewById(R.id.btn_check_update)
+        } catch (_: Exception) {}
         try {
             tvStatVoiceTime = findViewById(R.id.tv_stat_voice_time)
             tvStatSavedTime = findViewById(R.id.tv_stat_saved_time)
@@ -146,7 +155,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showVersion() {
         try {
-            // 兼容所有Android版本读取版本号
             val pInfo = try {
                 if (Build.VERSION.SDK_INT >= 33) {
                     packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
@@ -165,8 +173,16 @@ class SettingsActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 pInfo.versionCode.toLong()
             }
-            tvVersion.text = if (versionName != null) "版本: $versionName ($versionCode)" else "版本: $versionCode"
-        } catch (_: Exception) {
+            // 版本号显示：始终显示 versionName，如果异常则显示 versionCode
+            val displayText = when {
+                versionName != null && versionName != "null" && versionName.isNotEmpty() -> "版本: $versionName"
+                versionCode > 0 -> "版本: 1.0.$versionCode"
+                else -> "版本: 1.0.1" // 兜底
+            }
+            tvVersion.text = displayText
+            Log.d("SettingsActivity", "版本信息: versionName=$versionName, versionCode=$versionCode")
+        } catch (e: Exception) {
+            Log.e("SettingsActivity", "读取版本号失败", e)
             tvVersion.text = "版本: 未知"
         }
     }
@@ -219,7 +235,8 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         btnTestApi.setOnClickListener { testApiConnection() }
-        btnUpdate.setOnClickListener { checkForUpdates() }
+        btnUpdate?.setOnClickListener { checkForUpdates() }
+        btnCheckUpdate?.setOnClickListener { checkForUpdates() }
 
         btnHistory.setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
@@ -660,8 +677,8 @@ class SettingsActivity : AppCompatActivity() {
     // ======================== OTA 更新 ========================
 
     private fun checkForUpdates() {
-        btnUpdate.isEnabled = false
-        btnUpdate.text = "检查中..."
+        btnCheckUpdate.isEnabled = false
+        btnCheckUpdate.text = "检查中..."
         tvStatus.text = "🔄 检查更新..."
         appendLog("正在检查更新...")
 
@@ -695,15 +712,26 @@ class SettingsActivity : AppCompatActivity() {
                         }
                         if (downloadUrl.isEmpty()) {
                             tvStatus.text = "❌ Release 中未找到 APK 文件"
-                            btnUpdate.isEnabled = true
-                            btnUpdate.text = "🔄 检查更新"
+                            btnCheckUpdate.isEnabled = true
+                            btnCheckUpdate.text = "检查更新"
                             return@runOnUiThread
                         }
 
                         val pInfo = packageManager.getPackageInfo(packageName, 0)
-                        val currentVersion = pInfo.versionName
+                        val currentVersion = pInfo.versionName ?: "0"
 
-                        if (remoteVersion != currentVersion) {
+                        // 保存检查时间和结果
+                        val hasUpdate = remoteVersion != currentVersion
+                        prefs.edit()
+                            .putLong("last_update_check", System.currentTimeMillis())
+                            .putBoolean("update_available", hasUpdate)
+                            .putString("latest_version", remoteVersion)
+                            .apply()
+
+                        // 更新红点显示
+                        vUpdateDot?.visibility = if (hasUpdate) View.VISIBLE else View.GONE
+
+                        if (hasUpdate) {
                             tvStatus.text = "🎉 发现新版本: $remoteVersion（当前: $currentVersion）"
                             appendLog("发现新版本: $remoteVersion")
                             showUpdateDialog(remoteVersion, downloadUrl)
@@ -715,18 +743,36 @@ class SettingsActivity : AppCompatActivity() {
                         tvStatus.text = "❌ 解析失败"
                         appendLog("解析更新失败: ${e.message}")
                     }
-                    btnUpdate.isEnabled = true
-                    btnUpdate.text = "🔄 检查更新"
+                    btnCheckUpdate.isEnabled = true
+                    btnCheckUpdate.text = "检查更新"
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     tvStatus.text = "❌ 网络错误"
                     appendLog("检查更新失败: ${e.message}")
-                    btnUpdate.isEnabled = true
-                    btnUpdate.text = "🔄 检查更新"
+                    btnCheckUpdate.isEnabled = true
+                    btnCheckUpdate.text = "检查更新"
                 }
             }
         }.start()
+    }
+
+    /**
+     * 每日自动检查更新（如果今天还没检查过）
+     */
+    private fun checkUpdateDaily() {
+        val lastCheck = prefs.getLong("last_update_check", 0)
+        val now = System.currentTimeMillis()
+        val oneDayMs = 24 * 60 * 60 * 1000L
+
+        if (now - lastCheck > oneDayMs) {
+            // 超过一天没检查，自动检查
+            checkForUpdates()
+        } else {
+            // 今天已检查过，根据结果显示红点
+            val hasUpdate = prefs.getBoolean("update_available", false)
+            vUpdateDot?.visibility = if (hasUpdate) View.VISIBLE else View.GONE
+        }
     }
 
     private fun showUpdateDialog(version: String, downloadUrl: String) {

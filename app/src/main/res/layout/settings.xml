@@ -19,14 +19,42 @@
             android:textStyle="bold"
             android:layout_marginBottom="4dp" />
 
-        <TextView
-            android:id="@+id/tv_version"
-            android:layout_width="wrap_content"
+        <!-- 版本信息 + 更新检查 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="版本: 1.0.0"
-            android:textSize="13sp"
-            android:textColor="#888888"
-            android:layout_marginBottom="24dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="24dp">
+
+            <TextView
+                android:id="@+id/tv_version"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="版本: 1.0.0"
+                android:textSize="13sp"
+                android:textColor="#888888" />
+
+            <!-- 更新红点 -->
+            <View
+                android:id="@+id/v_update_dot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:background="@drawable/status_dot_error"
+                android:visibility="gone"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btn_check_update"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="检查更新"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp" />
+        </LinearLayout>
 
         <!-- ==================== 润色统计 ==================== -->
         <TextView
