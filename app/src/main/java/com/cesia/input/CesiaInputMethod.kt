@@ -47,6 +47,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var currentKeyboard: Keyboard? = null
 
     private lateinit var micButton: MaterialButton
+    private lateinit var micButtonContainer: LinearLayout
+    private lateinit var btnMicAi: MaterialButton
+    private lateinit var btnMicNoAi: MaterialButton
     private lateinit var btnSettings: ImageButton
     private lateinit var btnDelete: ImageButton
     private lateinit var btnClipboard: ImageButton
@@ -74,6 +77,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isProcessingResult = false  // 正在处理识别结果（润色中）
     private var lastMicClickTime = 0L  // 防抖
     private var voiceStartTime = 0L  // 语音开始时间
+    private var pendingAiMode: Boolean? = null  // null=未选择, true=使用AI, false=不使用AI
 
     // 长按检测
     private var longPressHandler = Handler(Looper.getMainLooper())
@@ -124,6 +128,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         keyboardView = view.findViewById(R.id.keyboard_view)
         micButton = view.findViewById(R.id.btn_mic)
+        micButtonContainer = view.findViewById(R.id.mic_button_container)
+        btnMicAi = view.findViewById(R.id.btn_mic_ai)
+        btnMicNoAi = view.findViewById(R.id.btn_mic_noai)
         btnSettings = view.findViewById(R.id.btn_settings)
         btnDelete = view.findViewById(R.id.btn_delete)
         btnClipboard = view.findViewById(R.id.btn_clipboard)
@@ -182,9 +189,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     isProcessingResult = false
                     isRecording = false
                     micButton.isActivated = false
-                    micButton.text = "🎤 点击开始说话"
+                    micButton.text = "🎙️ 点击开始说话"
+                    // 恢复按钮状态（隐藏AI/非AI按钮）
+                    micButton.visibility = View.VISIBLE
+                    btnMicAi.visibility = View.GONE
+                    btnMicNoAi.visibility = View.GONE
+                    // 恢复键盘区域
+                    keyboardView.visibility = View.VISIBLE
                     setStatusDot("idle")
-                    updateStatus("✅ 润色完成")
+                    updateStatus("✅ 已完成")
                 }
             }
             engine.initialize()
@@ -296,9 +309,26 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun setupButtonListeners() {
-        micButton.setOnClickListener { toggleRecording() }
+        // 主麦克风按钮：点击开始录音，按钮变为AI/非AI选择
+        micButton.setOnClickListener {
+            if (!isRecording) {
+                startRecordingWithChoice()
+            }
+        }
         micButton.setOnLongClickListener {
-            if (isRecording) { stopRecording(); true } else false
+            if (isRecording) { stopRecordingWithAi(); true } else false
+        }
+
+        // AI识别按钮：录音+AI润色
+        btnMicAi.setOnClickListener {
+            pendingAiMode = true
+            startRecordingPhase()
+        }
+
+        // 不使用AI按钮：录音后直接上屏
+        btnMicNoAi.setOnClickListener {
+            pendingAiMode = false
+            startRecordingPhase()
         }
 
         btnSettings.setOnClickListener { showSettings() }
@@ -619,46 +649,75 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     // ======================== 录音 ========================
 
+    private fun startRecordingWithChoice() {
+        // 点击麦克风按钮后，显示AI/非AI选择按钮
+        micButton.visibility = View.GONE
+        btnMicAi.visibility = View.VISIBLE
+        btnMicNoAi.visibility = View.VISIBLE
+        updateStatus("选择模式：AI润色 或 直接上屏")
+    }
+
+    private fun startRecordingPhase() {
+        // 用户选择了AI模式后，开始录音
+        isRecording = true
+        // 设置是否跳过润色
+        typelessEngine?.skipPolish = (pendingAiMode == false)
+        setStatusDot("recording")
+        // 录音时隐藏键盘区域
+        keyboardView.visibility = View.GONE
+        candidateBar.visibility = View.GONE
+        voiceStartTime = System.currentTimeMillis()
+        val modeText = if (pendingAiMode == true) "🎤 AI润色模式" else "🎤 直接上屏模式"
+        updateStatus("$modeText，正在收听...")
+        typelessEngine?.startListening(continuous = true)
+    }
+
+    private fun stopRecordingWithAi() {
+        // 如果正在处理识别结果，不中断
+        if (isProcessingResult) {
+            updateStatus("⏳ 正在处理中，请稍候...")
+            return
+        }
+        stopRecordingInternal()
+    }
+
+    private fun stopRecordingInternal() {
+        isRecording = false
+        setStatusDot("idle")
+        typelessEngine?.stopListening()
+        // 恢复按钮状态
+        micButton.visibility = View.VISIBLE
+        btnMicAi.visibility = View.GONE
+        btnMicNoAi.visibility = View.GONE
+        // 恢复键盘区域
+        keyboardView.visibility = View.VISIBLE
+        updateStatus("Cesia 已就绪")
+    }
+
+    // 保留旧函数以兼容魔法模式
     private fun toggleRecording() {
-        // 防抖：300ms内不重复响应
         val now = System.currentTimeMillis()
         if (now - lastMicClickTime < 300) return
         lastMicClickTime = now
-
         if (isRecording) {
-            // 如果正在处理识别结果，不中断，等其自然完成
             if (isProcessingResult) {
                 updateStatus("⏳ 正在润色中，请稍候...")
                 return
             }
-            stopRecording()
+            stopRecordingInternal()
         } else {
-            startRecording()
+            startRecordingWithChoice()
         }
     }
 
     private fun startRecording() {
-        isRecording = true
-        micButton.isActivated = true
-        micButton.text = "⏹️ 再次点击完成"
-        setStatusDot("recording")
-        // 录音时隐藏键盘区域，状态栏扩展覆盖
-        keyboardView.visibility = View.GONE
-        candidateBar.visibility = View.GONE
-        voiceStartTime = System.currentTimeMillis()
-        updateStatus("🎤 正在收听，请说话...")
-        typelessEngine?.startListening(continuous = true)
+        // 兼容魔法模式：直接开始录音（默认AI模式）
+        pendingAiMode = true
+        startRecordingPhase()
     }
 
     private fun stopRecording() {
-        isRecording = false
-        micButton.isActivated = false
-        micButton.text = "🎤 点击开始说话"
-        setStatusDot("idle")
-        typelessEngine?.stopListening()
-        // 恢复键盘区域
-        keyboardView.visibility = View.VISIBLE
-        updateStatus("Cesia 已就绪")
+        stopRecordingInternal()
     }
 
     // ======================== 魔法模式 ========================

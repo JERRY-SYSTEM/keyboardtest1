@@ -56,6 +56,9 @@ class TypelessEngine(
     // 是否处于魔法模式
     var magicMode: Boolean = false
 
+    // 是否跳过润色（直接上屏识别结果）
+    var skipPolish: Boolean = false
+
     init {
         // 启动识别结果监听协程
         engineScope.launch {
@@ -68,6 +71,13 @@ class TypelessEngine(
                         if (magicMode) {
                             // 魔法模式：触发回调，不润色上屏
                             onMagicResult?.invoke(result.text)
+                        } else if (skipPolish) {
+                            // 不使用AI模式：直接上屏识别结果
+                            log("🎤 直接上屏（跳过润色）")
+                            commitText(result.text)
+                            withContext(Dispatchers.Main) {
+                                onResultCommitted?.invoke()
+                            }
                         } else {
                             polishAndCommit(result.text)
                         }

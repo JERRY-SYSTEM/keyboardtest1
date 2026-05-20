@@ -15,7 +15,9 @@ def getVersionCode() {
             standardOutput = stdout
             workingDir = rootDir
         }
-        return Integer.parseInt(stdout.toString().trim())
+        def count = Integer.parseInt(stdout.toString().trim())
+        // 确保至少为1，避免版本号显示为0
+        return count > 0 ? count : 1
     } catch (Exception e) {
         return 1
     }

@@ -161,22 +161,66 @@
             android:contentDescription="AI自动写作"
             android:layout_marginEnd="3dp" />
 
-        <!-- 麦克风/语音按钮 -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_mic"
+        <!-- 麦克风/语音按钮区域 -->
+        <LinearLayout
+            android:id="@+id/mic_button_container"
             android:layout_width="0dp"
             android:layout_height="50dp"
             android:layout_weight="3"
-            android:text="🎙️ 点击开始说话"
-            android:textSize="13sp"
-            android:textColor="#333333"
-            android:backgroundTint="#D0D0D0"
-            app:cornerRadius="25dp"
-            android:elevation="1dp"
-            android:stateListAnimator="@null"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:layout_marginEnd="3dp" />
+            android:layout_marginEnd="3dp"
+            android:orientation="horizontal">
+
+            <!-- 主麦克风按钮（默认显示） -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_mic"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="🎙️ 点击开始说话"
+                android:textSize="13sp"
+                android:textColor="#333333"
+                android:backgroundTint="#D0D0D0"
+                app:cornerRadius="25dp"
+                android:elevation="1dp"
+                android:stateListAnimator="@null"
+                android:insetTop="0dp"
+                android:insetBottom="0dp" />
+
+            <!-- AI识别按钮（录音时显示） -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_mic_ai"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="AI +"
+                android:textSize="12sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#4CAF50"
+                app:cornerRadius="25dp"
+                android:elevation="1dp"
+                android:stateListAnimator="@null"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:layout_marginEnd="2dp"
+                android:visibility="gone" />
+
+            <!-- 不使用AI按钮（录音时显示） -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_mic_noai"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="AI ×"
+                android:textSize="12sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#FF9800"
+                app:cornerRadius="25dp"
+                android:elevation="1dp"
+                android:stateListAnimator="@null"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <!-- 删除按钮 -->
         <ImageButton
