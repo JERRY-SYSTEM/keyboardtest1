@@ -761,7 +761,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun polishRecognizedText(text: String) {
         val polishService = typelessEngine?.getPolishService()
         // polishText 是 suspend 函数，需要在协程中调用
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+        scope.launch {
             try {
                 val result = polishService?.polishText(text)
                 Handler(Looper.getMainLooper()).post {
