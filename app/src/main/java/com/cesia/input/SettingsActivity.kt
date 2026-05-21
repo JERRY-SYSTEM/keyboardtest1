@@ -160,7 +160,8 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showVersion() {
-        try {
+        // 优先显示本地编译版本号，如果本地版本号无效则显示缓存的GitHub版本号
+        val localVersionName = try {
             val pInfo = try {
                 if (Build.VERSION.SDK_INT >= 33) {
                     packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
@@ -172,25 +173,21 @@ class SettingsActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 packageManager.getPackageInfo(packageName, 0)
             }
-            val versionName = pInfo.versionName
-            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                pInfo.longVersionCode
-            } else {
-                @Suppress("DEPRECATION")
-                pInfo.versionCode.toLong()
+            pInfo.versionName
+        } catch (_: Exception) { null }
+
+        val displayVersion = when {
+            // 本地版本号有效且不是 "1.0.0"（构建失败默认值）
+            !localVersionName.isNullOrEmpty() && localVersionName != "null" && localVersionName != "1.0.0" -> localVersionName
+            // 尝试从缓存读取GitHub版本号
+            else -> {
+                val cachedVersion = prefs.getString("github_version_name", null)
+                if (!cachedVersion.isNullOrEmpty()) cachedVersion else "开发版"
             }
-            // 版本号显示：versionName有效且不是"1.0.0"（构建失败时的默认值）才显示，否则显示开发版
-            val displayText = when {
-                !versionName.isNullOrEmpty() && versionName != "null" && versionName != "1.0.0" -> "版本: $versionName"
-                versionCode > 1 -> "版本: 1.0.$versionCode"
-                else -> "版本: 开发版"
-            }
-            tvVersion.text = displayText
-            Log.d("SettingsActivity", "版本信息: versionName=$versionName, versionCode=$versionCode")
-        } catch (e: Exception) {
-            Log.e("SettingsActivity", "读取版本号失败", e)
-            tvVersion.text = "版本: 开发版"
         }
+
+        tvVersion.text = "版本: $displayVersion"
+        Log.d("SettingsActivity", "显示版本: $displayVersion (本地: $localVersionName)")
     }
 
     private fun checkAndRequestPermission() {
@@ -835,15 +832,22 @@ class SettingsActivity : AppCompatActivity() {
                     pInfo.versionName ?: "开发版"
                 } catch (_: Exception) { "开发版" }
 
+                // 缓存GitHub版本号到prefs，供showVersion()显示
+                if (latestVersionName.isNotEmpty()) {
+                    prefs.edit().putString("github_version_name", latestVersionName).apply()
+                }
+
                 appendLog("当前版本: $currentVersionName($currentVersionCode), 最新版本: $latestVersionName($latestVersionCode)")
 
                 runOnUiThread {
+                    // 刷新版本号显示
+                    showVersion()
                     if (latestVersionCode > 0 && latestVersionCode > currentVersionCode) {
                         vUpdateDot?.visibility = View.VISIBLE
                         showUpdateDialog(latestVersionName, releaseUrl, releaseNotes, apkUrl)
                     } else {
                         vUpdateDot?.visibility = View.GONE
-                        tvStatus.text = "✅ 已是最新版本 ($currentVersionName)"
+                        tvStatus.text = "✅ 已是最新版本 ($latestVersionName)"
                         appendLog("✅ 已是最新版本")
                     }
                 }
