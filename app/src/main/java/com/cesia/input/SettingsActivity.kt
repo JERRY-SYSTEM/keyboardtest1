@@ -685,7 +685,7 @@ class SettingsActivity : AppCompatActivity() {
                         })
                     }
                     val json = JSONObject().apply {
-                        put("model", "minimax/minimax-m2.5:free")
+                        put("model", "google/gemma-4-26b-a4b-it:free")
                         put("messages", messages)
                         put("temperature", 0.3)
                         put("max_tokens", 512)
@@ -865,6 +865,16 @@ class SettingsActivity : AppCompatActivity() {
                     pInfo.versionName ?: "开发版"
                 } catch (_: Exception) { "开发版" }
 
+                // 版本比较：综合使用 versionCode 和缓存的版本号
+                // 如果本地 versionName 与缓存的 GitHub 版本号一致，直接认为最新
+                val cachedVersionName = prefs.getString("github_version_name", null)
+                val isUpToDate = try {
+                    val pInfo = packageManager.getPackageInfo(packageName, 0)
+                    val localName = pInfo.versionName
+                    // 本地版本号有效且与GitHub最新版本一致
+                    !localName.isNullOrEmpty() && localName != "null" && localName == latestVersionName
+                } catch (_: Exception) { false }
+
                 // 缓存GitHub版本号到prefs，供showVersion()显示
                 if (latestVersionName.isNotEmpty()) {
                     prefs.edit().putString("github_version_name", latestVersionName).apply()
@@ -875,7 +885,7 @@ class SettingsActivity : AppCompatActivity() {
                 runOnUiThread {
                     // 刷新版本号显示
                     showVersion()
-                    if (latestVersionCode > 0 && latestVersionCode > currentVersionCode) {
+                    if (!isUpToDate && latestVersionCode > 0 && latestVersionCode > currentVersionCode) {
                         vUpdateDot?.visibility = View.VISIBLE
                         showUpdateDialog(latestVersionName, releaseUrl, releaseNotes, apkUrl)
                     } else {

@@ -332,7 +332,7 @@ class PolishService(
 
     companion object {
         const val DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-        const val OPENROUTER_MODEL = "minimax/minimax-m2.5:free"
+        const val OPENROUTER_MODEL = "google/gemma-4-26b-a4b-it:free"
         const val OPENROUTER_MODEL_FALLBACK = "google/gemma-4-26b-a4b-it:free"
         const val DEFAULT_CUSTOM_URL = "https://typeless-ai-service.vercel.app/api/polish"
     }
