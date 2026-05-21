@@ -179,17 +179,17 @@ class SettingsActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 pInfo.versionCode.toLong()
             }
-            // 版本号显示
+            // 版本号显示：versionName有效且不是"1.0.0"（构建失败时的默认值）才显示，否则显示开发版
             val displayText = when {
-                !versionName.isNullOrEmpty() && versionName != "null" -> "版本: $versionName"
-                versionCode > 0 -> "版本: 1.0.$versionCode"
+                !versionName.isNullOrEmpty() && versionName != "null" && versionName != "1.0.0" -> "版本: $versionName"
+                versionCode > 1 -> "版本: 1.0.$versionCode"
                 else -> "版本: 开发版"
             }
             tvVersion.text = displayText
             Log.d("SettingsActivity", "版本信息: versionName=$versionName, versionCode=$versionCode")
         } catch (e: Exception) {
             Log.e("SettingsActivity", "读取版本号失败", e)
-            tvVersion.text = "版本: 未知"
+            tvVersion.text = "版本: 开发版"
         }
     }
 
@@ -325,7 +325,7 @@ class SettingsActivity : AppCompatActivity() {
             onComplete = { success, msg ->
                 runOnUiThread {
                     btnDownloadDict?.isEnabled = true
-                    btnDownloadDict?.text = "📥 下载最新词库"
+                    btnDownloadDict?.text = "📥下载"
                     tvStatus.text = if (success) "✅ $msg" else "❌ $msg"
                     appendLog(msg)
                     refreshDictInfo()
@@ -655,7 +655,7 @@ class SettingsActivity : AppCompatActivity() {
                         })
                     }
                     val json = JSONObject().apply {
-                        put("model", "google/gemma-2-9b-it:free")
+                        put("model", "minimax/minimax-m2.5:free")
                         put("messages", messages)
                         put("temperature", 0.3)
                         put("max_tokens", 512)
@@ -806,24 +806,44 @@ class SettingsActivity : AppCompatActivity() {
                 }
 
                 val json = JSONObject(body)
-                val latestVersion = json.optString("tag_name", "").removePrefix("v")
+                val latestVersionName = json.optString("tag_name", "").removePrefix("v")
                 val releaseUrl = json.optString("html_url", "")
                 val releaseNotes = json.optString("body", "")
+                // 从 release body 或 assets 中获取 APK 下载链接
+                val apkUrl = try {
+                    val assets = json.optJSONArray("assets")
+                    if (assets != null && assets.length() > 0) {
+                        assets.getJSONObject(0).optString("browser_download_url", "")
+                    } else ""
+                } catch (_: Exception) { "" }
 
-                val currentVersion = try {
+                // 用 versionCode 比较版本
+                val currentVersionCode = try {
                     val pInfo = packageManager.getPackageInfo(packageName, 0)
-                    pInfo.versionName ?: "0"
-                } catch (_: Exception) { "0" }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo.longVersionCode
+                    else @Suppress("DEPRECATION") pInfo.versionCode.toLong()
+                } catch (_: Exception) { 0L }
 
-                appendLog("当前版本: $currentVersion, 最新版本: $latestVersion")
+                // 从 tag_name 解析最新版本的 versionCode (格式: 1.0.X -> X)
+                val latestVersionCode = try {
+                    val parts = latestVersionName.split(".")
+                    if (parts.size >= 3) parts[2].toLong() else 0L
+                } catch (_: Exception) { 0L }
+
+                val currentVersionName = try {
+                    val pInfo = packageManager.getPackageInfo(packageName, 0)
+                    pInfo.versionName ?: "开发版"
+                } catch (_: Exception) { "开发版" }
+
+                appendLog("当前版本: $currentVersionName($currentVersionCode), 最新版本: $latestVersionName($latestVersionCode)")
 
                 runOnUiThread {
-                    if (latestVersion.isNotEmpty() && latestVersion != currentVersion) {
+                    if (latestVersionCode > 0 && latestVersionCode > currentVersionCode) {
                         vUpdateDot?.visibility = View.VISIBLE
-                        showUpdateDialog(latestVersion, releaseUrl, releaseNotes)
+                        showUpdateDialog(latestVersionName, releaseUrl, releaseNotes, apkUrl)
                     } else {
                         vUpdateDot?.visibility = View.GONE
-                        tvStatus.text = "✅ 已是最新版本 ($currentVersion)"
+                        tvStatus.text = "✅ 已是最新版本 ($currentVersionName)"
                         appendLog("✅ 已是最新版本")
                     }
                 }
@@ -837,20 +857,91 @@ class SettingsActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun showUpdateDialog(version: String, url: String, notes: String) {
+    private fun showUpdateDialog(version: String, url: String, notes: String, apkUrl: String) {
         try {
             AlertDialog.Builder(this)
                 .setTitle("🎉 发现新版本 $version")
                 .setMessage("当前版本已不是最新。\n\n更新内容:\n${notes.take(500)}")
-                .setPositiveButton("前往下载") { _, _ ->
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    } catch (e: Exception) {
-                        Toast.makeText(this, "无法打开链接", Toast.LENGTH_SHORT).show()
-                    }
+                .setPositiveButton("立即更新") { _, _ ->
+                    downloadAndInstallApk(apkUrl, version)
                 }
                 .setNegativeButton("稍后", null)
                 .show()
         } catch (_: Exception) {}
+    }
+
+    private fun downloadAndInstallApk(apkUrl: String, version: String) {
+        if (apkUrl.isEmpty()) {
+            // 没有直接的APK链接，尝试构造
+            Toast.makeText(this, "无法获取下载链接，请手动到GitHub下载", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        tvStatus.text = "⏳ 正在下载 v$version..."
+        appendLog("开始下载: $apkUrl")
+
+        Thread {
+            try {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val request = Request.Builder().url(apkUrl).get().build()
+                val response = client.newCall(request).execute()
+
+                if (!response.isSuccessful) {
+                    runOnUiThread {
+                        tvStatus.text = "❌ 下载失败: ${response.code}"
+                        appendLog("下载失败: ${response.code}")
+                    }
+                    return@Thread
+                }
+
+                // 保存到缓存目录
+                val apkFile = java.io.File(cacheDir, "cesia-update.apk")
+                response.body?.byteStream()?.use { input ->
+                    apkFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                runOnUiThread {
+                    tvStatus.text = "✅ 下载完成，正在安装..."
+                    appendLog("APK下载完成: ${apkFile.absolutePath}")
+                }
+
+                // 触发安装
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            // Android 7+ 使用 FileProvider
+                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                this@SettingsActivity,
+                                "${packageName}.fileprovider",
+                                apkFile
+                            )
+                            setDataAndType(uri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        } else {
+                            setDataAndType(Uri.fromFile(apkFile), "application/vnd.android.package-archive")
+                        }
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                    appendLog("已触发安装")
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        tvStatus.text = "❌ 安装失败: ${e.message}"
+                        appendLog("安装失败: ${e.message}")
+                        Toast.makeText(this, "安装失败，请手动安装: ${apkFile.absolutePath}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    tvStatus.text = "❌ 下载异常: ${e.message}"
+                    appendLog("下载异常: ${e.message}")
+                }
+            }
+        }.start()
     }
 }
