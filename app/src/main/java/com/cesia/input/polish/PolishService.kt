@@ -75,7 +75,7 @@ class PolishService(
 
         val systemPrompt = "你是一个中文文本润色助手。请将用户输入的口语化文字润色为通顺、简洁的书面语。只输出润色后的文字，不要解释，不要添加任何前缀或后缀。"
 
-        val models = listOf(OPENROUTER_MODEL, OPENROUTER_MODEL_FALLBACK, "minimax/minimax-m2.5:free", "mistralai/mistral-7b-instruct:free")
+        val models = listOf(_modelId, OPENROUTER_MODEL_FALLBACK)
         var lastError = ""
 
         for (model in models.distinct()) {
@@ -265,10 +265,16 @@ class PolishService(
     }
 
     private var _apiKey: String? = null
+    private var _modelId: String = DEFAULT_OPENROUTER_MODEL
 
     fun updateApiKey(key: String) {
         _apiKey = key.trim()
         Log.d("PolishService", "OpenRouter API Key 已更新")
+    }
+
+    fun updateModelId(model: String) {
+        _modelId = model.trim()
+        Log.d("PolishService", "模型已更新为: $_modelId")
     }
 
     fun updateApiUrl(newUrl: String) {
@@ -308,7 +314,7 @@ class PolishService(
         }
 
         // 魔法模式也支持多模型重试
-        val models = listOf(OPENROUTER_MODEL, OPENROUTER_MODEL_FALLBACK, "minimax/minimax-m2.5:free", "mistralai/mistral-7b-instruct:free")
+        val models = listOf(_modelId, OPENROUTER_MODEL_FALLBACK)
         for (model in models.distinct()) {
             val json = JSONObject().apply {
                 put("model", model)
@@ -366,7 +372,7 @@ class PolishService(
     companion object {
         const val DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
         const val OPENROUTER_MODEL = "google/gemma-4-26b-a4b-it:free"
-        const val OPENROUTER_MODEL_FALLBACK = "google/gemma-4-26b-a4b-it:free"
+        const val OPENROUTER_MODEL_FALLBACK = "mistralai/mistral-7b-instruct:free"
         const val DEFAULT_CUSTOM_URL = "https://typeless-ai-service.vercel.app/api/polish"
     }
 }

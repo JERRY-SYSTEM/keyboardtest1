@@ -268,6 +268,9 @@ class TypelessEngine(
     /** 更新 API URL */
     fun updateApiUrl(url: String) { polishService?.updateApiUrl(url) }
 
+    /** 更新模型 ID */
+    fun updateModelId(model: String) { polishService?.updateModelId(model) }
+
     /** 销毁引擎 */
     fun destroy() {
         fallbackRecognizer?.destroy()

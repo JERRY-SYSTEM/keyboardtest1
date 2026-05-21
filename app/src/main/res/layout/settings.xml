@@ -272,6 +272,22 @@
                 android:text="" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- 模型 ID -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="模型 ID (如 minimax/minimax-m2.5:free)"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_model_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:text="minimax/minimax-m2.5:free" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <!-- 测试文本输入框 -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"

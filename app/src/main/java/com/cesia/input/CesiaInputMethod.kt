@@ -108,10 +108,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     companion object {
         const val PREF_API_URL = "api_url"
+        const val PREF_MODEL_ID = "model_id"
         const val PREF_THEME_MODE = "theme_mode"
         const val PREF_AI_STYLE = "ai_reply_style"
         const val PREF_OPENROUTER_KEY = "openrouter_api_key"
         const val DEFAULT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+        const val DEFAULT_MODEL_ID = "minimax/minimax-m2.5:free"
         const val KEYCODE_SWITCH_SYMBOL = -100
         const val KEYCODE_SWITCH_LANG = -101
         const val THEME_LIGHT = 0
@@ -256,6 +258,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
 
         loadSettings()
+        // 把用户配置的模型ID传给引擎
+        val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+        typelessEngine?.updateModelId(prefs.getString(PREF_MODEL_ID, DEFAULT_MODEL_ID) ?: DEFAULT_MODEL_ID)
         // 加载AI回复风格
         aiReplyStyle = getSharedPreferences("cesia_settings", MODE_PRIVATE)
             .getString(PREF_AI_STYLE, "自然") ?: "自然"
@@ -593,6 +598,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             typelessEngine?.updateApiUrl(apiUrl)
             val apiKey = prefs.getString(PREF_OPENROUTER_KEY, "") ?: ""
             typelessEngine?.getPolishService()?.updateApiKey(apiKey)
+            val modelId = prefs.getString(PREF_MODEL_ID, DEFAULT_MODEL_ID) ?: DEFAULT_MODEL_ID
+            typelessEngine?.updateModelId(modelId)
         } catch (_: Exception) {
             apiUrl = DEFAULT_API_URL
         }

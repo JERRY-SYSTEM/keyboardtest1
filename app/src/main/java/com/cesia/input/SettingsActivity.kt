@@ -35,6 +35,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var etApiUrl: TextInputEditText
     private lateinit var etApiKey: TextInputEditText
+    private lateinit var etModelId: TextInputEditText
     private lateinit var etTestText: TextInputEditText
     private lateinit var btnSave: MaterialButton
     private lateinit var btnReset: MaterialButton
@@ -76,6 +77,8 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         const val PREF_API_URL = "api_url"
         const val DEFAULT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+        const val PREF_MODEL_ID = "model_id"
+        const val DEFAULT_MODEL_ID = "minimax/minimax-m2.5:free"
         const val PERMISSION_REQUEST_CODE = 1001
         const val PREF_THEME_MODE = "theme_mode"
         const val THEME_LIGHT = 0
@@ -120,6 +123,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun initViews() {
         etApiUrl = findViewById(R.id.et_api_url)
         etApiKey = findViewById(R.id.et_openrouter_key)
+        etModelId = findViewById(R.id.et_model_id)
         etTestText = findViewById(R.id.et_test_text)
         btnSave = findViewById(R.id.btn_save)
         btnReset = findViewById(R.id.btn_reset)
@@ -248,6 +252,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun loadSettings() {
         etApiUrl.setText(prefs.getString(PREF_API_URL, DEFAULT_API_URL))
         etApiKey.setText(prefs.getString("openrouter_api_key", ""))
+        etModelId.setText(prefs.getString(PREF_MODEL_ID, DEFAULT_MODEL_ID))
         appendLog("已加载设置")
     }
 
@@ -259,13 +264,16 @@ class SettingsActivity : AppCompatActivity() {
                 etApiUrl.error = "URL 必须以 http:// 或 https:// 开头"; return@setOnClickListener
             }
             val apiKey = etApiKey.text?.toString()?.trim() ?: ""
+            val modelId = etModelId.text?.toString()?.trim() ?: DEFAULT_MODEL_ID
             prefs.edit()
                 .putString(PREF_API_URL, url)
                 .putString("openrouter_api_key", apiKey)
+                .putString(PREF_MODEL_ID, modelId)
                 .apply()
             tvStatus.text = "✓ 设置已保存"
             appendLog("💾 API: $url")
             appendLog("🔑 API Key: ${if (apiKey.isNotEmpty()) "已设置(${apiKey.take(8)}...)" else "未设置"}")
+            appendLog("🤖 模型: $modelId")
             Toast.makeText(this, "设置已保存 ✓", Toast.LENGTH_SHORT).show()
         }
 
@@ -685,7 +693,7 @@ class SettingsActivity : AppCompatActivity() {
                         })
                     }
                     val json = JSONObject().apply {
-                        put("model", "google/gemma-4-26b-a4b-it:free")
+                        put("model", etModelId.text?.toString()?.trim() ?: DEFAULT_MODEL_ID)
                         put("messages", messages)
                         put("temperature", 0.3)
                         put("max_tokens", 512)
