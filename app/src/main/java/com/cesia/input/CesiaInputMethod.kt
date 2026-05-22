@@ -49,7 +49,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 视图
     private lateinit var keyboardView: com.cesia.input.ui.CustomKeyboardView
     private lateinit var qwertyKeyboard: Keyboard
-    private lateinit var symbolKeyboard: Keyboard
+    private lateinit var symbolKeyboardEn: Keyboard
+    private lateinit var symbolKeyboardCn: Keyboard
     private var currentKeyboard: Keyboard? = null
 
     private lateinit var micButton: MaterialButton
@@ -178,7 +179,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // 初始化键盘
         qwertyKeyboard = Keyboard(this, R.xml.qwerty)
-        symbolKeyboard = Keyboard(this, R.xml.symbols)
+        symbolKeyboardEn = Keyboard(this, R.xml.symbols)
+        symbolKeyboardCn = Keyboard(this, R.xml.symbols_cn)
         currentKeyboard = qwertyKeyboard
 
         keyboardView.keyboard = currentKeyboard
@@ -326,17 +328,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun animateMicSplit() {
         try {
-            // btn_mic 缩小并移到左边
-            micButton.animate().scaleX(0.8f).scaleY(0.8f).alpha(0f).setDuration(200).withEndAction {
+            // btn_mic 缩小消失
+            micButton.animate().scaleX(0.5f).scaleY(0.5f).alpha(0f).setDuration(200).withEndAction {
                 micButton.visibility = View.GONE
-                // AI+ 从左到右滑动出现
+
+                // 声波动画出现（在两个按钮之间）
+                voiceWave.visibility = View.VISIBLE
+                startVoiceWave()
+
+                // AI+ 从左侧滑入
                 btnMicAi.visibility = View.VISIBLE
-                btnMicAi.translationX = -100f
+                btnMicAi.translationX = -80f
                 btnMicAi.animate().translationX(0f).alpha(1f).setDuration(250).start()
 
-                // AI× 从右到左滑动出现
+                // AI× 从右侧滑入
                 btnMicNoAi.visibility = View.VISIBLE
-                btnMicNoAi.translationX = 100f
+                btnMicNoAi.translationX = 80f
                 btnMicNoAi.animate().translationX(0f).alpha(1f).setDuration(250).start()
             }.start()
         } catch (_: Exception) {}
@@ -344,17 +351,21 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun animateMicMerge() {
         try {
-            // AI+ 向左收缩
-            btnMicAi.animate().translationX(-100f).alpha(0f).setDuration(200).withEndAction {
+            stopVoiceWave()
+            voiceWave.visibility = View.GONE
+
+            // AI+ 向左滑出
+            btnMicAi.animate().translationX(-80f).alpha(0f).setDuration(200).withEndAction {
                 btnMicAi.visibility = View.GONE
             }.start()
-            // AI× 向右收缩
-            btnMicNoAi.animate().translationX(100f).alpha(0f).setDuration(200).withEndAction {
+
+            // AI× 向右滑出
+            btnMicNoAi.animate().translationX(80f).alpha(0f).setDuration(200).withEndAction {
                 btnMicNoAi.visibility = View.GONE
                 // 主按钮从缩小状态放大回来
                 micButton.visibility = View.VISIBLE
-                micButton.scaleX = 0.8f
-                micButton.scaleY = 0.8f
+                micButton.scaleX = 0.5f
+                micButton.scaleY = 0.5f
                 micButton.alpha = 0f
                 micButton.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(250).start()
             }.start()
@@ -1385,11 +1396,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun switchToSymbolKeyboard() {
         if (!isSymbolMode) {
             isSymbolMode = true
-            isChineseMode = false
-            pinyinEngine.clear()
-            candidateBar.visibility = View.GONE
-            currentKeyboard = symbolKeyboard
-            keyboardView.keyboard = symbolKeyboard
+            // 使用语言对应的符号键盘
+            val symKbd = if (isChineseMode) symbolKeyboardCn else symbolKeyboardEn
+            currentKeyboard = symKbd
+            keyboardView.keyboard = symKbd
             keyboardView.invalidateAllKeys()
         }
     }
@@ -1449,8 +1459,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             KEYCODE_SWITCH_SYMBOL -> toggleKeyboard()
             KEYCODE_SWITCH_LANG -> toggleChineseMode()
             KEYCODE_BACK_KEY -> {
-                // ← 返回键：隐藏键盘
-                requestHideSelf(0)
+                // ← 返回键：切换回字母键盘
+                switchToQwertyKeyboard()
             }
             -1 -> {
                 isCapsLock = !isCapsLock
@@ -1508,7 +1518,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             Keyboard.KEYCODE_MODE_CHANGE -> toggleKeyboard()
             else -> {
-                if (isChineseMode) {
+                if (isSymbolMode) {
+                    // 符号键盘：直接输出字符（包含Unicode中文标点）
+                    currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                } else if (isChineseMode) {
                     handleChineseInput(primaryCode)
                 } else {
                     var char = primaryCode.toChar()

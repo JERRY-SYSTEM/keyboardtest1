@@ -162,47 +162,22 @@
             android:layout_marginEnd="3dp" />
 
         <!-- 麦克风/语音按钮区域 -->
-        <FrameLayout
+        <LinearLayout
             android:id="@+id/mic_button_container"
             android:layout_width="0dp"
             android:layout_height="52dp"
             android:layout_weight="3"
-            android:layout_marginEnd="3dp">
+            android:layout_marginEnd="3dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-            <!-- 声波动画指示器（录音时显示，位于按钮下方） -->
-            <View
-                android:id="@+id/v_voice_wave"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_gravity="center"
-                android:background="@drawable/voice_wave_anim"
-                android:visibility="gone" />
-
-            <!-- 主麦克风按钮（默认显示） -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_mic"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_gravity="center"
-                android:text="🎤 说话"
-                android:textSize="14sp"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#2196F3"
-                app:cornerRadius="22dp"
-                android:elevation="2dp"
-                android:stateListAnimator="@null"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:translationZ="0dp" />
-
-            <!-- AI+ 按钮（录音时显示） -->
+            <!-- AI+ 按钮（录音时显示，左侧） -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mic_ai"
                 android:layout_width="0dp"
                 android:layout_height="40dp"
-                android:layout_gravity="start|center_vertical"
                 android:layout_weight="1"
-                android:text="✨AI润色"
+                android:text="✨润色"
                 android:textSize="12sp"
                 android:textColor="#FFFFFF"
                 android:backgroundTint="#FF9800"
@@ -211,18 +186,25 @@
                 android:stateListAnimator="@null"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:layout_marginEnd="3dp"
-                android:visibility="gone"
-                android:translationZ="0dp" />
+                android:layout_marginEnd="4dp"
+                android:visibility="gone" />
 
-            <!-- AI× 按钮（录音时显示） -->
+            <!-- 声波动画指示器（录音时在两个按钮之间显示） -->
+            <View
+                android:id="@+id/v_voice_wave"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:background="@drawable/voice_wave_anim"
+                android:layout_marginEnd="4dp"
+                android:visibility="gone" />
+
+            <!-- AI× 按钮（录音时显示，右侧） -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mic_noai"
                 android:layout_width="0dp"
                 android:layout_height="40dp"
-                android:layout_gravity="end|center_vertical"
                 android:layout_weight="1"
-                android:text="⚡直接上屏"
+                android:text="⚡上屏"
                 android:textSize="12sp"
                 android:textColor="#FFFFFF"
                 android:backgroundTint="#757575"
@@ -231,9 +213,24 @@
                 android:stateListAnimator="@null"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:visibility="gone"
-                android:translationZ="0dp" />
-        </FrameLayout>
+                android:visibility="gone" />
+
+            <!-- 主麦克风按钮（默认显示，覆盖前三个按钮） -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_mic"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="🎤 说话"
+                android:textSize="14sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#2196F3"
+                app:cornerRadius="22dp"
+                android:elevation="2dp"
+                android:stateListAnimator="@null"
+                android:insetTop="0dp"
+                android:insetBottom="0dp" />
+
+        </LinearLayout>
 
         <!-- 删除按钮 -->
         <ImageButton
