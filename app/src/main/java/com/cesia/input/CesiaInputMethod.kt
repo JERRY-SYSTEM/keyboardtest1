@@ -1263,15 +1263,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     /**
      * 长按自动写作：弹出魔法菜单
      *
-     * 改进：
-     * - 点击魔法指令 → 加载 + 立即应用到当前文字
-     * - 底部管理按钮 → 进入"模式"，高亮按钮 → 再点魔法执行对应操作
-     * - 长按魔法项 → 展开显示全文
+     * - 点击项 → 立即应用
+     * - 长按项 → 弹出置顶/删除菜单
+     * - 底部栏：↩️ 撤销
      */
     private fun showMagicHistoryPopup() {
         val mgr = magicHistoryManager ?: return
         val records = mgr.getRecords()
-        menuActionMode = null  // 重置动作模式
 
         try {
             val inflater = android.view.LayoutInflater.from(this)
@@ -1288,7 +1286,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val items = mutableListOf<MagicHistoryManager.MagicRecord>()
             items.addAll(records)
 
-            // 管理栏按钮引用
+            // 管理栏按钮
             val btnPin = popupView.findViewById<TextView>(R.id.btn_pin_manage)
             val btnDelete = popupView.findViewById<TextView>(R.id.btn_delete_manage)
             val btnUndo = popupView.findViewById<TextView>(R.id.btn_undo_manage)
@@ -1309,7 +1307,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     tv.setTextColor(if (record.instruction == currentMagicPrompt) 0xFF1565C0.toInt() else 0xFF333333.toInt())
                     tv.setTypeface(null, if (record.instruction == currentMagicPrompt) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
 
-                    // 长按：展开显示全文
+                    // 长按展开全文
                     tvFull.text = record.instruction
                     tvFull.visibility = View.GONE
 
@@ -1324,80 +1322,113 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         }, 3000)
                         true
                     }
-
                     return v
                 }
             }
 
-            // 点击项：根据当前模式执行不同操作
+            // 点击项：立即应用魔法
             gridView.setOnItemClickListener { _, _, position, _ ->
                 val record = items[position]
-                when (menuActionMode) {
-                    "pin" -> {
-                        // 置顶模式：切换置顶
+                currentMagicPrompt = record.instruction
+                updateStatus("✅ 已应用：${record.instruction.take(20)}…")
+                popup.dismiss()
+                executeSelectedMagic(record.instruction)
+            }
+
+            // 长按项：弹出置顶/删除菜单
+            gridView.setOnItemLongClickListener { _, v, position, _ ->
+                val record = items[position]
+                val popupMenu = android.widget.PopupMenu(this, v)
+                popupMenu.menu.add(0, 1, 0, if (record.isPinned) "取消置顶" else "📌 置顶")
+                popupMenu.menu.add(0, 2, 1, "🗑️ 删除")
+                popupMenu.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> {
+                            mgr.togglePin(record.id)
+                            currentMagicPrompt = mgr.getActiveInstruction()
+                            // 刷新网格
+                            items.clear()
+                            items.addAll(mgr.getRecords())
+                            (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
+                            updateStatus(if (!record.isPinned) "📌 已置顶" else "取消置顶")
+                            true
+                        }
+                        2 -> {
+                            mgr.removeRecord(record.id)
+                            items.clear()
+                            val updated = mgr.getRecords()
+                            items.addAll(updated)
+                            if (currentMagicPrompt != null && updated.none { it.instruction == currentMagicPrompt }) {
+                                currentMagicPrompt = mgr.getActiveInstruction()
+                            }
+                            (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
+                            if (items.isEmpty()) {
+                                btnPin.visibility = View.GONE
+                                btnDelete.visibility = View.GONE
+                            }
+                            updateStatus("🗑️ 已删除")
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                popupMenu.show()
+                true
+            }
+
+            // 置顶按钮：弹出全部置顶操作菜单
+            btnPin.setOnClickListener {
+                if (items.isEmpty()) return@setOnClickListener
+                val popupMenu = android.widget.PopupMenu(this, btnPin)
+                for (r in items) {
+                    val title = "${if (r.isPinned) "📌 " else "○ "}${r.instruction.take(18)}"
+                    popupMenu.menu.add(0, r.id.toInt(), 0, title)
+                }
+                popupMenu.setOnMenuItemClickListener { item ->
+                    val record = items.find { it.id.toInt() == item.itemId }
+                    if (record != null) {
                         mgr.togglePin(record.id)
                         currentMagicPrompt = mgr.getActiveInstruction()
-                        updateStatus(if (!record.isPinned) "📌 已置顶：${record.instruction.take(15)}…" else "取消置顶")
-                        // 刷新网格
                         items.clear()
                         items.addAll(mgr.getRecords())
                         (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
-                        menuActionMode = null
-                        btnPin.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        btnDelete.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        updateStatus(if (!record.isPinned) "📌 已置顶" else "取消置顶")
                     }
-                    "delete" -> {
-                        // 删除模式：删除该条
-                        mgr.removeRecord(record.id)
+                    true
+                }
+                popupMenu.show()
+            }
+
+            // 删除按钮：弹出全部删除操作菜单
+            btnDelete.setOnClickListener {
+                if (items.isEmpty()) return@setOnClickListener
+                val popupMenu = android.widget.PopupMenu(this, btnDelete)
+                for (r in items) {
+                    popupMenu.menu.add(0, r.id.toInt(), 0, "🗑️ ${r.instruction.take(18)}")
+                }
+                popupMenu.menu.add(0, -1, items.size, "⚠️ 删除全部（${items.size}条）")
+                popupMenu.setOnMenuItemClickListener { item ->
+                    if (item.itemId == -1) {
+                        mgr.clearAll()
+                        items.clear()
+                        currentMagicPrompt = null
+                        (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
+                        btnPin.visibility = View.GONE
+                        btnDelete.visibility = View.GONE
+                        updateStatus("🗑️ 已删除全部记录")
+                    } else {
+                        mgr.removeRecord(item.itemId.toLong())
+                        items.clear()
                         val updated = mgr.getRecords()
+                        items.addAll(updated)
                         if (currentMagicPrompt != null && updated.none { it.instruction == currentMagicPrompt }) {
                             currentMagicPrompt = mgr.getActiveInstruction()
                         }
-                        updateStatus("🗑️ 已删除：${record.instruction.take(15)}…")
-                        items.clear()
-                        items.addAll(updated)
                         (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
-                        menuActionMode = null
-                        btnPin.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        btnDelete.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     }
-                    else -> {
-                        // 正常模式：加载 + 立即应用到当前文字
-                        currentMagicPrompt = record.instruction
-                        updateStatus("✅ 已应用：${record.instruction.take(20)}…")
-                        popup.dismiss()
-                        // 立即执行
-                        executeSelectedMagic(record.instruction)
-                    }
+                    true
                 }
-            }
-
-            // 置顶按钮 → 进入置顶模式（高亮）
-            btnPin.setOnClickListener {
-                if (menuActionMode == "pin") {
-                    // 取消模式
-                    menuActionMode = null
-                    btnPin.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                } else {
-                    menuActionMode = "pin"
-                    btnPin.setBackgroundColor(0xFFE3F2FD.toInt())
-                    btnDelete.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    updateStatus("📌 请点击要置顶或取消置顶的魔法指令")
-                }
-            }
-
-            // 删除按钮 → 进入删除模式（高亮）
-            btnDelete.setOnClickListener {
-                if (menuActionMode == "delete") {
-                    // 取消模式
-                    menuActionMode = null
-                    btnDelete.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                } else {
-                    menuActionMode = "delete"
-                    btnDelete.setBackgroundColor(0xFFFFEBEE.toInt())
-                    btnPin.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    updateStatus("🗑️ 请点击要删除的魔法指令（点击「删除全部」可批量删除）")
-                }
+                popupMenu.show()
             }
 
             // 撤销按钮
@@ -1406,7 +1437,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 performUndo()
             }
 
-            // 如果无记录，隐藏管理栏
+            // 无记录时隐藏管理栏
             if (items.isEmpty()) {
                 btnPin.visibility = View.GONE
                 btnDelete.visibility = View.GONE
