@@ -265,7 +265,7 @@ class PolishService(
     }
 
     private var _apiKey: String? = null
-    private var _modelId: String = DEFAULT_OPENROUTER_MODEL
+    private var _modelId: String = OPENROUTER_MODEL
 
     fun updateApiKey(key: String) {
         _apiKey = key.trim()
