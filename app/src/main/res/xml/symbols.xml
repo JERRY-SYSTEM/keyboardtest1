@@ -57,15 +57,20 @@
         <Key android:codes="96" android:keyLabel="`" />
         <Key android:codes="126" android:keyLabel="~" />
         <Key android:codes="63" android:keyLabel="?" />
-        <Key android:codes="44" android:keyLabel="," android:keyEdgeFlags="right" />
+        <Key android:codes="44" android:keyLabel="，" android:keyEdgeFlags="right" />
     </Row>
 
-    <!-- 第五行：切换回字母 + 空格 + 删除 + 回车 -->
+    <!-- 第五行：← 返回 + ABC + 空格 + ，+ 。+ ⌫ + ↵ → 总宽度 14+14+34+10+10+12+12=106% -->
+    <!-- 调整: 12+14+34+10+10+12+12=104% -->
+    <!-- 调整: 12+14+34+10+10+10+10=100% -->
     <Row>
-        <Key android:codes="-100" android:keyLabel="ABC" android:keyWidth="18%p" android:keyEdgeFlags="left" />
-        <Key android:codes="32" android:keyLabel="空格" android:keyWidth="40%p" />
-        <Key android:codes="-5" android:keyLabel="⌫" android:keyWidth="15%p" />
-        <Key android:codes="10" android:keyLabel="↵" android:keyWidth="15%p" android:keyEdgeFlags="right" />
+        <Key android:codes="-999" android:keyLabel="←" android:keyWidth="12%p" android:keyEdgeFlags="left" />
+        <Key android:codes="-100" android:keyLabel="ABC" android:keyWidth="14%p" />
+        <Key android:codes="32" android:keyLabel="空格" android:keyWidth="34%p" />
+        <Key android:codes="44" android:keyLabel="，" android:keyWidth="10%p" />
+        <Key android:codes="46" android:keyLabel="。" android:keyWidth="10%p" />
+        <Key android:codes="-5" android:keyLabel="⌫" android:keyWidth="10%p" />
+        <Key android:codes="10" android:keyLabel="↵" android:keyWidth="10%p" android:keyEdgeFlags="right" />
     </Row>
 
 </Keyboard>

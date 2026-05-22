@@ -5,7 +5,7 @@
     android:orientation="vertical"
     android:background="@drawable/popup_bg">
 
-    <!-- 魔法语句网格 -->
+    <!-- 魔法语句网格 - 可滚动 -->
     <GridView
         android:id="@+id/gv_magic_items"
         android:layout_width="match_parent"
@@ -16,6 +16,9 @@
         android:horizontalSpacing="2dp"
         android:verticalSpacing="2dp"
         android:padding="6dp"
+        android:maxHeight="360dp"
+        android:scrollbars="vertical"
+        android:fastScrollEnabled="true"
         android:listSelector="@android:color/transparent" />
 
     <!-- 底部管理栏 -->
