@@ -91,6 +91,17 @@ class MagicHistoryManager(context: Context) {
         saveRecords(records.filter { it.id != id })
     }
 
+    /** 删除多条记录 */
+    fun removeRecords(ids: List<Long>) {
+        val records = getRecords()
+        saveRecords(records.filter { it.id !in ids })
+    }
+
+    /** 清空所有记录 */
+    fun clearAll() {
+        saveRecords(emptyList())
+    }
+
     /** 获取已置顶的指令（如果有） */
     fun getActiveInstruction(): String? {
         val records = getRecords()

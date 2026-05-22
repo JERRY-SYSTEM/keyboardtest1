@@ -1068,7 +1068,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }.start()
     }
 
-    /** 长按自动写作：用PopupMenu显示魔法修改历史（避免AlertDialog在InputMethodService中BadTokenException） */
+    /** 长按自动写作：用PopupMenu显示魔法修改历史 */
     private fun showMagicHistoryPopup() {
         val mgr = magicHistoryManager ?: return
         val records = mgr.getRecords()
@@ -1076,14 +1076,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         try {
             val popup = PopupMenu(this, btnClipboard)
 
-            // 选项1：清除魔法，回到AI自动回复
-            popup.menu.add(0, -1, 0, "📝 AI自动回复（无魔法）")
-
             if (records.isEmpty()) {
                 popup.menu.add(0, -2, 0, "✨ 暂无魔法修改记录").isEnabled = false
             } else {
-                // 添加分隔线
-                for (r in records.take(10)) { // 最多显示10条
+                for (r in records.take(10)) {
                     val pin = if (r.isPinned) "📌 " else ""
                     val title = "${pin}${r.instruction.take(25)}${if (r.instruction.length > 25) "…" else ""}"
                     val menuItem = popup.menu.add(0, r.id.toInt(), 0, title)
@@ -1093,24 +1089,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
 
-            // 如果有记录，添加置顶管理选项
+            // 管理选项
             if (records.isNotEmpty()) {
                 popup.menu.add(0, -3, 0, "📌 置顶管理")
+                popup.menu.add(0, -4, 0, "🗑️ 删除记录")
             }
 
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
-                    -1 -> {
-                        currentMagicPrompt = null
-                        updateStatus("✅ 已切换为AI自动回复")
-                        true
-                    }
-                    -2 -> false // 占位项
-                    -3 -> {
-                        // 打开置顶管理子菜单
-                        showPinSubMenu(mgr, records)
-                        true
-                    }
+                    -2 -> false
+                    -3 -> { showPinSubMenu(mgr, records); true }
+                    -4 -> { showDeleteSubMenu(mgr, records); true }
                     else -> {
                         val record = records.find { it.id.toInt() == item.itemId }
                         if (record != null) {
@@ -1125,24 +1114,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             popup.show()
         } catch (e: Exception) {
             Log.e("Cesia", "showMagicHistoryPopup 异常", e)
-            // 降级：在状态栏显示提示
             updateStatus("长按可管理魔法指令（暂无记录时需先使用✨魔法修改）")
         }
     }
 
-    /** 置顶管理子菜单 */
+    /** 置顶管理子菜单：点击切换置顶 */
     private fun showPinSubMenu(mgr: MagicHistoryManager, records: List<MagicHistoryManager.MagicRecord>) {
         try {
             val popup = PopupMenu(this, btnClipboard)
             for (r in records) {
-                val mark = if (r.isPinned) "● " else "○ "
-                val title = "${mark}${r.instruction.take(20)}"
-                val item = popup.menu.add(0, r.id.toInt(), 0, title)
-                if (r.isPinned) {
-                    item.title = "📌 ${r.instruction.take(20)}"
-                }
+                val title = "${if (r.isPinned) "📌 " else "○ "}${r.instruction.take(20)}"
+                popup.menu.add(0, r.id.toInt(), 0, title)
             }
-
             popup.setOnMenuItemClickListener { item ->
                 val record = records.find { it.id.toInt() == item.itemId }
                 if (record != null) {
@@ -1152,11 +1135,43 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
                 true
             }
-
             popup.show()
         } catch (e: Exception) {
             Log.e("Cesia", "showPinSubMenu 异常", e)
             updateStatus("❌ 无法管理置顶")
+        }
+    }
+
+    /** 删除子菜单：单条删除 + 批量删除 */
+    private fun showDeleteSubMenu(mgr: MagicHistoryManager, records: List<MagicHistoryManager.MagicRecord>) {
+        try {
+            val popup = PopupMenu(this, btnClipboard)
+            for (r in records) {
+                popup.menu.add(0, r.id.toInt(), 0, "🗑️ ${r.instruction.take(20)}")
+            }
+            if (records.size > 1) {
+                popup.menu.add(0, -10, 0, "⚠️ 删除全部（${records.size}条）")
+            }
+            popup.setOnMenuItemClickListener { item ->
+                if (item.itemId == -10) {
+                    // 删除全部
+                    mgr.clearAll()
+                    currentMagicPrompt = null
+                    updateStatus("🗑️ 已删除全部魔法指令记录")
+                } else {
+                    mgr.removeRecord(item.itemId.toLong())
+                    val updated = mgr.getRecords()
+                    if (currentMagicPrompt != null && updated.none { it.instruction == currentMagicPrompt }) {
+                        currentMagicPrompt = mgr.getActiveInstruction()
+                    }
+                    updateStatus("🗑️ 已删除")
+                }
+                true
+            }
+            popup.show()
+        } catch (e: Exception) {
+            Log.e("Cesia", "showDeleteSubMenu 异常", e)
+            updateStatus("❌ 无法删除")
         }
     }
 
