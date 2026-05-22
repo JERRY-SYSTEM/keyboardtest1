@@ -175,8 +175,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 初始化引擎
         statsManager = PolishStatsManager(this)
         magicHistoryManager = MagicHistoryManager(this)
-        // 启动时不自动加载魔法指令，默认走AI自动回复
-        currentMagicPrompt = null
+        // 启动时加载最近使用的魔法指令
+        currentMagicPrompt = magicHistoryManager?.getActiveInstruction()
         pinyinEngine = PinyinEngine(this)
         typelessEngine = TypelessEngine(this, this).also { engine ->
             engine.onLogMessage = { msg ->
