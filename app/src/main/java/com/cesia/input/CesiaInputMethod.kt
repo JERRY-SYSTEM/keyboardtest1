@@ -15,6 +15,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import com.cesia.input.engine.PinyinEngine
@@ -174,7 +175,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 初始化引擎
         statsManager = PolishStatsManager(this)
         magicHistoryManager = MagicHistoryManager(this)
-        currentMagicPrompt = magicHistoryManager?.getActiveInstruction()
+        // 启动时不自动加载魔法指令，默认走AI自动回复
+        currentMagicPrompt = null
         pinyinEngine = PinyinEngine(this)
         typelessEngine = TypelessEngine(this, this).also { engine ->
             engine.onLogMessage = { msg ->
@@ -1066,81 +1068,95 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }.start()
     }
 
-    /** 长按自动写作：显示魔法修改历史弹窗（使用与showAiStylePicker相同的对话框模式） */
+    /** 长按自动写作：用PopupMenu显示魔法修改历史（避免AlertDialog在InputMethodService中BadTokenException） */
     private fun showMagicHistoryPopup() {
         val mgr = magicHistoryManager ?: return
         val records = mgr.getRecords()
 
-        val inflater = android.view.LayoutInflater.from(this)
-
         try {
-            // 创建弹窗布局
-            val dialogView = inflater.inflate(R.layout.dialog_ai_style_picker, null)
-            val container = dialogView.findViewById<LinearLayout>(R.id.style_container)
-            container.removeAllViews()
+            val popup = PopupMenu(this, btnClipboard)
 
-            val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-                .setView(dialogView)
-                .setTitle("🎯 选择魔法指令")
-                .setNegativeButton("取消", null)
-                .create()
-
-            // 添加"AI自动回复"选项（清除魔法）
-            val clearItem = inflater.inflate(R.layout.item_ai_style, container, false)
-            clearItem.findViewById<TextView>(R.id.tv_style_icon).text = "📝"
-            clearItem.findViewById<TextView>(R.id.tv_style_name).text = "AI自动回复（无魔法）"
-            clearItem.findViewById<TextView>(R.id.tv_style_desc).text = "取消选中的魔法指令"
-            clearItem.setOnClickListener {
-                currentMagicPrompt = null
-                updateStatus("✅ 已切换为AI自动回复")
-                dialog.dismiss()
-            }
-            container.addView(clearItem)
+            // 选项1：清除魔法，回到AI自动回复
+            popup.menu.add(0, -1, 0, "📝 AI自动回复（无魔法）")
 
             if (records.isEmpty()) {
-                val emptyItem = inflater.inflate(R.layout.item_ai_style, container, false)
-                emptyItem.findViewById<TextView>(R.id.tv_style_icon).visibility = View.GONE
-                emptyItem.findViewById<TextView>(R.id.tv_style_name).text = "暂无魔法修改记录"
-                emptyItem.findViewById<TextView>(R.id.tv_style_desc).text = "在✨魔法修改中使用语音指令后会自动保存"
-                container.addView(emptyItem)
+                popup.menu.add(0, -2, 0, "✨ 暂无魔法修改记录").isEnabled = false
             } else {
-                for (r in records) {
-                    val item = inflater.inflate(R.layout.item_ai_style, container, false)
-                    val icon = item.findViewById<TextView>(R.id.tv_style_icon)
-                    val name = item.findViewById<TextView>(R.id.tv_style_name)
-                    val desc = item.findViewById<TextView>(R.id.tv_style_desc)
-
-                    icon.text = if (r.isPinned) "📌" else "✨"
-                    name.text = r.instruction.take(30) + if (r.instruction.length > 30) "..." else ""
-                    desc.text = if (r.isPinned) "已置顶 · 点击切换" else "点击选择 · 长按置顶"
-
-                    item.setOnClickListener {
-                        currentMagicPrompt = r.instruction
-                        updateStatus("✅ 已加载：${r.instruction.take(20)}...")
-                        dialog.dismiss()
-                    }
-
-                    item.setOnLongClickListener {
-                        mgr.togglePin(r.id)
-                        currentMagicPrompt = mgr.getActiveInstruction()
-                        updateStatus(if (!r.isPinned) "📌 已置顶" else "取消置顶")
-                        dialog.dismiss()
-                        true
-                    }
-
-                    // 高亮当前选中的
+                // 添加分隔线
+                for (r in records.take(10)) { // 最多显示10条
+                    val pin = if (r.isPinned) "📌 " else ""
+                    val title = "${pin}${r.instruction.take(25)}${if (r.instruction.length > 25) "…" else ""}"
+                    val menuItem = popup.menu.add(0, r.id.toInt(), 0, title)
                     if (r.instruction == currentMagicPrompt) {
-                        item.setBackgroundColor(0xFFE8F5E9.toInt())
+                        menuItem.isChecked = true
                     }
-
-                    container.addView(item)
                 }
             }
 
-            dialog.show()
+            // 如果有记录，添加置顶管理选项
+            if (records.isNotEmpty()) {
+                popup.menu.add(0, -3, 0, "📌 置顶管理")
+            }
+
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    -1 -> {
+                        currentMagicPrompt = null
+                        updateStatus("✅ 已切换为AI自动回复")
+                        true
+                    }
+                    -2 -> false // 占位项
+                    -3 -> {
+                        // 打开置顶管理子菜单
+                        showPinSubMenu(mgr, records)
+                        true
+                    }
+                    else -> {
+                        val record = records.find { it.id.toInt() == item.itemId }
+                        if (record != null) {
+                            currentMagicPrompt = record.instruction
+                            updateStatus("✅ 已加载：${record.instruction.take(20)}…")
+                        }
+                        true
+                    }
+                }
+            }
+
+            popup.show()
         } catch (e: Exception) {
             Log.e("Cesia", "showMagicHistoryPopup 异常", e)
-            updateStatus("❌ 无法显示菜单: ${e.message}")
+            // 降级：在状态栏显示提示
+            updateStatus("长按可管理魔法指令（暂无记录时需先使用✨魔法修改）")
+        }
+    }
+
+    /** 置顶管理子菜单 */
+    private fun showPinSubMenu(mgr: MagicHistoryManager, records: List<MagicHistoryManager.MagicRecord>) {
+        try {
+            val popup = PopupMenu(this, btnClipboard)
+            for (r in records) {
+                val mark = if (r.isPinned) "● " else "○ "
+                val title = "${mark}${r.instruction.take(20)}"
+                val item = popup.menu.add(0, r.id.toInt(), 0, title)
+                if (r.isPinned) {
+                    item.title = "📌 ${r.instruction.take(20)}"
+                }
+            }
+
+            popup.setOnMenuItemClickListener { item ->
+                val record = records.find { it.id.toInt() == item.itemId }
+                if (record != null) {
+                    mgr.togglePin(record.id)
+                    currentMagicPrompt = mgr.getActiveInstruction()
+                    updateStatus(if (!record.isPinned) "📌 已置顶" else "取消置顶")
+                }
+                true
+            }
+
+            popup.show()
+        } catch (e: Exception) {
+            Log.e("Cesia", "showPinSubMenu 异常", e)
+            updateStatus("❌ 无法管理置顶")
         }
     }
 
