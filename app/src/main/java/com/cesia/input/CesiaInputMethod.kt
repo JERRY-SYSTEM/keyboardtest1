@@ -372,6 +372,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 startRecordingImmediately()
             } else if (isWaitingForChoice) {
                 updateStatus("请点击 AI+ 或 AI× 选择处理方式")
+            } else if (isRecording) {
+                // 录音中点击 → 停止录音（连续模式下会触发识别结果回调）
+                stopRecording()
             }
         }
         micButton.setOnLongClickListener {

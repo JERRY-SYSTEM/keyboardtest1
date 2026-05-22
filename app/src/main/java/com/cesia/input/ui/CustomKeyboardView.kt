@@ -29,7 +29,7 @@ class CustomKeyboardView @JvmOverloads constructor(
             if (!key.popupCharacters.isNullOrEmpty()) {
                 val symbol = key.popupCharacters[0].toString()
                 // 调大符号：0.45f，最大28f
-                val textSize = (key.height * 0.45f).coerceIn(16f, 28f)
+                val textSize = (key.height * 0.45f).coerceIn(20f, 28f)
                 subsidiaryPaint.textSize = textSize
 
                 // 右上角：右边留6px，顶部留4px+文字高度偏移
