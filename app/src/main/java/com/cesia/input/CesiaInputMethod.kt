@@ -516,8 +516,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             if (isChineseMode && pinyinEngine.isComposing()) {
                 handleChineseBackspace()
             } else {
+                // 短按：清空光标之前的文字
                 currentInputConnection?.deleteSurroundingText(Integer.MAX_VALUE, 0)
             }
+        }
+        btnDelete.setOnLongClickListener {
+            if (isChineseMode && pinyinEngine.isComposing()) {
+                handleChineseBackspace()
+            } else {
+                // 长按：清空光标之后的文字
+                currentInputConnection?.deleteSurroundingText(0, Integer.MAX_VALUE)
+            }
+            true
         }
 
         // 自动写作按钮：短按→有魔法指令则执行魔法，否则AI自动回复；长按→弹出魔法菜单
