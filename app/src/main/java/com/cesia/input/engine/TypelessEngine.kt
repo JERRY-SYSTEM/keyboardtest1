@@ -269,7 +269,29 @@ class TypelessEngine(
     }
 
     /** 更新 API URL */
-    fun updateApiUrl(url: String) { polishService?.updateApiUrl(url) }
+    fun updateApiUrl(url: String) {
+        val normalized = normalizeApiUrl(url.trim())
+        polishService?.updateApiUrl(normalized)
+    }
+
+    /**
+     * 规范化 API URL
+     * - 如果 URL 只有域名（如 https://api.cesia.cc），自动追加 /api/v1/chat/completions
+     * - 如果 URL 已包含路径，保持原样
+     */
+    private fun normalizeApiUrl(url: String): String {
+        if (url.isEmpty()) return DEFAULT_OPENROUTER_URL
+        // 如果 URL 已经包含 /api/ 路径，直接返回
+        if (url.contains("/api/")) return url
+        // 如果 URL 以 / 结尾，追加 chat/completions
+        if (url.endsWith("/")) return "${url}api/v1/chat/completions"
+        // 否则追加完整路径
+        return "$url/api/v1/chat/completions"
+    }
+
+    companion object {
+        const val DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+    }
 
     /** 更新模型 ID */
     fun updateModelId(model: String) { polishService?.updateModelId(model) }

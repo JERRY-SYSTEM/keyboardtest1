@@ -278,8 +278,15 @@ class PolishService(
     }
 
     fun updateApiUrl(newUrl: String) {
-        apiUrl = newUrl.trim()
+        apiUrl = normalizeApiUrl(newUrl.trim())
         Log.d("PolishService", "API URL 更新为: $apiUrl")
+    }
+
+    private fun normalizeApiUrl(url: String): String {
+        if (url.isEmpty()) return DEFAULT_OPENROUTER_URL
+        if (url.contains("/api/")) return url
+        if (url.endsWith("/")) return "${url}api/v1/chat/completions"
+        return "$url/api/v1/chat/completions"
     }
 
     fun getApiUrl(): String = apiUrl
