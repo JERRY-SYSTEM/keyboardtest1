@@ -49,7 +49,7 @@ jobs:
             echo "⚠️ git rev-list returned $COUNT, forcing to 1"
             COUNT=1
           fi
-          VERSION="1.0.$COUNT"
+          VERSION="1.1.1"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "✅ Version: $VERSION (commit count: $COUNT)"
