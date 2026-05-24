@@ -92,7 +92,7 @@ class PinyinDictManager(private val context: Context) {
                     if (entry.isDirectory) continue
                     // 只提取我们需要的文件
                     val name = entry.name.substringAfterLast("/")
-                    if (name == DICT_BASE_FILE || name == DICT_8105_FILE || name == "ext.dict.yaml") {
+                    if (name == LOCAL_BASE_FILE || name == LOCAL_8105_FILE || name == "ext.dict.yaml") {
                         val outFile = File(rimeDir, name)
                         zipFile.getInputStream(entry).use { input ->
                             outFile.outputStream().use { output ->
