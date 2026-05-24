@@ -1,6 +1,5 @@
 # 编译 librime_jni.so for Android
 # 使用 NDK r25c 交叉编译 librime 及其所有依赖
-# 产物: app/src/main/jniLibs/{arch}/librime_jni.so
 
 name: Build librime.so
 
@@ -9,7 +8,7 @@ on:
 
 env:
   NDK_VERSION: r25c
-  CMAKE_VERSION: 3.22.1
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
 jobs:
   build:
@@ -19,31 +18,52 @@ jobs:
       matrix:
         include:
           - arch: arm64-v8a
-            target_triplet: aarch64-linux-android
             target_api: aarch64-linux-android21
           - arch: armeabi-v7a
-            target_triplet: armv7a-linux-androideabi
             target_api: armv7a-linux-androideabi21
           - arch: x86_64
-            target_triplet: x86_64-linux-android
             target_api: x86_64-linux-android21
           - arch: x86
-            target_triplet: i686-linux-android
             target_api: i686-linux-android21
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Android SDK + NDK
-        uses: android-actions/setup-android@v3
+      - name: Setup JDK 17 (first, for sdkmanager)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Install NDK ${{ env.NDK_VERSION }}
+      - name: Setup Android SDKcmdline-tools
         run: |
-          yes | sdkmanager "ndk;${{ env.NDK_VERSION }}" > /dev/null 2>&1
-          echo "NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $ANDROID_HOME/ndk/${{ env.NDK_VERSION }}
-          ls $ANDROID_HOME/ndk/
+          set -e
+          export JAVA_HOME=$JAVA_HOME_17_X64
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          export PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+
+          # 安装 cmdline-tools
+          if [ ! -d "$ANDROID_SDK_ROOT/cmdline-tools/latest" ]; then
+            TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+            curl -L -o /tmp/cmdline-tools.zip "$TOOLS_URL" 2>/dev/null
+            mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+            unzip -o -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
+            mv /tmp/cmdline-tools-extract/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+            rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools-extract
+          fi
+
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "ndk;${{ env.NDK_VERSION }}" "platforms;android-34" "build-tools;34.0.2" > /dev/null 2>&1
+
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          echo "PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH" >> $GITHUB_ENV
+
+          # 验证
+          echo "=== NDK ==="
+          ls $ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}/
 
       - name: Install build tools
         run: |
@@ -61,74 +81,32 @@ jobs:
 
       - name: Clone librime source
         run: |
+          set -e
           DEPS=~/deps-build
           mkdir -p $DEPS
+
           if [ ! -d "$DEPS/librime" ]; then
             git clone --depth=1 https://github.com/rime/librime.git $DEPS/librime
           fi
+
           cd $DEPS/librime
-          # 初始化所有子模块
           git submodule update --init --depth=1 -- \
-            deps/glog deps/leveldb deps/yaml-cpp deps/marisa-trie deps/snappy deps/opencc \
+            deps/glog deps/leveldb deps/yaml-cpp deps/marisa-trie deps/snappy \
             2>/dev/null || true
-          # opencc 可能在不同路径
+
+          # opencc 可能在不同的 submodule 路径
           if [ ! -d "deps/opencc" ] || [ -z "$(ls -A deps/opencc 2>/dev/null)" ]; then
             rm -rf deps/opencc
             git clone --depth=1 https://github.com/BYVoid/OpenCC.git deps/opencc
           fi
+
           echo "DEPS=$DEPS" >> $GITHUB_ENV
 
-      - name: Build Boost (cross-compile)
-        if: steps.cache-deps.outputs.cache-hit != 'true'
+      - name: Setup toolchain env
         run: |
-          set -e
-          NDK="${{ env.NDK_HOME }}"
+          NDK="${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}"
           TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
-          INSTALL=~/deps-install/${{ matrix.arch }}
-          BOOST_SRC=~/deps-build/boost
-          BOOST_VER=1.84.0
-          BOOST_URL="https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VER}/source/boost_${BOOST_VER//./_}.tar.gz"
-
-          mkdir -p $BOOST_SRC && cd $BOOST_SRC
-
-          # 下载 Boost
-          if [ ! -f "boost_${BOOST_VER//./_}/bootstrap.sh" ]; then
-            curl -L -o boost.tar.gz "$BOOST_URL"
-            tar xzf boost.tar.gz
-          fi
-
-          cd boost_${BOOST_VER//./_}
-
-          # 配置交叉编译
-          cat > user-config.jam << EOF
-          using clang : android :
-            $TC/bin/${{ matrix.target_api }}-clang++ :
-            <archiver>$TC/bin/llvm-ar
-            <ranlib>$TC/bin/llvm-ranlib
-            <compileflags>-fPIC
-            <compileflags>-DANDROID
-            <compileflags>-D__ANDROID_API__=21
-          ;
-          EOF
-
-          # 只编译 librime 需要的组件
-          ./bootstrap.sh --with-toolset=clang
-          ./b2 toolset=clang-android \
-            --with-filesystem --with-system --with-regex --with-thread \
-            --with-date_time --with-locale --with-iostreams --with-program_options \
-            --prefix=$INSTALL \
-            variant=release link=static threading=multi \
-            target-os=android abi=aapcs \
-            -j$(nproc) \
-            install
-
-          echo "Boost installed to $INSTALL"
-          ls $INSTALL/lib/libboost_*.a | head -10
-
-      - name: Setup toolchain
-        run: |
-          NDK="${{ env.NDK_HOME }}"
-          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          echo "NDK=$NDK" >> $GITHUB_ENV
           echo "TC=$TC" >> $GITHUB_ENV
           echo "CC=$TC/bin/${{ matrix.target_api }}-clang" >> $GITHUB_ENV
           echo "CXX=$TC/bin/${{ matrix.target_api }}-clang++" >> $GITHUB_ENV
@@ -137,10 +115,64 @@ jobs:
           echo "STRIP=$TC/bin/llvm-strip" >> $GITHUB_ENV
           echo "INSTALL=~/deps-install/${{ matrix.arch }}" >> $GITHUB_ENV
           echo "CMAKE_FLAGS=-DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=${{ matrix.arch }} -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -GNinja" >> $GITHUB_ENV
+          # 验证工具链
+          ls -la $TC/bin/${{ matrix.target_api }}-clang
+
+      - name: Build Boost (cross-compile)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        timeout-minutes: 30
+        run: |
+          set -e
+          NDK="${{ env.NDK }}"
+          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          INSTALL=~/deps-install/${{ matrix.arch }}
+          BOOST_SRC=~/deps-build/boost
+          BOOST_VER=1.84.0
+          BOOST_DIR="boost_${BOOST_VER//./_}"
+          BOOST_URL="https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VER}/source/${BOOST_DIR}.tar.gz"
+
+          mkdir -p $BOOST_SRC && cd $BOOST_SRC
+
+          if [ ! -f "$BOOST_DIR/bootstrap.sh" ]; then
+            echo "Downloading Boost ${BOOST_VER}..."
+            curl -L -o boost.tar.gz "$BOOST_URL"
+            tar xzf boost.tar.gz
+          fi
+
+          cd $BOOST_DIR
+
+          cat > user-config.jam << 'JAMEOF'
+          using clang : android :
+            clang++ :
+            <archiver>llvm-ar
+            <ranlib>llvm-ranlib
+            <compileflags>-fPIC
+            <compileflags>-DANDROID
+            <compileflags>-D__ANDROID_API__=21
+          ;
+          JAMEOF
+
+          ./bootstrap.sh --with-toolset=clang
+
+          # 替换工具集路径为绝对路径
+          sed -i "s|using clang : android :|using clang : android :|" user-config.jam
+
+          ./b2 toolset=clang-android \
+            --with-filesystem --with-system --with-regex --with-thread \
+            --with-date_time --with-locale --with-iostreams --with-program_options \
+            --prefix=$INSTALL \
+            variant=release link=static threading=multi \
+            target-os=android abi=aapcs \
+            -j$(nproc) \
+            install 2>&1 | tail -20
+
+          echo "=== Boost libs ==="
+          ls $INSTALL/lib/libboost_*.a | head -10
 
       - name: Build snappy
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
+          set -e
           SRC=$DEPS/librime/deps/snappy
           BLD=~/deps-build/snappy/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -152,6 +184,7 @@ jobs:
       - name: Build leveldb
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
+          set -e
           SRC=$DEPS/librime/deps/leveldb
           BLD=~/deps-build/leveldb/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -164,6 +197,7 @@ jobs:
       - name: Build marisa-trie
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
+          set -e
           SRC=$DEPS/librime/deps/marisa-trie
           BLD=~/deps-build/marisa/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -174,6 +208,7 @@ jobs:
       - name: Build glog
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
+          set -e
           SRC=$DEPS/librime/deps/glog
           BLD=~/deps-build/glog/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -187,6 +222,7 @@ jobs:
       - name: Build yaml-cpp
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
+          set -e
           SRC=$DEPS/librime/deps/yaml-cpp
           BLD=~/deps-build/yaml-cpp/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -198,6 +234,7 @@ jobs:
       - name: Build OpenCC
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
+          set -e
           SRC=$DEPS/librime/deps/opencc
           BLD=~/deps-build/opencc/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -208,7 +245,9 @@ jobs:
 
       - name: Build librime (static)
         if: steps.cache-deps.outputs.cache-hit != 'true'
+        timeout-minutes: 20
         run: |
+          set -e
           SRC=$DEPS/librime
           BLD=~/deps-build/librime/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -224,7 +263,9 @@ jobs:
           ninja && ninja install
 
       - name: Build rime_jni (shared .so)
+        timeout-minutes: 10
         run: |
+          set -e
           JNI_SRC=$GITHUB_WORKSPACE/app/src/main/jni/librime_jni
           BLD=~/deps-build/rime_jni/${{ matrix.arch }}
           mkdir -p $BLD && cd $BLD
@@ -236,8 +277,8 @@ jobs:
             -DCMAKE_C_FLAGS="-I$INSTALL/include -I$DEPS/librime/include" \
             -DCMAKE_CXX_FLAGS="-I$INSTALL/include -I$DEPS/librime/include" \
             -DBUILD_SHARED_LIBS=ON
-          ninja VERBOSE=1
-          echo "=== Output .so ==="
+          ninja VERBOSE=1 2>&1 | tail -30
+          echo "=== Built .so ==="
           find $BLD -name "*.so" -exec ls -lh {} \;
 
       - name: Copy .so to jniLibs
