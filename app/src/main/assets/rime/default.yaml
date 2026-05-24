@@ -1,0 +1,72 @@
+# Rime default configuration for Cesia IME
+# Minimal config — schema definitions are in individual .schema.yaml files
+
+patch:
+  schema_list:
+    - schema: pinyin
+
+  menu:
+    page_size: 5
+
+  switcher:
+    caption: "切换输入法"
+    hotkeys:
+      - Control+Shift+grave
+    save_options:
+      - full_shape
+      - ascii_punct
+      - simplification
+      - extended_charset
+    fold_options: true
+    abbreviate_options: true
+    hotkeys_use_hint: true
+
+  ascii_composer:
+    good_old_caps_lock: true
+    switch_key:
+      Shift_L: commit_code
+      Shift_R: commit_code
+      Control_L: noop
+      Control_R: noop
+      Caps_Lock: clear
+      Eisu_toggle: clear
+
+  key_binder:
+    bindings:
+      - { when: has_menu, accept: minus, send: Page_Up }
+      - { when: has_menu, accept: equal, send: Page_Down }
+      - { when: paging, accept: comma, send: Page_Up }
+      - { when: has_menu, accept: period, send: Page_Down }
+
+  punctuator:
+    full_shape:
+      " " : { commit: "　" }
+      "," : { commit: "，" }
+      "." : { commit: "。" }
+      "<" : { commit: "《" }
+      ">" : { commit: "》" }
+      "/" : { commit: "／" }
+      "?" : { commit: "？" }
+      ";" : { commit: "；" }
+      ":" : { commit: "：" }
+      "'" : { pair: [ "「", "」" ] }
+      "\"" : { pair: [ "『", "』" ] }
+      "\\" : { commit: "、" }
+      "|" : { commit: "｜" }
+      "`" : { commit: "·" }
+      "~" : { commit: "～" }
+      "!" : { commit: "！" }
+      "@" : { commit: "＠" }
+      "#" : { commit: "＃" }
+      "$" : { commit: "＄" }
+      "%" : { commit: "％" }
+      "^" : { commit: "＾" }
+      "&" : { commit: "＆" }
+      "*" : { commit: "＊" }
+      "(" : { commit: "（" }
+      ")" : { commit: "）" }
+      "_" : { commit: "＿" }
+      "+" : { commit: "＋" }
+    half_shape:
+      "," : { commit: "," }
+      "." : { commit: "." }

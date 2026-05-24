@@ -23,42 +23,57 @@ class RimeEngine(private val context: Context) : InputEngine {
         private set
 
     override val isAvailable: Boolean
-        get() = isInitialized && RimeJni.isAvailable()
+        get() = isInitialized && (RimeJni.isAvailable() || fallback.isInitialized)
+
+    // --- Fallback 引擎 ---
+    private val fallback = RimeEngineFallback(context)
 
     // --- 当前会话代理 ---
 
     override val isComposing: Boolean
-        get() = session?.hasComposing() ?: false
+        get() = if (RimeJni.isAvailable()) session?.hasComposing() ?: false else fallback.isComposing
 
     override val composingText: String
-        get() = session?.composingText ?: ""
+        get() = if (RimeJni.isAvailable()) session?.composingText ?: "" else fallback.composingText
 
     override val candidates: List<String>
-        get() = session?.candidates ?: emptyList()
+        get() = if (RimeJni.isAvailable()) session?.candidates ?: emptyList() else fallback.candidates
 
     override val hasCandidates: Boolean
-        get() = session?.hasCandidates() ?: false
+        get() = if (RimeJni.isAvailable()) session?.hasCandidates() ?: false else fallback.hasCandidates
 
     override val pageCount: Int
-        get() = session?.pageCount ?: 0
+        get() = if (RimeJni.isAvailable()) session?.pageCount ?: 0 else fallback.pageCount
 
     override val currentPage: Int
-        get() = session?.currentPage ?: 0
+        get() = if (RimeJni.isAvailable()) session?.currentPage ?: 0 else fallback.currentPage
 
     // --- 生命周期 ---
 
     override fun initialize(): Boolean {
-        if (isInitialized) return true
-        // 先将 APK assets 中的 rime 配置文件解压到 filesDir/rime/（仅第一次）
+        if (isInitialized) return fallback.initialize()
+        // 先将 APK assets 中的 rime 配置文件解压到 filesDir/rime（缺失才解压）
         copyRimeAssetsIfNeeded()
-        val success = RimeJni.initialize(context)
-        isInitialized = success
-        if (success) {
-            Log.i(TAG, "Rime 引擎初始化成功")
-        } else {
-            Log.w(TAG, "Rime 引擎初始化失败: ${RimeJni.unavailableMessage()} — Rime 引擎将不可用")
+        // 诊断：检查关键文件
+        val rimeDir = File(context.filesDir, "rime")
+        Log.i(TAG, "Rime 资产目录: ${rimeDir.absolutePath}")
+        Log.i(TAG, "default.yaml 存在=${File(rimeDir, "default.yaml").exists()}")
+        Log.i(TAG, "pinyin.schema.yaml 存在=${File(rimeDir, "pinyin.schema.yaml").exists()}")
+        Log.i(TAG, "pinyin.dict.yaml 存在=${File(rimeDir, "pinyin.dict.yaml").exists()}")
+        val nativeOk = RimeJni.initialize(context)
+        // 无论 native 是否成功，都初始化 fallback
+        val fallbackOk = fallback.initialize()
+        isInitialized = nativeOk || fallbackOk
+        if (nativeOk) {
+            Log.i(TAG, "Rime native 引擎初始化成功")
         }
-        return success
+        if (fallbackOk) {
+            Log.i(TAG, "Rime fallback 引擎初始化成功")
+        }
+        if (!nativeOk) {
+            Log.w(TAG, "Rime native 引擎初始化失败: ${RimeJni.unavailableMessage()} — 使用 fallback 引擎")
+        }
+        return isInitialized
     }
 
     /**
@@ -67,17 +82,19 @@ class RimeEngine(private val context: Context) : InputEngine {
      */
     private fun copyRimeAssetsIfNeeded() {
         val rimeDir = File(context.filesDir, "rime")
-        if (rimeDir.exists() && rimeDir.listFiles()?.isNotEmpty() == true) return
         rimeDir.mkdirs()
         try {
             context.assets.list("rime")?.forEach { fileName ->
                 val outFile = File(rimeDir, fileName)
-                context.assets.open("rime/$fileName").use { input ->
-                    outFile.outputStream().use { output ->
-                        input.copyTo(output)
+                // 只覆盖不存在的文件，不覆盖用户已下载的词库
+                if (!outFile.exists()) {
+                    context.assets.open("rime/$fileName").use { input ->
+                        outFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
                     }
+                    Log.d(TAG, "解压 Rime 资产: $fileName -> ${outFile.absolutePath} (${outFile.length()} bytes)")
                 }
-                Log.d(TAG, "解压 Rime 资产: $fileName -> ${outFile.absolutePath} (${outFile.length()} bytes)")
             }
             prefs.edit().putBoolean("rime_assets_copied", true).apply()
         } catch (e: Exception) {
@@ -123,40 +140,79 @@ class RimeEngine(private val context: Context) : InputEngine {
     // --- 输入处理 ---
 
     override fun processKey(key: String): Boolean {
-        val s = session ?: createSession()
-        return s.processKey(key)
+        return if (RimeJni.isAvailable()) {
+            val s = session ?: createSession()
+            s.processKey(key)
+        } else {
+            // Fallback: 处理退格
+            if (key == "BackSpace") {
+                fallback.backspace()
+                true
+            } else if (key.length == 1) {
+                fallback.inputLetter(key[0])
+                true
+            } else false
+        }
     }
 
     override fun processKey(c: Char): Boolean {
-        return processKey(c.toString())
+        return if (RimeJni.isAvailable()) {
+            processKey(c.toString())
+        } else {
+            fallback.inputLetter(c)
+            true
+        }
     }
 
     override fun processKeyCode(keyCode: Int): Boolean {
-        val s = session ?: createSession()
-        return s.processKeyCode(keyCode)
+        return if (RimeJni.isAvailable()) {
+            val s = session ?: createSession()
+            s.processKeyCode(keyCode)
+        } else {
+            when (keyCode) {
+                -5, android.view.KeyEvent.KEYCODE_DEL -> {
+                    fallback.backspace()
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     override fun selectCandidate(index: Int): String {
-        val s = session ?: return ""
-        return s.selectCandidate(index)
+        return if (RimeJni.isAvailable()) {
+            val s = session ?: return ""
+            s.selectCandidate(index)
+        } else {
+            fallback.selectCandidate(index)
+        }
     }
 
     override fun commit(): String {
-        val s = session ?: return ""
-        return s.commit()
+        return if (RimeJni.isAvailable()) {
+            val s = session ?: return ""
+            s.commit()
+        } else {
+            // Fallback: 提交当前拼音对应的第一个候选词
+            val cands = candidates
+            clear()
+            cands.firstOrNull() ?: ""
+        }
     }
 
     override fun clear() {
-        session?.clear()
+        if (RimeJni.isAvailable()) session?.clear() else fallback.clear()
     }
 
     override fun nextPage(): List<String> {
-        session?.nextPage()
+        if (RimeJni.isAvailable()) session?.nextPage()
+        else fallback.nextPage()
         return candidates
     }
 
     override fun prevPage(): List<String> {
-        session?.prevPage()
+        if (RimeJni.isAvailable()) session?.prevPage()
+        else fallback.prevPage()
         return candidates
     }
 
@@ -164,12 +220,12 @@ class RimeEngine(private val context: Context) : InputEngine {
 
     fun inputLetter(c: Char): String {
         processKey(c)
-        return composingText
+        return getCurrentPinyin()
     }
 
     fun backspace(): String {
         processKey("BackSpace")
-        return composingText
+        return getCurrentPinyin()
     }
 
     fun getCurrentPinyin(): String = composingText

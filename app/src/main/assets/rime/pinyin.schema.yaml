@@ -1,0 +1,75 @@
+# Rime schema definition for Cesia Pinyin
+# 拼音输入方案 — 使用 cn_dicts 词库
+
+schema:
+  schema_id: pinyin
+  name: 拼音
+  version: "1.1.0"
+  author:
+    - Cesia Team
+  description: |
+    拼音输入方案 — Cesia 输入法默认中文引擎
+    词库来源：rime-ice (iDvel/rime-ice)，GPL-3.0
+    用户需在设置页自行下载词库
+  dependencies:
+
+switches:
+  - name: full_shape
+    states: [ 半角, 全角 ]
+  - name: ascii_punct
+    states: [ ，。, ，． ]
+  - name: simplification
+    states: [ 繁, 简 ]
+
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - punctuator
+    - selector
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - matcher
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - table_translator
+  filters:
+    - simplifier
+    - uniquifier
+
+translator:
+  dictionary: pinyin
+  enable_charset_filter: true
+  enable_sentence: true
+  enable_encoder: true
+  encode_commit_history: true
+  max_phrase_length: 5
+  initial_quality: 1.1
+
+abc_segmentor:
+  extra_tags:
+    - reverse_lookup
+
+reverse_lookup:
+  dictionary: pinyin
+  enable_completion: true
+  prefix: "`"
+  suffix: "'"
+  tips: 〔拼音反查〕
+
+punctuator:
+  import_preset: default
+
+key_binder:
+  import_preset: default
+
+recognizer:
+  import_preset: default
+  patterns:
+    uppercase: ""
+    reverse_lookup: "`[a-z]*'?$"
