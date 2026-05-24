@@ -1,14 +1,11 @@
 # 编译 librime_jni.so for Android
 # 使用 NDK r25c 交叉编译 librime 及其所有依赖
+# 基于 ndk-r25c Docker 镜像，预装所有编译工具
 
 name: Build librime.so
 
 on:
   workflow_dispatch:
-
-env:
-  NDK_VERSION: r25c
-  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
 jobs:
   build:
@@ -19,50 +16,55 @@ jobs:
         include:
           - arch: arm64-v8a
             target_api: aarch64-linux-android21
+            boost_arch: aarch64
           - arch: armeabi-v7a
             target_api: armv7a-linux-androideabi21
+            boost_arch: arm
           - arch: x86_64
             target_api: x86_64-linux-android21
+            boost_arch: x86_64
           - arch: x86
             target_api: i686-linux-android21
+            boost_arch: x86
+
+    env:
+      NDK_VERSION: 25.2.9519653
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      DEPS: ${{ github.workspace }}/deps
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17 (first, for sdkmanager)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Android SDKcmdline-tools
+      - name: Setup Android SDK + NDK via sdkmanager
         run: |
           set -e
           export JAVA_HOME=$JAVA_HOME_17_X64
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          export PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+          export ANDROID_SDK_ROOT=/opt/android-sdk
+          mkdir -p $ANDROID_SDK_ROOT
 
-          # 安装 cmdline-tools
+          # 下载 cmdline-tools
           if [ ! -d "$ANDROID_SDK_ROOT/cmdline-tools/latest" ]; then
-            TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-            curl -L -o /tmp/cmdline-tools.zip "$TOOLS_URL" 2>/dev/null
-            mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-            unzip -o -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools-extract
-            mv /tmp/cmdline-tools-extract/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
-            rm -rf /tmp/cmdline-tools.zip /tmp/cmdline-tools-extract
+            curl -sL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/cmdtools.zip
+            unzip -q /tmp/cmdtools.zip -d /tmp/
+            mv /tmp/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+            rm -f /tmp/cmdtools.zip
           fi
 
+          export PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "ndk;${{ env.NDK_VERSION }}" "platforms;android-34" "build-tools;34.0.2" > /dev/null 2>&1
+          sdkmanager --install \
+            "ndk;${{ env.NDK_VERSION }}" \
+            "platforms;android-34" \
+            > /dev/null 2>&1
 
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
           echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
-          echo "PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH" >> $GITHUB_ENV
+          echo "PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
 
-          # 验证
-          echo "=== NDK ==="
           ls $ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}/
 
       - name: Install build tools
@@ -70,42 +72,53 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ninja-build pkg-config
 
-      - name: Cache dependencies
+      - name: Cache all dependencies
         uses: actions/cache@v4
         id: cache-deps
         with:
           path: |
-            ~/deps-build
-            ~/deps-install
-          key: librime-deps-${{ matrix.arch }}-${{ env.NDK_VERSION }}-${{ hashFiles('.github/workflows/build-librime.yml') }}
+            ${{ env.DEPS }}/build
+            ${{ env.DEPS }}/install
+            ${{ env.DEPS }}/src/boost
+          key: librime-full-${{ matrix.arch }}-ndk25c-v2
 
-      - name: Clone librime source
+      - name: Clone sources
         run: |
           set -e
-          DEPS=~/deps-build
-          mkdir -p $DEPS
+          S="${{ env.DEPS }}/src"
+          mkdir -p $S
+          cd $S
 
-          if [ ! -d "$DEPS/librime" ]; then
-            git clone --depth=1 https://github.com/rime/librime.git $DEPS/librime
-          fi
+          for REPO in librime; do
+            if [ ! -d "$REPO" ]; then
+              git clone --depth=1 https://github.com/rime/$REPO.git
+            fi
+          done
 
-          cd $DEPS/librime
+          cd $S/librime
+          # 初始化子模块 (浅克隆)
           git submodule update --init --depth=1 -- \
-            deps/glog deps/leveldb deps/yaml-cpp deps/marisa-trie deps/snappy \
+            deps/glog deps/leveldb deps/yaml-cpp deps/marisa-trie deps/snappy deps/opencc \
             2>/dev/null || true
 
-          # opencc 可能在不同的 submodule 路径
+          # 确保 opencc 存在
           if [ ! -d "deps/opencc" ] || [ -z "$(ls -A deps/opencc 2>/dev/null)" ]; then
             rm -rf deps/opencc
             git clone --depth=1 https://github.com/BYVoid/OpenCC.git deps/opencc
           fi
 
-          echo "DEPS=$DEPS" >> $GITHUB_ENV
+          echo "Source ready:"
+          ls -la $S/librime/deps/
 
-      - name: Setup toolchain env
+      - name: Setup toolchain
         run: |
-          NDK="${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.NDK_VERSION }}"
+          NDK="${{ env.NDK_HOME }}"
           TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          ARCH="${{ matrix.arch }}"
+          INSTALL="${{ env.DEPS }}/install/$ARCH"
+          BLD="${{ env.DEPS }}/build/$ARCH"
+          mkdir -p $INSTALL $BLD
+
           echo "NDK=$NDK" >> $GITHUB_ENV
           echo "TC=$TC" >> $GITHUB_ENV
           echo "CC=$TC/bin/${{ matrix.target_api }}-clang" >> $GITHUB_ENV
@@ -113,181 +126,213 @@ jobs:
           echo "AR=$TC/bin/llvm-ar" >> $GITHUB_ENV
           echo "RANLIB=$TC/bin/llvm-ranlib" >> $GITHUB_ENV
           echo "STRIP=$TC/bin/llvm-strip" >> $GITHUB_ENV
-          echo "INSTALL=~/deps-install/${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "CMAKE_FLAGS=-DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=${{ matrix.arch }} -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -GNinja" >> $GITHUB_ENV
-          # 验证工具链
-          ls -la $TC/bin/${{ matrix.target_api }}-clang
+          echo "INSTALL=$INSTALL" >> $GITHUB_ENV
+          echo "BLD=$BLD" >> $GITHUB_ENV
+          echo "CMAKE_FLAGS=-DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=$ARCH -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -GNinja" >> $GITHUB_ENV
 
-      - name: Build Boost (cross-compile)
+          # 验证编译器
+          $TC/bin/${{ matrix.target_api }}-clang --version | head -1
+
+      - name: Download and build Boost (cross-compile)
         if: steps.cache-deps.outputs.cache-hit != 'true'
-        timeout-minutes: 30
+        timeout-minutes: 45
         run: |
           set -e
+          ARCH="${{ matrix.arch }}"
+          VER="1.84.0"
+          DIR="boost_${VER//./_}"
+          SRC="${{ env.DEPS }}/src"
+          BLD="${{ env.DEPS }}/build/$ARCH"
+          INSTALL="${{ env.DEPS }}/install/$ARCH"
           NDK="${{ env.NDK }}"
           TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
-          INSTALL=~/deps-install/${{ matrix.arch }}
-          BOOST_SRC=~/deps-build/boost
-          BOOST_VER=1.84.0
-          BOOST_DIR="boost_${BOOST_VER//./_}"
-          BOOST_URL="https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VER}/source/${BOOST_DIR}.tar.gz"
 
-          mkdir -p $BOOST_SRC && cd $BOOST_SRC
+          mkdir -p $SRC $BLD $INSTALL
 
-          if [ ! -f "$BOOST_DIR/bootstrap.sh" ]; then
-            echo "Downloading Boost ${BOOST_VER}..."
-            curl -L -o boost.tar.gz "$BOOST_URL"
+          # 下载
+          if [ ! -f "$SRC/$DIR/bootstrap.sh" ]; then
+            echo "Downloading Boost $VER..."
+            cd $SRC
+            # 用 GitHub 镜像加速
+            URL="https://archives.boost.io/release/$VER/source/$DIR.tar.gz"
+            curl -L --connect-timeout 30 -o boost.tar.gz "$URL"
             tar xzf boost.tar.gz
+            rm boost.tar.gz
           fi
 
-          cd $BOOST_DIR
+          cd $SRC/$DIR
 
-          cat > user-config.jam << 'JAMEOF'
+          # 配置 Boost.Build for Android cross-compile
+          cat >-config.jam << 'EOF'
+          import os ;
           using clang : android :
-            clang++ :
-            <archiver>llvm-ar
-            <ranlib>llvm-ranlib
+            [ os.environ CXX ] :
+            [ os.environ AR ]
+            [ os.environ RANLIB ]
             <compileflags>-fPIC
             <compileflags>-DANDROID
             <compileflags>-D__ANDROID_API__=21
+            <compileflags>-std=c++17
           ;
-          JAMEOF
+          EOF
 
-          ./bootstrap.sh --with-toolset=clang
+          ./bootstrap.sh --with-toolset=clang --prefix=$INSTALL 2>&1 | tail -3
 
-          # 替换工具集路径为绝对路径
-          sed -i "s|using clang : android :|using clang : android :|" user-config.jam
-
+          # 构建并安装 (仅 librime 需要的库)
           ./b2 toolset=clang-android \
             --with-filesystem --with-system --with-regex --with-thread \
             --with-date_time --with-locale --with-iostreams --with-program_options \
+            --build-dir=$BLD/boost \
             --prefix=$INSTALL \
             variant=release link=static threading=multi \
+            runtime-link=static \
             target-os=android abi=aapcs \
-            -j$(nproc) \
-            install 2>&1 | tail -20
+            -j$(nproc) -d2 \
+            install 2>&1 | tail -30
 
-          echo "=== Boost libs ==="
-          ls $INSTALL/lib/libboost_*.a | head -10
+          echo "=== Boost static libs ==="
+          ls $INSTALL/lib/libboost_*.a 2>/dev/null | head -10 || echo "WARNING: No Boost libs found"
 
       - name: Build snappy
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           set -e
-          SRC=$DEPS/librime/deps/snappy
-          BLD=~/deps-build/snappy/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL \
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          mkdir -p $B/snappy && cd $B/snappy
+          cmake $S/librime/deps/snappy $CMAKE_FLAGS \
+            -DCMAKE_INSTALL_PREFIX=$I \
             -DSNAPPY_BUILD_TESTS=OFF -DSNAPPY_BUILD_BENCHMARKS=OFF
-          ninja && ninja install
+          ninja -j$(nproc) && ninja install
 
       - name: Build leveldb
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           set -e
-          SRC=$DEPS/librime/deps/leveldb
-          BLD=~/deps-build/leveldb/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL \
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          mkdir -p $B/leveldb && cd $B/leveldb
+          cmake $S/librime/deps/leveldb $CMAKE_FLAGS \
+            -DCMAKE_INSTALL_PREFIX=$I \
             -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF \
             -DHAVE_SNAPPY=ON
-          ninja && ninja install
+          ninja -j$(nproc) && ninja install
 
       - name: Build marisa-trie
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           set -e
-          SRC=$DEPS/librime/deps/marisa-trie
-          BLD=~/deps-build/marisa/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL
-          ninja && ninja install
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          mkdir -p $B/marisa && cd $B/marisa
+          cmake $S/librime/deps/marisa-trie $CMAKE_FLAGS \
+            -DCMAKE_INSTALL_PREFIX=$I
+          ninja -j$(nproc) && ninja install
 
       - name: Build glog
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           set -e
-          SRC=$DEPS/librime/deps/glog
-          BLD=~/deps-build/glog/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL \
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          mkdir -p $B/glog && cd $B/glog
+          cmake $S/librime/deps/glog $CMAKE_FLAGS \
+            -DCMAKE_INSTALL_PREFIX=$I \
             -DWITH_GFLAGS=OFF -DWITH_GTEST=OFF -DWITH_UNWIND=OFF \
-            -DCMAKE_C_FLAGS="-ffile-prefix-map=$DEPS=." \
-            -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$DEPS=."
-          ninja && ninja install
+            -DCMAKE_C_FLAGS="-ffile-prefix-map=$S=." \
+            -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$S=."
+          ninja -j$(nproc) && ninja install
 
       - name: Build yaml-cpp
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           set -e
-          SRC=$DEPS/librime/deps/yaml-cpp
-          BLD=~/deps-build/yaml-cpp/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL \
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          mkdir -p $B/yaml-cpp && cd $B/yaml-cpp
+          cmake $S/librime/deps/yaml-cpp $CMAKE_FLAGS \
+            -DCMAKE_INSTALL_PREFIX=$I \
             -DYAML_CPP_BUILD_TOOLS=OFF -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_INSTALL=OFF
-          ninja && ninja install
+          ninja -j$(nproc) && ninja install
 
       - name: Build OpenCC
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           set -e
-          SRC=$DEPS/librime/deps/opencc
-          BLD=~/deps-build/opencc/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL \
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          mkdir -p $B/opencc && cd $B/opencc
+          cmake $S/librime/deps/opencc $CMAKE_FLAGS \
+            -DCMAKE_INSTALL_PREFIX=$I \
             -DCMAKE_INSTALL_LIBDIR=lib
-          ninja && ninja install
+          ninja -j$(nproc) && ninja install
 
       - name: Build librime (static)
         if: steps.cache-deps.outputs.cache-hit != 'true'
-        timeout-minutes: 20
+        timeout-minutes: 15
         run: |
           set -e
-          SRC=$DEPS/librime
-          BLD=~/deps-build/librime/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL \
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          mkdir -p $B/librime && cd $B/librime
+          cmake $S/librime $CMAKE_FLAGS \
+            -DCMAKE_INSTALL_PREFIX=$I \
             -DBUILD_TESTING=OFF -DENABLE_LOGGING=OFF \
-            -DCMAKE_C_FLAGS="-I$INSTALL/include -ffile-prefix-map=$DEPS=." \
-            -DCMAKE_CXX_FLAGS="-I$INSTALL/include -ffile-prefix-map=$DEPS=." \
-            -DBOOST_ROOT=$INSTALL \
+            -DCMAKE_C_FLAGS="-I$I/include -ffile-prefix-map=$S=." \
+            -DCMAKE_CXX_FLAGS="-I$I/include -ffile-prefix-map=$S=." \
+            -DBOOST_ROOT=$I \
             -DBoost_NO_SYSTEM_PATHS=ON \
-            -DOpencc_LIBRARY=$INSTALL/lib/libopencc.a \
-            -DOpencc_INCLUDE_PATH=$INSTALL/include
-          ninja && ninja install
+            -DBoost_USE_STATIC_LIBS=ON \
+            -DOpencc_LIBRARY=$I/lib/libopencc.a \
+            -DOpencc_INCLUDE_PATH=$I/include
+          ninja -j$(nproc) && ninja install 2>&1 | tail -20
 
       - name: Build rime_jni (shared .so)
         timeout-minutes: 10
         run: |
           set -e
-          JNI_SRC=$GITHUB_WORKSPACE/app/src/main/jni/librime_jni
-          BLD=~/deps-build/rime_jni/${{ matrix.arch }}
-          mkdir -p $BLD && cd $BLD
-          cmake $JNI_SRC $CMAKE_FLAGS \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL \
-            -Drime_DIR=$INSTALL/lib/cmake/rime \
-            -DOpencc_LIBRARY=$INSTALL/lib/libopencc.a \
-            -DOpencc_INCLUDE_PATH=$INSTALL/include \
-            -DCMAKE_C_FLAGS="-I$INSTALL/include -I$DEPS/librime/include" \
-            -DCMAKE_CXX_FLAGS="-I$INSTALL/include -I$DEPS/librime/include" \
-            -DBUILD_SHARED_LIBS=ON
-          ninja VERBOSE=1 2>&1 | tail -30
-          echo "=== Built .so ==="
-          find $BLD -name "*.so" -exec ls -lh {} \;
+          S="${{ env.DEPS }}/src"
+          B="${{ env.DEPS }}/build/${{ matrix.arch }}"
+          I="${{ env.DEPS }}/install/${{ matrix.arch }}"
+          JNISRC="$GITHUB_WORKSPACE/app/src/main/jni/librime_jni"
+          mkdir -p $B/rime_jni && cd $B/rime_jni
+
+          # rime_jni CMakeLists 链接 rime-static 和 opencc
+          cmake $JNISRC \
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.NDK }}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.arch }} \
+            -DANDROID_PLATFORM=android-21 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=$I \
+            -Drime_DIR=$I/lib/cmake/rime \
+            -DOpencc_LIBRARY=$I/lib/libopencc.a \
+            -DOpencc_INCLUDE_PATH=$I/include \
+            -DCMAKE_C_FLAGS="-I$I/include -I$S/librime/include" \
+            -DCMAKE_CXX_FLAGS="-I$I/include -I$S/librime/include" \
+            -GNinja
+
+          ninja -j$(nproc) VERBOSE=1 2>&1 | tail -40
+
+          echo "=== Output files ==="
+          find $B/rime_jni -name "*.so" -exec ls -lh {} \;
+          find $I -name "*.so" -exec ls -lh {} \;
 
       - name: Copy .so to jniLibs
         run: |
-          JNILIBS=$GITHUB_WORKSPACE/app/src/main/jniLibs/${{ matrix.arch }}
+          JNILIBS="$GITHUB_WORKSPACE/app/src/main/jniLibs/${{ matrix.arch }}"
           mkdir -p $JNILIBS
-          find ~/deps-build/rime_jni/${{ matrix.arch }} -name "*.so" -exec cp {} $JNILIBS/ \;
+          cp ${{ env.DEPS }}/build/${{ matrix.arch }}/rime_jni/*.so $JNILIBS/ 2>/dev/null || true
+          cp ${{ env.DEPS }}/install/${{ matrix.arch }}/lib/*.so $JNILIBS/ 2>/dev/null || true
           echo "=== jniLibs ==="
-          ls -lh $JNILIBS/
+          ls -lh $JNILIBS/ 2>/dev/null || echo "No .so files found"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
