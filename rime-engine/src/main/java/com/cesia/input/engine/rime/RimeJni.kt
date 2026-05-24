@@ -14,14 +14,18 @@ object RimeJni {
     @Volatile
     private var initialized = false
 
-    fun isAvailable(): Boolean = true
+    fun isAvailable(): Boolean = initialized
 
-    fun unavailableMessage(): String? = null
+    fun unavailableMessage(): String? = if (initialized) null else "Rime JNI 未初始化"
 
     fun initialize(context: Context): Boolean {
         if (initialized) return true
         try {
+            // 加载 native 库（动态链接 C++ 运行时）
             System.loadLibrary("rime_jni")
+            System.loadLibrary("c++_shared")  // 确保 C++ 运行时
+            Log.i(TAG, "native 库加载成功")
+
             val sharedDir = context.filesDir.absolutePath + "/rime"
             val userDir = context.filesDir.absolutePath + "/rime"
             // 确保目录存在
@@ -31,8 +35,10 @@ object RimeJni {
             initialized = true
             Log.i(TAG, "Rime native 引擎初始化成功, shared=$sharedDir")
             return true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Rime native 引擎初始化失败", e)
+            // 绝不重新抛出，避免崩溃进程
+            initialized = false
             return false
         }
     }
@@ -60,7 +66,7 @@ object RimeJni {
             // 将字符转换为 keycode
             val keycode = keyToKeyCode(key)
             nativeProcessKey(keycode, 0)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "processKey failed: $key", e)
             false
         }
@@ -71,7 +77,7 @@ object RimeJni {
         return try {
             val preedit = nativeGetPreedit()
             if (preedit.isNullOrEmpty()) "" else preedit
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             ""
         }
     }
@@ -84,7 +90,7 @@ object RimeJni {
             (0 until count).map { i ->
                 arr?.get(i)?.toString() ?: ""
             }.filter { it.isNotEmpty() }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             emptyList()
         }
     }
@@ -94,7 +100,7 @@ object RimeJni {
         return try {
             nativeCommitComposition()
             nativeGetCommit() ?: ""
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             ""
         }
     }
@@ -103,7 +109,7 @@ object RimeJni {
         if (!initialized) return ""
         return try {
             nativeSelectCandidate(index) ?: ""
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             ""
         }
     }
@@ -112,14 +118,14 @@ object RimeJni {
         if (!initialized) return
         try {
             nativeClearComposition()
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
     }
 
     fun changePage(sessionId: Long, backward: Boolean): Boolean {
         if (!initialized) return false
         return try {
             nativeChangePage(backward)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             false
         }
     }
@@ -130,7 +136,7 @@ object RimeJni {
             val ps = nativeGetPageSize()
             val total = nativeGetCandidateCount()
             if (ps <= 0) 0 else (total + ps - 1) / ps
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             0
         }
     }
@@ -158,7 +164,7 @@ object RimeJni {
                 '[' -> 71  // KEYCODE_LEFT_BRACKET
                 ']' -> 72  // KEYCODE_RIGHT_BRACKET
                 '=' -> 69  // KEYCODE_EQUALS
-                '-' -> 69  // KEYCODE_MINUS (same as equals in some layouts)
+                '-' -> 69  // KEYCODE_MINUS
                 '`' -> 68  // KEYCODE_GRAVE
                 else -> c.code
             }

@@ -52,7 +52,7 @@ class RimeEngine(private val context: Context) : InputEngine {
         if (success) {
             Log.i(TAG, "Rime 引擎初始化成功")
         } else {
-            Log.w(TAG, "Rime 引擎初始化失败: ${RimeJni.unavailableMessage()}")
+            Log.w(TAG, "Rime 引擎初始化失败: ${RimeJni.unavailableMessage()} — Rime 引擎将不可用")
         }
         return success
     }

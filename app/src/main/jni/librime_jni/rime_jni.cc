@@ -46,6 +46,7 @@ class Rime {
   }
 
   void ensureSession() {
+    if (!api_) return;
     if (!session_id_) {
       session_id_ = api_->create_session();
     }
