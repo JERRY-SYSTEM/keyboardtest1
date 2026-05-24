@@ -31,10 +31,8 @@ class PinyinDictManager(private val context: Context) {
         const val PREF_DICT_DOWNLOADED = "dict_downloaded"
 
         // rime-ice 词库下载源 (GPL-3.0)
-        // base.dict.yaml: ~16MB, 55万词条，基础词库
-        const val DICT_BASE_URL = "https://raw.githubusercontent.com/iDvel/rime-ice/master/cn_dicts/base.dict.yaml"
-        // 8105.dict.yaml: ~0.1MB, 8000+常用字
-        const val DICT_8105_URL = "https://raw.githubusercontent.com/iDvel/rime-ice/master/cn_dicts/8105.dict.yaml"
+        // 使用 GitHub Release 的 cn_dicts.zip（比 raw 路径更稳定）
+        const val DICT_ZIP_URL = "https://github.com/iDvel/rime-ice/releases/download/nightly/cn_dicts.zip"
 
         // 本地保存路径：filesDir/rime/
         const val LOCAL_DICT_FILE = "pinyin.dict.yaml"
@@ -57,40 +55,63 @@ class PinyinDictManager(private val context: Context) {
                 val rimeDir = File(context.filesDir, "rime")
                 rimeDir.mkdirs()
 
-                // Step 1: 下载 8105 字表
-                onProgress("正在下载字表 (8105)...")
-                val url8105 = DICT_8105_URL
-                val req8105 = Request.Builder().url(url8105).get().build()
-                val resp8105 = client.newCall(req8105).execute()
-                if (!resp8105.isSuccessful) {
-                    onComplete(false, "字表下载失败: HTTP ${resp8105.code}")
-                    return@Thread
-                }
-                val body8105 = resp8105.body?.bytes() ?: byteArrayOf()
-                if (body8105.isEmpty()) {
-                    onComplete(false, "字表数据为空")
-                    return@Thread
-                }
-                File(rimeDir, LOCAL_8105_FILE).writeBytes(body8105)
-                Log.i(TAG, "8105 下载完成: ${body8105.size / 1024}KB")
+                // Step 1: 下载 cn_dicts.zip (~14MB)
+                onProgress("正在下载词库 (~14MB)...")
+                Log.i(TAG, "开始下载: $DICT_ZIP_URL")
 
-                // Step 2: 下载 base 词库
-                onProgress("正在下载基础词库 (~16MB)...")
-                val reqBase = Request.Builder().url(DICT_BASE_URL).get().build()
-                val respBase = client.newCall(reqBase).execute()
-                if (!respBase.isSuccessful) {
-                    onComplete(false, "词库下载失败: HTTP ${respBase.code}")
-                    return@Thread
-                }
-                val bodyBase = respBase.body?.bytes() ?: byteArrayOf()
-                if (bodyBase.isEmpty()) {
-                    onComplete(false, "词库数据为空")
-                    return@Thread
-                }
-                File(rimeDir, LOCAL_BASE_FILE).writeBytes(bodyBase)
-                Log.i(TAG, "base 下载完成: ${bodyBase.size / 1024 / 1024}MB")
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(120, TimeUnit.SECONDS)
+                    .readTimeout(300, TimeUnit.SECONDS)
+                    .build()
 
-                // Step 3: 合并为 pinyin.dict.yaml（base + 8105 去重）
+                val request = Request.Builder().url(DICT_ZIP_URL).get().build()
+                val response = client.newCall(request).execute()
+
+                if (!response.isSuccessful) {
+                    onComplete(false, "下载失败: HTTP ${response.code}")
+                    return@Thread
+                }
+
+                val body = response.body?.bytes() ?: byteArrayOf()
+                if (body.isEmpty()) {
+                    onComplete(false, "下载数据为空")
+                    return@Thread
+                }
+                Log.i(TAG, "下载完成: ${body.size / 1024 / 1024}MB")
+
+                // Step 2: 解压 zip
+                onProgress("正在解压词库...")
+                val tempZip = File(rimeDir, "cn_dicts_download.zip")
+                tempZip.writeBytes(body)
+
+                val zipFile = java.util.zip.ZipFile(tempZip)
+                val entries = zipFile.entries()
+                var extractedCount = 0
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (entry.isDirectory) continue
+                    // 只提取我们需要的文件
+                    val name = entry.name.substringAfterLast("/")
+                    if (name == DICT_BASE_FILE || name == DICT_8105_FILE || name == "ext.dict.yaml") {
+                        val outFile = File(rimeDir, name)
+                        zipFile.getInputStream(entry).use { input ->
+                            outFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        Log.i(TAG, "解压: $name (${outFile.length() / 1024}KB)")
+                        extractedCount++
+                    }
+                }
+                zipFile.close()
+                tempZip.delete()
+
+                if (extractedCount == 0) {
+                    onComplete(false, "解压失败：未找到词库文件")
+                    return@Thread
+                }
+
+                // Step 3: 合并为 pinyin.dict.yaml
                 onProgress("正在合并词库...")
                 mergeDicts(rimeDir)
 

@@ -468,17 +468,45 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun updateCandidateBar() {
-        if (!isChineseMode || !rimeEngine.isComposing) {
+        if (!isChineseMode) {
             candidateBar.visibility = View.GONE
             return
         }
+
+        // 诊断信息
+        val init = rimeEngine.isInitialized
+        val avail = rimeEngine.isAvailable
+        val composing = rimeEngine.isComposing
         val candidates = rimeEngine.candidates
-        if (candidates.isEmpty()) {
+        val pinyin = rimeEngine.getCurrentPinyin()
+
+        Log.d("Cesia", "updateCandidateBar: init=$init avail=$avail composing=$composing pinyin=$pinyin candidates=${candidates.size}")
+
+        if (!composing && pinyin.isEmpty()) {
             candidateBar.visibility = View.GONE
             return
         }
+
         candidateBar.visibility = View.VISIBLE
-        tvComposing.text = rimeEngine.getCurrentPinyin()
+
+        if (candidates.isEmpty()) {
+            // 显示诊断信息而不是空白
+            tvComposing.text = if (pinyin.isNotEmpty()) pinyin else "(无输入)"
+            for (i in tvCandidates.indices) {
+                tvCandidates[i].text = when (i) {
+                    0 -> if (!init) "❌ 引擎未初始化" else if (!avail) "❌ 引擎不可用" else "⏳ 等待输入..."
+                    1 -> "init=$init avail=$avail"
+                    2 -> "composing=$composing pinyin=$pinyin"
+                    else -> ""
+                }
+                tvCandidates[i].visibility = if (tvCandidates[i].text.isNotEmpty()) View.VISIBLE else View.INVISIBLE
+            }
+            btnCandidatePrev.isEnabled = false
+            btnCandidateNext.isEnabled = false
+            return
+        }
+
+        tvComposing.text = pinyin
         for (i in tvCandidates.indices) {
             if (i < candidates.size) {
                 tvCandidates[i].text = candidates[i]
