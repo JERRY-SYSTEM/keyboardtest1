@@ -29,7 +29,7 @@ jobs:
 
     env:
       NDK_VERSION: 25.2.9519653
-      ANDROID_SDK_ROOT: /opt/android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       DEPS: ${{ github.workspace }}/deps
 
     steps:
@@ -40,12 +40,13 @@ jobs:
         run: |
           set -e
           export JAVA_HOME=$JAVA_HOME_17_X64
-          export ANDROID_SDK_ROOT=/opt/android-sdk
+          export ANDROID_SDK_ROOT=${{ github.workspace }}/android-sdk
           mkdir -p $ANDROID_SDK_ROOT
 
           # 下载 cmdline-tools
           if [ ! -d "$ANDROID_SDK_ROOT/cmdline-tools/latest" ]; then
             curl -sL "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -o /tmp/cmdtools.zip
+            mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
             unzip -q /tmp/cmdtools.zip -d /tmp/
             mv /tmp/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
             rm -f /tmp/cmdtools.zip
@@ -60,7 +61,6 @@ jobs:
             > /dev/null 2>&1
 
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
           echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
           echo "PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
