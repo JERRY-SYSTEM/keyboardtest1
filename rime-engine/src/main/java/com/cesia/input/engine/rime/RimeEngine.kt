@@ -5,10 +5,7 @@ import android.util.Log
 
 /**
  * Rime 输入引擎实现
- * 基于 librime 的完整拼音/五笔/形码输入引擎
- *
- * 当前阶段使用 stub 实现（无 librime native 库），
- * 后续替换为真实 librime 调用
+ * 当前为 stub 实现（纯 Kotlin），后续替换为真实 librime JNI 调用
  */
 class RimeEngine(private val context: Context) : InputEngine {
 
@@ -104,8 +101,7 @@ class RimeEngine(private val context: Context) : InputEngine {
 
     override fun selectCandidate(index: Int): String {
         val s = session ?: return ""
-        val result = s.selectCandidate(index)
-        return result
+        return s.selectCandidate(index)
     }
 
     override fun commit(): String {

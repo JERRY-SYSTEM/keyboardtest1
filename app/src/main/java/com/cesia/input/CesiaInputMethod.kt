@@ -442,9 +442,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         for (i in tvCandidates.indices) {
             val index = i
             tvCandidates[i].setOnClickListener {
-                if (isChineseMode && rimeEngine.hasCandidates()) {
+                if (isChineseMode && rimeEngine.hasCandidates) {
                     val selected = rimeEngine.selectCandidate(
-                        rimeEngine.getCurrentPage() * 5 + index
+                        rimeEngine.currentPage * 5 + index
                     )
                     if (selected.isNotEmpty()) {
                         currentInputConnection?.commitText(selected, 1)
@@ -454,13 +454,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
         btnCandidatePrev.setOnClickListener {
-            if (isChineseMode && rimeEngine.hasCandidates()) {
+            if (isChineseMode && rimeEngine.hasCandidates) {
                 rimeEngine.prevPage()
                 updateCandidateBar()
             }
         }
         btnCandidateNext.setOnClickListener {
-            if (isChineseMode && rimeEngine.hasCandidates()) {
+            if (isChineseMode && rimeEngine.hasCandidates) {
                 rimeEngine.nextPage()
                 updateCandidateBar()
             }
@@ -468,11 +468,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun updateCandidateBar() {
-        if (!isChineseMode || !rimeEngine.isComposing()) {
+        if (!isChineseMode || !rimeEngine.isComposing) {
             candidateBar.visibility = View.GONE
             return
         }
-        val candidates = rimeEngine.getCandidates()
+        val candidates = rimeEngine.candidates
         if (candidates.isEmpty()) {
             candidateBar.visibility = View.GONE
             return
@@ -487,8 +487,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 tvCandidates[i].visibility = View.INVISIBLE
             }
         }
-        btnCandidatePrev.isEnabled = rimeEngine.getCurrentPage() > 0
-        btnCandidateNext.isEnabled = rimeEngine.getCurrentPage() < rimeEngine.getPageCount() - 1
+        btnCandidatePrev.isEnabled = rimeEngine.currentPage > 0
+        btnCandidateNext.isEnabled = rimeEngine.currentPage < rimeEngine.pageCount - 1
     }
 
     // ======================== 按钮监听 ========================
@@ -524,7 +524,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnSettings.setOnClickListener { showSettings() }
 
         btnDelete.setOnClickListener {
-            if (isChineseMode && rimeEngine.isComposing()) {
+            if (isChineseMode && rimeEngine.isComposing) {
                 handleChineseBackspace()
             } else {
                 // 短按：清空光标之前的文字
@@ -532,7 +532,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
         btnDelete.setOnLongClickListener {
-            if (isChineseMode && rimeEngine.isComposing()) {
+            if (isChineseMode && rimeEngine.isComposing) {
                 handleChineseBackspace()
             } else {
                 // 长按：清空光标之后的文字
@@ -837,8 +837,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             updateCandidateBar()
             updateStatus("拼音: $pinyin")
         } else if (c == ' ') {
-            if (rimeEngine.isComposing()) {
-                if (rimeEngine.hasCandidates()) {
+            if (rimeEngine.isComposing) {
+                if (rimeEngine.hasCandidates) {
                     val selected = rimeEngine.selectCandidate(0)
                     currentInputConnection?.commitText(selected, 1)
                 } else {
@@ -851,8 +851,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 currentInputConnection?.commitText(" ", 1)
             }
         } else {
-            if (rimeEngine.isComposing()) {
-                val selected = if (rimeEngine.hasCandidates()) {
+            if (rimeEngine.isComposing) {
+                val selected = if (rimeEngine.hasCandidates) {
                     rimeEngine.selectCandidate(0)
                 } else {
                     rimeEngine.getCurrentPinyin()
@@ -894,7 +894,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleChineseBackspace() {
-        if (rimeEngine.isComposing()) {
+        if (rimeEngine.isComposing) {
             val pinyin = rimeEngine.backspace()
             if (pinyin.isEmpty()) {
                 rimeEngine.clear()
@@ -1574,8 +1574,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     return
                 }
                 val ic = currentInputConnection
-                if (isChineseMode && rimeEngine.isComposing()) {
-                    val text = if (rimeEngine.hasCandidates()) {
+                if (isChineseMode && rimeEngine.isComposing) {
+                    val text = if (rimeEngine.hasCandidates) {
                         rimeEngine.selectCandidate(0)
                     } else {
                         rimeEngine.getCurrentPinyin()
