@@ -15,13 +15,6 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
-
-        externalNativeBuild {
-            cmake {
-                path = file("src/main/cpp/CMakeLists.txt")
-                version = "3.22.1"
-            }
-        }
     }
 
     buildTypes {
@@ -45,7 +38,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
+            path = "src/main/cpp/CMakeLists.txt"
             version = "3.22.1"
         }
     }
