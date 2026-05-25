@@ -2,8 +2,9 @@ package com.cesia.input.engine.rime
 
 import android.content.Context
 import android.util.Log
-import com.cesia.input.engine.rime.trime.*
 import com.osfans.trime.core.Rime as TrimeRime
+import com.osfans.trime.core.ContextProto
+import com.osfans.trime.core.CommitProto
 
 /**
  * Rime JNI 桥接层（Cesia 封装）
@@ -27,7 +28,6 @@ object RimeJni {
         if (initialized) return true
         errorMessage = null
         try {
-            // 加载 librime_jni.so（Trime 的 JNI 库）
             System.loadLibrary("rime_jni")
             Log.i(TAG, "STEP1: librime_jni.so 加载成功")
 
@@ -41,11 +41,9 @@ object RimeJni {
             val defaultFile = java.io.File(sharedDir, "default.yaml")
             Log.i(TAG, "STEP3: dict=${dictFile.exists()}(${dictFile.length()}) schema=${schemaFile.exists()} default=${defaultFile.exists()}")
 
-            // startupRime(sharedDir, userDir, versionName, fullCheck)
             TrimeRime.startupRime(sharedDir, userDir, "1.0.0", false)
             Log.i(TAG, "STEP4: startupRime 完成")
 
-            // 检查是否真正启动成功
             val started = isRimeStarted()
             if (!started) {
                 errorMessage = "startupRime 后 isRimeStarted=false (共享目录: $sharedDir)"

@@ -1,4 +1,4 @@
-package com.cesia.input.engine.rime.trime
+package com.osfans.trime.core
 
 data class SchemaItem(
     val id: String,

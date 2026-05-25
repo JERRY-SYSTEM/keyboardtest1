@@ -1,4 +1,4 @@
-package com.cesia.input.engine.rime.trime
+package com.osfans.trime.core
 
 data class CommitProto(
     val text: String?,
@@ -39,9 +39,7 @@ data class MenuProto(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
-
         other as MenuProto
-
         if (pageSize != other.pageSize) return false
         if (pageNumber != other.pageNumber) return false
         if (isLastPage != other.isLastPage) return false
@@ -49,7 +47,6 @@ data class MenuProto(
         if (!candidates.contentEquals(other.candidates)) return false
         if (selectKeys != other.selectKeys) return false
         if (!selectLabels.contentEquals(other.selectLabels)) return false
-
         return true
     }
 
