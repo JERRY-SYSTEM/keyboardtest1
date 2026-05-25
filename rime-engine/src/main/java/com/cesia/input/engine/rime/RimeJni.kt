@@ -172,6 +172,8 @@ object RimeJni {
 
     // ============ Native methods ============
     @JvmStatic external fun nativeStartup(sharedDir: String, userDir: String)
+    @JvmStatic external fun nativeRedeploy()
+    @JvmStatic external fun nativeIsMaintenanceComplete(): Boolean
     @JvmStatic external fun nativeExit()
     @JvmStatic external fun nativeProcessKey(keycode: Int, mask: Int): Boolean
     @JvmStatic external fun nativeCommitComposition(): Boolean

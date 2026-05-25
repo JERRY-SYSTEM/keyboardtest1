@@ -363,7 +363,14 @@ class SettingsActivity : AppCompatActivity() {
                     appendLog(msg)
                     refreshDictInfo()
                     if (success) {
-                        Toast.makeText(this, "词库下载完成！重启输入法后生效", Toast.LENGTH_LONG).show()
+                        // 触发 Rime 重新部署词库
+                        try {
+                            val rimeEngine = com.cesia.input.engine.rime.RimeEngine(this)
+                            rimeEngine.redeploy()
+                            Toast.makeText(this, "词库下载完成！已自动部署，切换一下输入法即可使用", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(this, "词库下载完成！重启输入法后生效", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             }

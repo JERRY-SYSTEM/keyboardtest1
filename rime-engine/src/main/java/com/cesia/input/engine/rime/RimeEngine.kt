@@ -77,6 +77,12 @@ class RimeEngine(private val context: Context) : InputEngine {
         return initialize()
     }
 
+    /** 词库更新后触发重新部署（比 reload 轻量） */
+    fun redeploy() {
+        session = null
+        RimeJni.nativeRedeploy()
+    }
+
     override fun createSession(): RimeSession {
         val s = RimeJni.createSession()
         session = s

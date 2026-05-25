@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 #include <rime_api.h>
 
@@ -43,12 +44,38 @@ class Rime {
     traits.distribution_version = "1.1.1";
     api_->setup(&traits);
     api_->initialize(&traits);
+    // 异步部署（编译词库 .dict.yaml → .bin），不阻塞主线程
+    api_->start_maintenance(false);
+  }
+
+  bool isMaintenanceComplete() {
+    if (!api_) return true;
+    return api_->is_maintenance_mode_complete();
   }
 
   void ensureSession() {
     if (!api_) return;
     if (!session_id_) {
+      // 等待部署完成（最多10秒）
+      // is_maintenance_mode_complete() 返回 true 表示维护已完成
+      for (int i = 0; i < 100; i++) {
+        if (api_->is_maintenance_mode_complete()) break;
+        usleep(100000); // 100ms
+      }
       session_id_ = api_->create_session();
+      if (!session_id_) {
+        __android_log_print(ANDROID_LOG_ERROR, "RimeJNI", "create_session failed");
+      }
+    }
+  }
+
+  void redeploy() {
+    // 销毁旧 session，触发重新部署
+    if (session_id_) {
+      session_id_ = 0;
+    }
+    if (api_) {
+      api_->start_maintenance(false);
     }
   }
 
@@ -151,7 +178,6 @@ class Rime {
 
   void exit() {
     if (session_id_) {
-      // api_->destroy_session(session_id_);
       session_id_ = 0;
     }
     api_->finalize();
@@ -187,6 +213,16 @@ Java_com_cesia_input_engine_rime_RimeJni_nativeStartup(
   Rime::Instance().startup(
       fromJString(env, shared_dir).c_str(),
       fromJString(env, user_dir).c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_cesia_input_engine_rime_RimeJni_nativeRedeploy(JNIEnv *env, jclass clazz) {
+  Rime::Instance().redeploy();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_cesia_input_engine_rime_RimeJni_nativeIsMaintenanceComplete(JNIEnv *env, jclass clazz) {
+  return Rime::Instance().isMaintenanceComplete();
 }
 
 extern "C" JNIEXPORT void JNICALL
