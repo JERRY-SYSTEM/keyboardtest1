@@ -91,7 +91,7 @@
             android:background="?android:attr/selectableItemBackground"
             android:scaleType="centerInside"
             android:padding="4dp"
-            android:contentDescription="上一页候选词" />
+            android:contentDescription="上一页" />
 
         <ImageButton
             android:id="@+id/btn_candidate_next"
@@ -101,19 +101,17 @@
             android:background="?android:attr/selectableItemBackground"
             android:scaleType="centerInside"
             android:padding="4dp"
-            android:contentDescription="下一页候选词" />
+            android:contentDescription="下一页" />
     </LinearLayout>
 
-    <!-- Rime 键盘区域 -->
+    <!-- 键盘区域 -->
     <android.inputmethodservice.KeyboardView
         android:id="@+id/keyboard_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:keyPreviewLayout="@layout/key_preview"
         android:background="#E8E8E8"
         android:keyTextColor="#333333"
         android:keyBackground="@drawable/key_background"
-        android:popupLayout="@layout/key_preview"
         android:keyTextSize="13sp"
         android:verticalGap="4dp"
         android:horizontalGap="2dp" />
@@ -128,7 +126,6 @@
         android:background="#E0E0E0"
         android:gravity="center_vertical">
 
-        <!-- 1. 魔法修改 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_magic"
             android:layout_width="0dp"
@@ -145,7 +142,6 @@
             android:layout_marginEnd="3dp"
             app:cornerRadius="8dp" />
 
-        <!-- 2. 魔法书 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_magic_book"
             android:layout_width="0dp"
@@ -162,7 +158,6 @@
             android:layout_marginEnd="3dp"
             app:cornerRadius="8dp" />
 
-        <!-- 3. 语音（麦克风） -->
         <LinearLayout
             android:id="@+id/mic_button_container"
             android:layout_width="0dp"
@@ -229,7 +224,6 @@
                 android:insetBottom="0dp" />
         </LinearLayout>
 
-        <!-- 4. 清空 -->
         <ImageButton
             android:id="@+id/btn_delete"
             android:layout_width="0dp"
@@ -241,7 +235,6 @@
             android:contentDescription="清空"
             android:layout_marginEnd="3dp" />
 
-        <!-- 5. 发送 -->
         <ImageButton
             android:id="@+id/btn_send"
             android:layout_width="0dp"

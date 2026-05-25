@@ -26,7 +26,6 @@ import com.cesia.input.engine.TypelessEngine
 import com.cesia.input.engine.rime.RimeEngine
 import com.cesia.input.stats.PolishStatsManager
 import com.cesia.input.stats.MagicHistoryManager
-import com.cesia.input.ui.CustomKeyboardView
 import com.google.android.material.button.MaterialButton
 
 /**
@@ -41,7 +40,7 @@ import com.google.android.material.button.MaterialButton
 class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionListener {
 
     // ======================== 视图 ========================
-    private lateinit var keyboardView: CustomKeyboardView
+    private lateinit var keyboardView: KeyboardView
     private lateinit var qwertyKeyboard: Keyboard
     private lateinit var symbolKeyboardEn: Keyboard
     private lateinit var symbolKeyboardCn: Keyboard
