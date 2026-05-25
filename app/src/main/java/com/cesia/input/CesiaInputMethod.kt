@@ -396,6 +396,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         candidateBar.visibility = View.VISIBLE
         tvComposing.text = pinyin
 
+        // 同时显示在状态栏，方便排查
+        if (composing || pinyin.isNotEmpty()) {
+            val candStr = if (candidates.size > 0) candidates.take(5).joinToString(" ") else "(无候选)"
+            updateStatus("拼音: $pinyin | $candStr")
+        }
+
         for (i in tvCandidates.indices) {
             if (i < candidates.size) {
                 tvCandidates[i].text = candidates[i]
@@ -1309,7 +1315,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 } else {
                     val c = primaryCode.toChar()
                     val success = rimeEngine.processKey(c)
-                    Log.d("CesiaRime", "processKey('$c') = $success, composing=${rimeEngine.isComposing}, text=${rimeEngine.composingText}, candidates=${rimeEngine.candidates.size}")
+                    // 详细日志：无论成功与否都打印 Rime 状态
+                    Log.d("CesiaRime", "processKey('$c') success=$success composing=${rimeEngine.isComposing} text='${rimeEngine.composingText}' candidates=${rimeEngine.candidates.size} engineInit=${rimeEngine.isInitialized}")
                     updateCandidateBar()
                 }
             }
