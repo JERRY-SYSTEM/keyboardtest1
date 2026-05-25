@@ -164,33 +164,24 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showVersion() {
-        // 始终显示本地安装的版本号（BuildConfig.VERSION_NAME），不依赖任何缓存
+        // 直接从已安装APK读取版本号
         val displayVersion = try {
-            com.cesia.input.BuildConfig.VERSION_NAME
-        } catch (_: Exception) {
-            try {
-                val pInfo = try {
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
-                    } else {
-                        @Suppress("DEPRECATION")
-                        packageManager.getPackageInfo(packageName, 0)
-                    }
-                } catch (_: Exception) {
-                    @Suppress("DEPRECATION")
-                    packageManager.getPackageInfo(packageName, 0)
-                }
-                pInfo.versionName ?: "开发版"
-            } catch (_: Exception) { "开发版" }
-        }
+            val pInfo = if (Build.VERSION.SDK_INT >= 33) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            pInfo.versionName ?: "开发版"
+        } catch (_: Exception) { "开发版" }
 
-        val versionText = if (displayVersion.isNotEmpty() && displayVersion != "null" && displayVersion != "1.0.0") {
+        val versionText = if (displayVersion.isNotEmpty() && displayVersion != "null") {
             "版本: $displayVersion"
         } else {
             "版本: 开发版"
         }
         tvVersion.text = versionText
-        Log.d("SettingsActivity", "显示版本: $displayVersion")
+        Log.d("SettingsActivity", "显示版本: $displayVersion, versionCode: ${try { val p = packageManager.getPackageInfo(packageName, 0); if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) p.longVersionCode else @Suppress("DEPRECATION") p.versionCode.toLong() } catch(_:Exception){0L}}")
         fetchGitHubVersion()
     }
 
@@ -820,14 +811,14 @@ class SettingsActivity : AppCompatActivity() {
                     } else ""
                 } catch (_: Exception) { "" }
 
-                // 用 versionCode 比较版本
+                // 版本比较：用 versionCode 数值比较
                 val currentVersionCode = try {
                     val pInfo = packageManager.getPackageInfo(packageName, 0)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo.longVersionCode
                     else @Suppress("DEPRECATION") pInfo.versionCode.toLong()
                 } catch (_: Exception) { 0L }
 
-                // 从 tag_name 解析最新版本的 versionCode (格式: 1.0.X -> X)
+                // 从 tag_name 解析最新版本的 versionCode (格式: 1.1.X -> X)
                 val latestVersionCode = try {
                     val parts = latestVersionName.split(".")
                     if (parts.size >= 3) parts[2].toLong() else 0L
@@ -838,24 +829,10 @@ class SettingsActivity : AppCompatActivity() {
                     pInfo.versionName ?: "开发版"
                 } catch (_: Exception) { "开发版" }
 
-                // 版本比较：优先用 BuildConfig.VERSION_NAME，兜底用缓存
-                var isUpToDate = false
-                try {
-                    val localName = com.cesia.input.BuildConfig.VERSION_NAME
-                    if (localName.isNotEmpty() && localName != "null") {
-                        isUpToDate = localName == latestVersionName
-                    }
-                } catch (_: Exception) {}
+                // 本地versionCode >= 最新版本versionCode 表示已是最新
+                val isUpToDate = currentVersionCode > 0 && currentVersionCode >= latestVersionCode
 
-                // BuildConfig 无效时，用缓存的版本号比较
-                if (!isUpToDate) {
-                    val cachedInstalledVersion = prefs.getString("installed_version_name", null)
-                    if (!cachedInstalledVersion.isNullOrEmpty()) {
-                        isUpToDate = cachedInstalledVersion == latestVersionName
-                    }
-                }
-
-                appendLog("本地版本: ${currentVersionName}, 最新版本: $latestVersionName, 最新=$isUpToDate")
+                appendLog("本地: $currentVersionName($currentVersionCode), 最新: $latestVersionName($latestVersionCode), isUpToDate=$isUpToDate")
 
                 runOnUiThread {
                     showVersion()
