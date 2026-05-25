@@ -22,6 +22,8 @@ class RimeEngineFallback(private val context: Context) {
     private var currentPage = 0
     private val pageSize = 5
 
+    val currentPageIdx: Int get() = currentPage
+
     val isInitialized: Boolean get() = isReady
     val isComposing: Boolean get() = currentPinyin.isNotEmpty()
     val composingText: String get() = currentPinyin

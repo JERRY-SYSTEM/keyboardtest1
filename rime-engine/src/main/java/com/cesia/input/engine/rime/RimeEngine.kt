@@ -46,7 +46,7 @@ class RimeEngine(private val context: Context) : InputEngine {
         get() = if (RimeJni.isAvailable()) session?.pageCount ?: 0 else fallback.pageCount
 
     override val currentPage: Int
-        get() = if (RimeJni.isAvailable()) session?.currentPage ?: 0 else fallback.currentPage
+        get() = if (RimeJni.isAvailable()) session?.currentPage ?: 0 else fallback.currentPageIdx
 
     // --- 生命周期 ---
 
