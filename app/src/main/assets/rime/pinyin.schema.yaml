@@ -66,10 +66,13 @@ punctuator:
   import_preset: default
 
 key_binder:
-  import_preset: default
+  bindings:
+    - { when: has_menu, accept: minus, send: Page_Up }
+    - { when: has_menu, accept: equal, send: Page_Down }
+    - { when: paging, accept: comma, send: Page_Up }
+    - { when: has_menu, accept: period, send: Page_Down }
 
 recognizer:
-  import_preset: default
   patterns:
     uppercase: ""
     reverse_lookup: "`[a-z]*'?$"

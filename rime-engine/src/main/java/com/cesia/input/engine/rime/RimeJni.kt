@@ -41,22 +41,19 @@ object RimeJni {
             val defaultFile = java.io.File(sharedDir, "default.yaml")
             Log.i(TAG, "STEP3: dict=${dictFile.exists()}(${dictFile.length()}) schema=${schemaFile.exists()} default=${defaultFile.exists()}")
 
-            TrimeRime.startupRime(sharedDir, userDir, "1.0.0", false)
-            Log.i(TAG, "STEP4: startupRime 完成")
-
-            // 清除旧的 build 目录，强制 Rime 重新编译
+            // 清除旧的 build 目录，强制 Rime 在 startup 时重新编译
             val buildDir = java.io.File(sharedDir, "build")
             if (buildDir.exists()) {
                 buildDir.deleteRecursively()
-                Log.i(TAG, "STEP5: 清除旧 build 目录")
+                Log.i(TAG, "STEP3: 清除旧 build 目录")
             }
 
-            // 触发 Rime 部署（编译 schema 和词库）
-            if (schemaFile.exists()) {
-                val schemaOk = TrimeRime.deployRimeSchemaFile(schemaFile.absolutePath)
-                Log.i(TAG, "STEP5: deployRimeSchemaFile=${schemaOk}")
-            }
-            // 注意：不调用 deployRimeConfigFile，避免覆盖 default.yaml 中的 schema_list
+            TrimeRime.startupRime(sharedDir, userDir, "1.0.0", true)
+            Log.i(TAG, "STEP4: startupRime 完成（fullCheck=true，自动部署）")
+
+            // 注意：不手动调用 deployRimeSchemaFile
+            // startupRime(fullCheck=true) 会自动检测文件变化并触发完整部署
+            // 手动 deploy 会导致 Rime 检测到 source file changed 而陷入无限循环
 
             val started = isRimeStarted()
             if (!started) {
