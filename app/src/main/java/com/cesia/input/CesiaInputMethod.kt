@@ -1314,7 +1314,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 } else {
                     val c = primaryCode.toChar()
                     // 先在状态栏显示已按的键，确认 Java 层按键可达
-                    tvStatus.text = "按键: $c | composing=${rimeEngine.isComposing} init=${rimeEngine.isInitialized}"
+                    statusText.text = "按键: $c | composing=${rimeEngine.isComposing} init=${rimeEngine.isInitialized}"
                     val success = rimeEngine.processKey(c)
                     Log.d("CesiaRime", "processKey('$c') success=$success composing=${rimeEngine.isComposing} text='${rimeEngine.composingText}' candidates=${rimeEngine.candidates.size}")
                     updateCandidateBar()
