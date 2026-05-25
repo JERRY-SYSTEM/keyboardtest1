@@ -12,6 +12,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.View
 import android.view.animation.ScaleAnimation
 import android.view.inputmethod.EditorInfo
@@ -154,9 +155,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } catch (e: Exception) {
             Log.e("Cesia", "onCreateInputView 严重崩溃", e)
             return android.widget.TextView(this).apply {
-                text = "Cesia 加载失败，请重启输入法"
+                text = "Cesia 加载失败\n${e.javaClass.simpleName}: ${e.message}\n请重启输入法"
                 setTextColor(android.graphics.Color.RED)
-                textSize = 14f
+                textSize = 12f
                 gravity = android.view.Gravity.CENTER
                 setPadding(16, 16, 16, 16)
             }
@@ -165,16 +166,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun createInputViewSafe(): View {
         Log.d("Cesia", "createInputViewSafe: 开始加载布局")
-        val view = getLayoutInflater().inflate(R.layout.input_view, null)
+        val inflater = LayoutInflater.from(this)
+        Log.d("Cesia", "createInputViewSafe: inflater 获取成功")
+        val view = inflater.inflate(R.layout.input_view, null)
+        Log.d("Cesia", "createInputViewSafe: 布局加载成功")
 
         keyboardView = view.findViewById(R.id.keyboard_view)
+        Log.d("Cesia", "createInputViewSafe: keyboardView 获取成功")
         micButton = view.findViewById(R.id.btn_mic)
         micButtonContainer = view.findViewById(R.id.mic_button_container)
         btnMicAi = view.findViewById(R.id.btn_mic_ai)
         btnMicNoAi = view.findViewById(R.id.btn_mic_noai)
         btnSettings = view.findViewById(R.id.btn_settings)
         btnDelete = view.findViewById(R.id.btn_delete)
-        btnClipboard = view.findViewById(R.id.btn_magic_book)  // 魔法书按钮
+        btnClipboard = view.findViewById(R.id.btn_magic_book)
         btnMagic = view.findViewById(R.id.btn_magic)
         statusDot = view.findViewById(R.id.v_status_dot)
         statusText = view.findViewById(R.id.tv_status)
@@ -193,15 +198,19 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnCandidateNext = view.findViewById(R.id.btn_candidate_next)
 
         // 初始化键盘
+        Log.d("Cesia", "createInputViewSafe: 开始初始化键盘")
         qwertyKeyboard = Keyboard(this, R.xml.qwerty)
+        Log.d("Cesia", "createInputViewSafe: qwerty 键盘加载成功")
         try {
             symbolKeyboardEn = Keyboard(this, R.xml.symbols)
+            Log.d("Cesia", "createInputViewSafe: symbols 键盘加载成功")
         } catch (e: Exception) {
             Log.e("Cesia", "加载英文符号键盘失败", e)
             symbolKeyboardEn = qwertyKeyboard
         }
         try {
             symbolKeyboardCn = Keyboard(this, R.xml.symbols_cn)
+            Log.d("Cesia", "createInputViewSafe: symbols_cn 键盘加载成功")
         } catch (e: Exception) {
             Log.e("Cesia", "加载中文符号键盘失败", e)
             symbolKeyboardCn = symbolKeyboardEn
@@ -211,8 +220,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         keyboardView.keyboard = currentKeyboard
         keyboardView.setOnKeyboardActionListener(this)
         keyboardView.isPreviewEnabled = true
+        Log.d("Cesia", "createInputViewSafe: 键盘设置完成")
 
         // 初始化引擎
+        Log.d("Cesia", "createInputViewSafe: 开始初始化引擎")
         statsManager = PolishStatsManager(this)
         magicHistoryManager = MagicHistoryManager(this)
         currentMagicPrompt = magicHistoryManager?.getActiveInstruction()
