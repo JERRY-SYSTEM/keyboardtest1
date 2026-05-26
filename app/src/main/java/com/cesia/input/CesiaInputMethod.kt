@@ -1673,13 +1673,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 .getString(PREF_AI_STYLE, "自然") ?: "自然"
             // 外部词库下载后需要重新部署 Rime
             val dictPrefs = getSharedPreferences("cesia_dict", MODE_PRIVATE)
+            val settingsPrefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
             if (dictPrefs.getBoolean("dict_downloaded", false) && rimeEngine.isInitialized) {
-                val lastReload = prefs.getLong("last_dict_reload", 0)
+                val lastReload = settingsPrefs.getLong("last_dict_reload", 0)
                 val lastSync = dictPrefs.getLong("last_sync", 0)
                 if (lastSync > lastReload) {
                     Log.i("Cesia", "检测到词库更新，重新部署 Rime")
                     rimeEngine.reload()
-                    prefs.edit().putLong("last_dict_reload", System.currentTimeMillis()).apply()
+                    settingsPrefs.edit().putLong("last_dict_reload", System.currentTimeMillis()).apply()
                 }
             }
         } catch (e: Exception) {
