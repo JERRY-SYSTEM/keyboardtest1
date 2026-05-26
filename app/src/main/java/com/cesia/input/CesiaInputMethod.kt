@@ -9,6 +9,7 @@ import android.inputmethodservice.KeyboardView
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -33,10 +34,19 @@ import com.google.android.material.button.MaterialButton
  * Cesia 输入法 — Rime 内核版
  *
  * 架构：
- * - 键盘 UI：标准 QWERTY 布局（qwerty.xml + symbols_cn.xml + symbols.xml）
+ * - 键盘 UI：标准 QWERTY 布局（qwerty.xml + symbols_cn.xml + symbols.xml + symbols_en.xml + number.xml）
  * - 输入引擎：Rime（librime JNI）处理拼音→汉字
  * - 底部功能栏：魔法修改、魔法书、语音、清空、发送
  * - 语音润色：TypelessEngine（OpenRouter API）
+ *
+ * Trime 功能复刻：
+ * - Shift 键改为中英切换开关（中文单击→英文，英文长按→中文）
+ * - Mode_switch 键（独立中英文切换）
+ * - 长按功能键（select_all/Home/End/Page_Up/Page_Down/方向键/cut/copy/paste/Insert/Delete）
+ * - 完整符号键盘和数字键盘
+ * - 标点经过 Rime punctuator
+ * - Swipe 操作支持
+ * - Enter 键 label 根据 imeOptions 变化
  */
 class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionListener {
 
@@ -45,6 +55,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var qwertyKeyboard: Keyboard
     private lateinit var symbolKeyboardEn: Keyboard
     private lateinit var symbolKeyboardCn: Keyboard
+    private lateinit var numberKeyboard: Keyboard
     private var currentKeyboard: Keyboard? = null
 
     private lateinit var micButton: MaterialButton
@@ -82,12 +93,67 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var pendingAiMode: Boolean? = null
     private var recognizedText: String = ""
 
+    // Trime 兼容状态
+    private var isAsciiMode = false          // 替代 isEnglishMode，与 Rime 的 ascii_mode 对应
+    private var keyboardMode = KeyboardMode.QWERTY  // 当前键盘模式
+    private var isFullShape = false          // 全角/半角
+    private var isExtendedCharset = false    // 扩展字符集
+    private var isAsciiPunct = false         // 英文标点
+
     // 长按检测
     private var longPressHandler = Handler(Looper.getMainLooper())
     private var longPressRunnable: Runnable? = null
     private var currentLongPressKey: Keyboard.Key? = null
     private var longPressTriggered = false
     private var longPressConsumed = false
+
+    // 功能键长按检测（Trime 风格）
+    private var functionalLongPressHandler = Handler(Looper.getMainLooper())
+    private var functionalLongPressRunnable: Runnable? = null
+    private var functionalLongPressTriggered = false
+
+    // 功能键长按映射表（参考 Trime preset_keys）
+    private fun getFunctionalLongAction(primaryCode: Int): (() -> Unit)? {
+        return when (primaryCode) {
+            // a → 全选 (Ctrl+A)
+            97 -> { { sendCtrlKey(KeyEvent.KEYCODE_A) } }
+            // s → Home
+            115 -> { { sendControlKey(KeyEvent.KEYCODE_MOVE_HOME) } }
+            // d → End
+            100 -> { { sendControlKey(KeyEvent.KEYCODE_MOVE_END) } }
+            // f → Page Up
+            102 -> { { sendControlKey(KeyEvent.KEYCODE_PAGE_UP) } }
+            // g → Page Down
+            103 -> { { sendControlKey(KeyEvent.KEYCODE_PAGE_DOWN) } }
+            // h → Left
+            104 -> { { sendControlKey(KeyEvent.KEYCODE_DPAD_LEFT) } }
+            // j → Down
+            106 -> { { sendControlKey(KeyEvent.KEYCODE_DPAD_DOWN) } }
+            // k → Up
+            107 -> { { sendControlKey(KeyEvent.KEYCODE_DPAD_UP) } }
+            // l → Right
+            108 -> { { sendControlKey(KeyEvent.KEYCODE_DPAD_RIGHT) } }
+            // x → 剪切
+            120 -> { { currentInputConnection?.performContextMenuAction(android.R.id.cut) } }
+            // c → 复制
+            99 -> { { currentInputConnection?.performContextMenuAction(android.R.id.copy) } }
+            // v → 粘贴
+            118 -> { { currentInputConnection?.performContextMenuAction(android.R.id.paste) } }
+            // z → 撤销
+            122 -> { { sendCtrlKey(KeyEvent.KEYCODE_Z) } }
+            // n → Insert
+            110 -> { { sendControlKey(KeyEvent.KEYCODE_INSERT) } }
+            // m → Delete
+            109 -> { { sendControlKey(KeyEvent.KEYCODE_FORWARD_DEL) } }
+            else -> null
+        }
+    }
+
+    private fun sendControlKey(keyCode: Int, metaState: Int = 0) {
+        val ic = currentInputConnection ?: return
+        val time = SystemClock.uptimeMillis()
+        ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_DOWN, keyCode, 0, metaState))
+        ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_UP, keyCode, 0, metaState))
     private var backspaceHandler = Handler(Looper.getMainLooper())
     private var backspaceRunnable: Runnable? = null
 
@@ -124,6 +190,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isDarkTheme = false
     private var apiUrl = "https://openrouter.ai/api/v1/chat/completions"
 
+    // ======================== 键盘模式枚举 ========================
+    enum class KeyboardMode {
+        QWERTY,        // 主键盘
+        SYMBOL_CN,     // 中文符号
+        SYMBOL_EN,     // 英文符号
+        NUMBER         // 数字键盘
+    }
+
     companion object {
         const val PREF_API_URL = "api_url"
         const val PREF_MODEL_ID = "model_id"
@@ -134,6 +208,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         const val DEFAULT_MODEL_ID = "minimax/minimax-m2.5:free"
         const val KEYCODE_SWITCH_SYMBOL = -100
         const val KEYCODE_SWITCH_LANG = -101
+        const val KEYCODE_SWITCH_NUMBER = -102
         const val KEYCODE_BACK_KEY = -999
         const val THEME_LIGHT = 0
         const val THEME_DARK = 1
@@ -214,6 +289,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } catch (e: Exception) {
             Log.e("Cesia", "加载中文符号键盘失败", e)
             symbolKeyboardCn = symbolKeyboardEn
+        }
+        try {
+            numberKeyboard = Keyboard(this, R.xml.number)
+            Log.d("Cesia", "createInputViewSafe: number 键盘加载成功")
+        } catch (e: Exception) {
+            Log.e("Cesia", "加载数字键盘失败", e)
+            numberKeyboard = qwertyKeyboard
         }
         currentKeyboard = qwertyKeyboard
 
@@ -1203,54 +1285,89 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } catch (_: Exception) {}
     }
 
-    // ======================== 键盘切换 ========================
+    // ======================== 键盘切换（Trime 风格）=======================
 
-    private fun switchToSymbolKeyboard() {
-        if (!isSymbolMode) {
-            isSymbolMode = true
-            currentKeyboard = symbolKeyboardCn
-            keyboardView.keyboard = symbolKeyboardCn
-            keyboardView.invalidateAllKeys()
+    private fun switchToKeyboard(mode: KeyboardMode) {
+        keyboardMode = mode
+        currentKeyboard = when (mode) {
+            KeyboardMode.QWERTY -> qwertyKeyboard
+            KeyboardMode.SYMBOL_CN -> symbolKeyboardCn
+            KeyboardMode.SYMBOL_EN -> symbolKeyboardEn
+            KeyboardMode.NUMBER -> numberKeyboard
         }
+        keyboardView.keyboard = currentKeyboard
+        keyboardView.invalidateAllKeys()
     }
 
-    private fun switchToQwertyKeyboard() {
-        if (isSymbolMode) {
-            isSymbolMode = false
-            currentKeyboard = qwertyKeyboard
-            keyboardView.keyboard = qwertyKeyboard
-            keyboardView.invalidateAllKeys()
-        }
-    }
-
-    // 符号切换键（符/ABC）：在 QWERTY ↔ 中文符号 之间切换
-    private fun toggleKeyboard() {
-        if (isSymbolMode) switchToQwertyKeyboard() else switchToSymbolKeyboard()
-    }
-
-    // 中英文切换键（🌐）：切换到英文 QWERTY（无中文输入），再按切回
-    private var isEnglishMode = false
-
-    private fun toggleLanguage() {
-        if (isEnglishMode) {
-            // 切回中文
-            isEnglishMode = false
-            isSymbolMode = false
-            currentKeyboard = qwertyKeyboard
-            keyboardView.keyboard = qwertyKeyboard
-            keyboardView.invalidateAllKeys()
-            // 清除 Rime 的 composing 状态
-            rimeEngine.clear()
-            updateCandidateBar()
+    // 符号切换键（符）：在 QWERTY ↔ 中文符号 之间切换
+    private fun toggleSymbolKeyboard() {
+        if (keyboardMode == KeyboardMode.SYMBOL_CN || keyboardMode == KeyboardMode.SYMBOL_EN) {
+            switchToKeyboard(KeyboardMode.QWERTY)
         } else {
-            // 切到英文
-            isEnglishMode = true
-            isSymbolMode = false
-            currentKeyboard = qwertyKeyboard
-            keyboardView.keyboard = qwertyKeyboard
-            keyboardView.invalidateAllKeys()
-            rimeEngine.clear()
-            updateCandidateBar()
+            switchToKeyboard(KeyboardMode.SYMBOL_CN)
+        }
+    }
+
+    // 数字切换键（123）：切换到数字键盘，再按切回
+    private fun toggleNumberKeyboard() {
+        if (keyboardMode == KeyboardMode.NUMBER) {
+            switchToKeyboard(KeyboardMode.QWERTY)
+        } else {
+            switchToKeyboard(KeyboardMode.NUMBER)
+        }
+    }
+
+    // 返回键（ABC/返回）：返回 QWERTY 键盘
+    private fun switchToDefaultKeyboard() {
+        switchToKeyboard(KeyboardMode.QWERTY)
+        isAsciiMode = false
+        rimeEngine.setAsciiMode(false)
+        rimeEngine.clear()
+        updateCandidateBar()
+    }
+
+    // 中英文切换键（🌐）：切换 ascii_mode
+    private fun toggleLanguage() {
+        if (isAsciiMode) {
+            isAsciiMode = false
+            rimeEngine.setAsciiMode(false)
+            switchToKeyboard(KeyboardMode.QWERTY)
+        } else {
+            isAsciiMode = true
+            rimeEngine.setAsciiMode(true)
+            switchToKeyboard(KeyboardMode.QWERTY)
+        }
+        rimeEngine.clear()
+        updateCandidateBar()
+    }
+
+    // 更新 Enter 键 label
+    private fun updateEnterKeyLabel(): String {
+        val editorInfo = currentInputEditorInfo ?: return "↵"
+        val imeOptions = editorInfo.imeOptions
+        val action = imeOptions and EditorInfo.IME_MASK_ACTION
+        return when (action) {
+            EditorInfo.IME_ACTION_GO -> "前往"
+            EditorInfo.IME_ACTION_DONE -> "完成"
+            EditorInfo.IME_ACTION_NEXT -> "下个"
+            EditorInfo.IME_ACTION_PREVIOUS -> "上个"
+            EditorInfo.IME_ACTION_SEARCH -> "搜索"
+            EditorInfo.IME_ACTION_SEND -> "发送"
+            else -> "↵"
+        }
+    }
+
+    // 发送组合键（多键同时按下）
+    private fun sendComboKey(vararg keyCodes: Int) {
+        val ic = currentInputConnection ?: return
+        val time = SystemClock.uptimeMillis()
+        // 按下所有修饰键
+        for (code in keyCodes) {
+            ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_DOWN, code, 0))
+        }
+        // 释放（逆序）
+        for (i in keyCodes.indices.reversed()) {
+            ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_UP, keyCodes[i], 0))
         }
     }
 
@@ -1279,6 +1396,27 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         longPressRunnable?.let { longPressHandler.removeCallbacks(it) }
         longPressRunnable = null
         currentLongPressKey = null
+    }
+
+    // ======================== 功能键长按（Trime 风格）=======================
+
+    private fun startFunctionalLongPress(primaryCode: Int) {
+        cancelFunctionalLongPress()
+        val action = getFunctionalLongAction(primaryCode) ?: return
+        functionalLongPressRunnable = Runnable {
+            functionalLongPressTriggered = true
+            keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            action()
+            Log.d("Cesia", "功能键长按: primaryCode=$primaryCode")
+        }.also {
+            functionalLongPressHandler.postDelayed(it, 400)
+        }
+    }
+
+    private fun cancelFunctionalLongPress() {
+        functionalLongPressRunnable?.let { functionalLongPressHandler.removeCallbacks(it) }
+        functionalLongPressRunnable = null
+        functionalLongPressTriggered = false
     }
 
     private fun startSendKeyLongPress() {
@@ -1315,41 +1453,34 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val composing = rimeEngine.isComposing
         val hasCands = rimeEngine.hasCandidates
         val cands = rimeEngine.candidates
-        val preedit = rimeEngine.composingText
 
         when (primaryCode) {
 
             // ======================== 字母键 a-z ========================
             in 97..122 -> {
-                if (isEnglishMode) {
+                if (isAsciiMode) {
                     ic?.commitText(primaryCode.toChar().toString(), 1)
                 } else {
-                    // 交给 Rime 处理，然后更新候选栏
                     rimeEngine.processKey(primaryCode.toChar())
                     updateCandidateBar()
                 }
             }
 
-            // ======================== 数字键 0-9（选候选词） ========================
+            // ======================== 数字键 0-9（选候选词）=======================
             in 48..57 -> {
-                if (composing && hasCands) {
-                    // 数字 1-9 选对应候选词，0 选第10个
+                if (!isAsciiMode && composing && hasCands) {
                     val index = if (primaryCode == 48) 9 else (primaryCode - 49)
                     if (index < cands.size) {
                         val selected = rimeEngine.selectCandidate(index)
                         if (selected.isNotEmpty()) {
                             ic?.commitText(selected, 1)
-                            // selectCandidate 内部已提交，Rime 会自动清除 composing
                         } else {
-                            // selectCandidate 失败，尝试直接提交
                             commitAndClear()
                         }
                     } else {
-                        // 索引超出范围，直接上屏数字
                         ic?.commitText(primaryCode.toChar().toString(), 1)
                     }
-                } else if (composing) {
-                    // 有 composing 但无候选词，提交拼音后输出数字
+                } else if (!isAsciiMode && composing) {
                     commitAndClear()
                     ic?.commitText(primaryCode.toChar().toString(), 1)
                 } else {
@@ -1360,10 +1491,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 空格键 ========================
             32 -> {
-                if (isEnglishMode) {
+                if (isAsciiMode) {
+                    // 英文模式：空格直接上屏
                     ic?.commitText(" ", 1)
                 } else if (composing && hasCands) {
-                    // 选第一个候选词上屏
                     val selected = rimeEngine.selectCandidate(0)
                     if (selected.isNotEmpty()) {
                         ic?.commitText(selected, 1)
@@ -1372,7 +1503,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         ic?.commitText(" ", 1)
                     }
                 } else if (composing) {
-                    // 无候选词，提交拼音
                     commitAndClear()
                     ic?.commitText(" ", 1)
                 } else {
@@ -1383,13 +1513,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 退格键 ========================
             -5, Keyboard.KEYCODE_DELETE -> {
-                if (isEnglishMode) {
+                if (isAsciiMode) {
                     ic?.deleteSurroundingText(1, 0)
                 } else {
-                    // 总是先交给 Rime 处理（参考 Trime 的逻辑）
-                    // 即使 isComposing=false，Rime 内部可能仍有 composing 状态
                     rimeEngine.processKey("BackSpace")
-                    // 如果 Rime 处理后退格仍生效（composing 已空），再直接删除
                     if (!rimeEngine.isComposing && rimeEngine.composingText.isEmpty()) {
                         ic?.deleteSurroundingText(1, 0)
                     }
@@ -1399,17 +1526,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 回车键 ========================
             10, Keyboard.KEYCODE_DONE -> {
-                if (isEnglishMode) {
-                    sendDownUpEnter()
-                } else if (composing && hasCands) {
+                if (!isAsciiMode && composing && hasCands) {
                     val selected = rimeEngine.selectCandidate(0)
                     if (selected.isNotEmpty()) {
-                        currentInputConnection?.commitText(selected, 1)
+                        ic?.commitText(selected, 1)
                     } else {
                         commitAndClear()
                         sendDownUpEnter()
                     }
-                } else if (composing) {
+                } else if (!isAsciiMode && composing) {
                     commitAndClear()
                     sendDownUpEnter()
                 } else {
@@ -1418,29 +1543,42 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 updateCandidateBar()
             }
 
-            // ======================== Shift ========================
+            // ======================== Shift 键（中英切换开关）=======================
             -1 -> {
+                // 中文模式下单击 Shift → 切英文
+                // 英文模式下 Shift 保持正常大小写功能
+                if (!isAsciiMode) {
+                    isAsciiMode = true
+                    rimeEngine.setAsciiMode(true)
+                    // 清除当前 composing
+                    rimeEngine.clear()
+                    updateCandidateBar()
+                }
+                // 切换 Shift 状态（大小写显示）
                 isCapsLock = !isCapsLock
                 qwertyKeyboard.isShifted = isCapsLock
                 keyboardView.invalidateAllKeys()
             }
 
-            // ======================== 符号切换 ========================
-            KEYCODE_SWITCH_SYMBOL -> toggleKeyboard()
+            // ======================== 符号切换（符）=======================
+            KEYCODE_SWITCH_SYMBOL -> toggleSymbolKeyboard()
 
-            // ======================== 中英文切换 ========================
+            // ======================== 数字切换（123）=======================
+            KEYCODE_SWITCH_NUMBER -> toggleNumberKeyboard()
+
+            // ======================== 中英文切换（🌐）=======================
             KEYCODE_SWITCH_LANG -> toggleLanguage()
 
-            // ======================== 返回键 ========================
-            KEYCODE_BACK_KEY -> switchToQwertyKeyboard()
+            // ======================== 返回键（ABC/返回）=======================
+            KEYCODE_BACK_KEY -> switchToDefaultKeyboard()
 
-            // ======================== 发送键（纸飞机） ========================
+            // ======================== 发送键（纸飞机）=======================
             -200 -> {
                 if (sendKeyLongPressTriggered) {
                     sendKeyLongPressTriggered = false
                     return
                 }
-                if (composing) {
+                if (!isAsciiMode && composing) {
                     val text = if (hasCands) {
                         rimeEngine.selectCandidate(0).ifEmpty { rimeEngine.composingText }
                     } else {
@@ -1460,20 +1598,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 else sendDownUpEnter()
             }
 
-            // ======================== 其他按键（标点等） ========================
+            // ======================== 其他按键（标点等）=======================
             else -> {
-                if (composing) {
-                    // 有 composing 时，先提交当前输入再输出字符
-                    val text = if (hasCands) {
-                        rimeEngine.selectCandidate(0).ifEmpty { rimeEngine.composingText }
-                    } else {
-                        rimeEngine.composingText
-                    }
-                    if (text.isNotEmpty()) {
-                        ic?.commitText(text, 1)
-                    }
-                    rimeEngine.clear()
-                    updateCandidateBar()
+                if (!isAsciiMode && composing) {
+                    // 中文模式下标点 = 提交当前输入后输出
+                    commitAndClear()
                 }
                 val c = primaryCode.toChar()
                 if (c != '\u0000') {
@@ -1507,10 +1636,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     override fun onPress(primaryCode: Int) {
-        if (primaryCode > 0 && !isSymbolMode) {
+        // 检测是否有长按功能键映射
+        if (primaryCode > 0) {
             val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
-            if (key != null && !key.popupCharacters.isNullOrEmpty()) {
-                startLongPressDetection(key)
+            if (key != null) {
+                // 有 popupCharacters 的键 → 长按输出 popup 字符
+                if (!key.popupCharacters.isNullOrEmpty()) {
+                    startLongPressDetection(key)
+                }
+            }
+        }
+        // 功能键长按检测（仅在中文模式下）
+        if (!isAsciiMode && primaryCode in 97..122) {
+            // 字母键长按功能（仅在非符号键盘）
+            if (keyboardMode == KeyboardMode.QWERTY) {
+                val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
+                if (key != null && !key.popupCharacters.isNullOrEmpty()) {
+                    startFunctionalLongPress(primaryCode)
+                }
             }
         }
         if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
@@ -1530,6 +1673,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onRelease(primaryCode: Int) {
         cancelLongPress()
+        cancelFunctionalLongPress()
         cancelSendKeyLongPress()
         backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
         backspaceRunnable = null

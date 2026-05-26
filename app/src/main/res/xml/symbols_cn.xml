@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    中文符号键盘 — 完整复刻 Rime 中文标点布局
+    中文符号键盘 — 复刻 Trime 中文标点布局
     包含：常用中文标点 + 长按副字符
 -->
 <Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
@@ -41,12 +41,12 @@
         <Key android:codes="12301" android:keyLabel="」" />
         <Key android:codes="12302" android:keyLabel="『" />
         <Key android:codes="12303" android:keyLabel="』" />
-        <Key android:codes="8220" android:keyLabel="\u201C"
-            android:popupCharacters="\u201D" />
-        <Key android:codes="8221" android:keyLabel="\u201D"
-            android:popupCharacters="\u201C" />
-        <Key android:codes="8216" android:keyLabel="\u2018" />
-        <Key android:codes="8217" android:keyLabel="\u2019" android:keyEdgeFlags="right" />
+        <Key android:codes="8220" android:keyLabel="&#x201C;"
+            android:popupCharacters="&#x201D;" />
+        <Key android:codes="8221" android:keyLabel="&#x201D;"
+            android:popupCharacters="&#x201C;" />
+        <Key android:codes="8216" android:keyLabel="&#x2018;" />
+        <Key android:codes="8217" android:keyLabel="&#x2019;" android:keyEdgeFlags="right" />
     </Row>
 
     <!-- ===== 第3行：括号 + 数学符号 ===== -->
@@ -89,21 +89,23 @@
         <Key android:codes="12288" android:keyLabel="　" />
         <Key android:codes="-5" android:keyLabel="⌫" android:keyEdgeFlags="right"
             android:isRepeatable="true"
-            android:keyWidth="12%p" />
+            android:keyWidth="15%p" />
     </Row>
 
     <!-- ===== 第5行：返回QWERTY + 数字 + 空格 + 句号 + 回车 ===== -->
     <Row>
         <Key android:codes="-100" android:keyLabel="返回" android:keyEdgeFlags="left"
             android:keyWidth="12%p" />
-        <Key android:codes="-101" android:keyLabel="🌐"
+        <Key android:codes="-102" android:keyLabel="123"
             android:keyWidth="10%p" />
-        <Key android:codes="48" android:keyLabel="，"
+        <Key android:codes="65292" android:keyLabel="，"
             android:popupCharacters="《〈" />
         <Key android:codes="32" android:keyLabel="       "
-            android:keyWidth="36%p" />
+            android:keyWidth="32%p" />
         <Key android:codes="12290" android:keyLabel="。"
-            android:popupCharacters="。·…—" />
+            android:popupCharacters="·…—" />
+        <Key android:codes="47" android:keyLabel="/"
+            android:popupCharacters="?" />
         <Key android:codes="10" android:keyLabel="↵" android:keyEdgeFlags="right"
             android:keyWidth="12%p" />
     </Row>

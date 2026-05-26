@@ -211,6 +211,18 @@ object RimeJni {
         try { TrimeRime.clearRimeComposition() } catch (_: Throwable) {}
     }
 
+    // ======================== 模式切换 ========================
+
+    fun setAsciiMode(ascii: Boolean) {
+        if (!initialized) return
+        try {
+            TrimeRime.setRuntimeOption("ascii_mode", ascii)
+            Log.d(TAG, "setAsciiMode: $ascii")
+        } catch (e: Throwable) {
+            Log.e(TAG, "setAsciiMode failed", e)
+        }
+    }
+
     // ======================== 翻页 ========================
 
     fun changePage(sessionId: Long, backward: Boolean): Boolean {

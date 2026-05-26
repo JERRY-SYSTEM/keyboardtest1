@@ -151,6 +151,10 @@ class RimeEngine(private val context: Context) : InputEngine {
         return candidates
     }
 
+    fun setAsciiMode(ascii: Boolean) {
+        RimeJni.setAsciiMode(ascii)
+    }
+
     // 兼容方法
     fun inputLetter(c: Char): String {
         processKey(c)
@@ -163,4 +167,9 @@ class RimeEngine(private val context: Context) : InputEngine {
     }
 
     fun getCurrentPinyin(): String = composingText
-}
+
+    // ======================== 模式切换 ========================
+
+    fun setAsciiMode(ascii: Boolean) {
+        RimeJni.setAsciiMode(ascii)
+    }
