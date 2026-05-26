@@ -25,8 +25,11 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.cesia.input.engine.TypelessEngine
 import com.cesia.input.engine.rime.RimeEngine
+import com.cesia.input.engine.PinyinEngine
 import com.cesia.input.stats.PolishStatsManager
 import com.cesia.input.stats.MagicHistoryManager
 import com.google.android.material.button.MaterialButton
@@ -65,10 +68,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 候选词栏
     private lateinit var candidateBar: LinearLayout
     private lateinit var tvComposing: TextView
-    private lateinit var tvCandidates: Array<TextView>
-    private lateinit var btnCandidatePrev: ImageButton
-    private lateinit var btnCandidateNext: ImageButton
     private lateinit var btnCandidateExpand: ImageButton
+    private var rvCandidates: RecyclerView? = null
+    private var candidateAdapter: CandidateAdapter? = null
 
     // 候选词展开面板
     private lateinit var candidatePanel: LinearLayout
@@ -78,8 +80,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var btnPanelNext: ImageButton
     private lateinit var btnPanelClose: ImageButton
     private lateinit var gvCandidates: GridView
-    private var candidateAdapter: ArrayAdapter<String>? = null
+    private var panelAdapter: ArrayAdapter<String>? = null
     private var isPanelExpanded = false
+
+    // T9 引擎
+    private var t9Keyboard: Keyboard? = null
+    private var t9Engine: PinyinEngine? = null
+    private var t9Input = StringBuilder()  // T9 数字输入缓冲
 
     // ======================== 核心组件 ========================
     private var typelessEngine: TypelessEngine? = null
@@ -219,9 +226,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun createInputViewSafe(): View {
         Log.d("Cesia", "createInputViewSafe: 开始加载布局")
         val inflater = LayoutInflater.from(this)
-        Log.d("Cesia", "createInputViewSafe: inflater 获取成功")
         val view = inflater.inflate(R.layout.input_view, null)
-        Log.d("Cesia", "createInputViewSafe: 布局加载成功")
 
         keyboardView = view.findViewById(R.id.keyboard_view)
         Log.d("Cesia", "createInputViewSafe: keyboardView 获取成功")
@@ -237,18 +242,26 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         statusText = view.findViewById(R.id.tv_status)
         voiceWave = view.findViewById(R.id.v_voice_wave)
 
+        // 候选词栏
         candidateBar = view.findViewById(R.id.candidate_bar)
         tvComposing = view.findViewById(R.id.tv_composing)
-        tvCandidates = arrayOf(
-            view.findViewById<TextView>(R.id.tv_candidate_1),
-            view.findViewById<TextView>(R.id.tv_candidate_2),
-            view.findViewById<TextView>(R.id.tv_candidate_3),
-            view.findViewById<TextView>(R.id.tv_candidate_4),
-            view.findViewById<TextView>(R.id.tv_candidate_5)
-        )
-        btnCandidatePrev = view.findViewById(R.id.btn_candidate_prev)
-        btnCandidateNext = view.findViewById(R.id.btn_candidate_next)
         btnCandidateExpand = view.findViewById(R.id.btn_candidate_expand)
+
+        // RecyclerView 候选词列表
+        rvCandidates = view.findViewById(R.id.rv_candidates)
+        candidateAdapter = CandidateAdapter { index, _ ->
+            if (rimeEngine.hasCandidates) {
+                val selected = rimeEngine.selectCandidate(index)
+                if (selected.isNotEmpty()) {
+                    currentInputConnection?.commitText(selected, 1)
+                    if (::candidateBar.isInitialized) updateCandidateBar()
+                }
+            }
+        }
+        rvCandidates?.adapter = candidateAdapter
+        rvCandidates?.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(
+            this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false
+        )
 
         // 候选面板视图
         candidatePanel = view.findViewById(R.id.candidate_panel)
@@ -284,6 +297,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             Log.e("Cesia", "加载数字键盘失败", e)
             numberKeyboard = qwertyKeyboard
         }
+        try {
+            t9Keyboard = Keyboard(this, R.xml.t9)
+            Log.d("Cesia", "t9 键盘加载成功")
+        } catch (e: Exception) {
+            Log.w("Cesia", "加载 T9 键盘失败，回退到数字键盘", e)
+            t9Keyboard = numberKeyboard
+        }
+        // 初始化 T9 引擎
+        t9Engine = PinyinEngine(this)
         currentKeyboard = qwertyKeyboard
 
         keyboardView.keyboard = currentKeyboard
@@ -407,9 +429,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             statusText.setTextColor(0xFFE0E0E0.toInt())
             candidateBar.setBackgroundColor(0xFF16213E.toInt())
             tvComposing.setTextColor(0xFF4488FF.toInt())
-            for (tv in tvCandidates) {
-                tv.setTextColor(0xFFE0E0E0.toInt())
-            }
             (btnClipboard.parent as? View)?.setBackgroundColor(0xFF1A1A2E.toInt())
         } else {
             keyboardView.setBackgroundColor(0xFFE8E8E8.toInt())
@@ -417,9 +436,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             statusText.setTextColor(0xFF555555.toInt())
             candidateBar.setBackgroundColor(0xFFF0F0F0.toInt())
             tvComposing.setTextColor(0xFF4488FF.toInt())
-            for (tv in tvCandidates) {
-                tv.setTextColor(0xFF333333.toInt())
-            }
             (btnClipboard.parent as? View)?.setBackgroundColor(0xFFE0E0E0.toInt())
         }
     }
@@ -427,31 +443,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 候选栏 ========================
 
     private fun setupCandidateBar() {
-        for (i in tvCandidates.indices) {
-            val index = i
-            tvCandidates[i].setOnClickListener {
-                if (rimeEngine.hasCandidates) {
-                    val selected = rimeEngine.selectCandidate(index)
-                    if (selected.isNotEmpty()) {
-                        currentInputConnection?.commitText(selected, 1)
-                        updateCandidateBar()
-                    }
-                }
-            }
-        }
-        btnCandidatePrev.setOnClickListener {
-            if (rimeEngine.hasCandidates) {
-                rimeEngine.prevPage()
-                updateCandidateBar()
-            }
-        }
-        btnCandidateNext.setOnClickListener {
-            if (rimeEngine.hasCandidates) {
-                rimeEngine.nextPage()
-                updateCandidateBar()
-            }
-        }
-        // 展开候选面板
+        // 展开/收起候选面板
         btnCandidateExpand.setOnClickListener {
             if (isPanelExpanded) {
                 collapseCandidatePanel()
@@ -463,8 +455,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun setupCandidatePanel() {
         // GridView 适配器
-        candidateAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
-        gvCandidates.adapter = candidateAdapter
+        panelAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
+        gvCandidates.adapter = panelAdapter
 
         // GridView 点击选候选词
         gvCandidates.setOnItemClickListener { _, _, position, _ ->
@@ -513,13 +505,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val candidates = rimeEngine.candidates
         val pinyin = rimeEngine.composingText
 
+        Log.d("Cesia", "updateCandidateBar: composing=$composing, pinyin='$pinyin', candidates.size=${candidates.size}, candidateBar.visibility=${candidateBar.visibility}")
+
         if (!composing && pinyin.isEmpty()) {
             candidateBar.visibility = View.GONE
+            Log.d("Cesia", "updateCandidateBar: HIDE candidateBar")
             if (isPanelExpanded) collapseCandidatePanel()
             return
         }
 
         candidateBar.visibility = View.VISIBLE
+        Log.d("Cesia", "updateCandidateBar: SHOW candidateBar")
         tvComposing.text = pinyin
 
         // 同时显示在状态栏，方便排查
@@ -528,30 +524,58 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             updateStatus("拼音: $pinyin | $candStr")
         }
 
-        // 更新单行候选词（1-5）
-        for (i in tvCandidates.indices) {
-            if (i < candidates.size) {
-                tvCandidates[i].text = "${i+1}.${candidates[i]}"
-                tvCandidates[i].visibility = View.VISIBLE
-            } else {
-                tvCandidates[i].visibility = View.INVISIBLE
-            }
-        }
+        // 更新候选词列表
+        candidateAdapter?.updateData(candidates)
 
-        btnCandidatePrev.isEnabled = rimeEngine.currentPage > 0
-        btnCandidateNext.isEnabled = rimeEngine.currentPage < rimeEngine.pageCount - 1
-        btnCandidateExpand.visibility = if (candidates.size > 5) View.VISIBLE else View.GONE
+        // 候选词>4时显示展开按钮
+        btnCandidateExpand.visibility = if (candidates.size > 4) View.VISIBLE else View.GONE
 
         // 更新展开面板
         if (isPanelExpanded) {
             tvPanelComposing.text = pinyin
             tvPageInfo.text = "${rimeEngine.currentPage + 1}/${rimeEngine.pageCount}"
-            candidateAdapter?.clear()
-            candidateAdapter?.addAll(candidates.mapIndexed { idx, c -> "${idx+1}.$c" })
-            candidateAdapter?.notifyDataSetChanged()
+            panelAdapter?.clear()
+            panelAdapter?.addAll(candidates.mapIndexed { idx, c -> "${idx+1}.$c" })
+            panelAdapter?.notifyDataSetChanged()
             btnPanelPrev.isEnabled = rimeEngine.currentPage > 0
             btnPanelNext.isEnabled = rimeEngine.currentPage < rimeEngine.pageCount - 1
         }
+    }
+
+    /** T9 模式：更新候选词栏显示 T9 拼音候选 */
+    private fun updateCandidateBarWithT9(digitStr: String, t9Candidates: List<String>) {
+        if (!::candidateBar.isInitialized) return
+        try {
+            candidateBar.visibility = View.VISIBLE
+            tvComposing.text = digitStr
+            candidateAdapter?.updateData(t9Candidates.mapIndexed { i, c -> "${i+1}.$c" })
+            btnCandidateExpand.visibility = View.GONE
+            functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+            functionalLongPressRunnable = null
+        } catch (_: Exception) {}
+    }
+
+    /** T9 模式：从 PinyinEngine 获取候选词并更新候选词栏 */
+    private fun updateCandidateBarFromT9() {
+        if (!::candidateBar.isInitialized) return
+        try {
+            val engine = t9Engine ?: return
+            val pinyin = engine.getCurrentPinyin()
+            val cands = engine.getCandidates()
+            if (pinyin.isNotEmpty() && cands.isNotEmpty()) {
+                candidateBar.visibility = View.VISIBLE
+                tvComposing.text = pinyin
+                candidateAdapter?.updateData(cands.mapIndexed { i, c -> "${i+1}.$c" })
+                btnCandidateExpand.visibility = View.GONE
+            } else if (pinyin.isNotEmpty()) {
+                candidateBar.visibility = View.VISIBLE
+                tvComposing.text = pinyin
+                candidateAdapter?.updateData(emptyList())
+                btnCandidateExpand.visibility = View.GONE
+            } else {
+                candidateBar.visibility = View.GONE
+            }
+        } catch (_: Exception) {}
     }
 
     // ======================== 按钮监听 ========================
@@ -1349,7 +1373,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             KeyboardMode.QWERTY -> qwertyKeyboard
             KeyboardMode.SYMBOL_CN -> symbolKeyboardCn
             KeyboardMode.SYMBOL_EN -> symbolKeyboardEn
-            KeyboardMode.NUMBER -> numberKeyboard
+            KeyboardMode.NUMBER -> t9Keyboard ?: numberKeyboard
         }
         keyboardView.keyboard = currentKeyboard
         keyboardView.invalidateAllKeys()
@@ -1363,7 +1387,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun toggleNumberKeyboard() {
         if (keyboardMode == KeyboardMode.NUMBER) switchToKeyboard(KeyboardMode.QWERTY)
-        else switchToKeyboard(KeyboardMode.NUMBER)
+        else {
+            switchToKeyboard(KeyboardMode.NUMBER)
+            t9Input.clear()
+            t9Engine?.clear()
+        }
     }
 
     private fun switchToDefaultKeyboard() {
@@ -1431,6 +1459,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 3. 退格/空格/回车等控制键优先交给 Rime 处理
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
+        Log.d("Cesia", "onKey: primaryCode=$primaryCode keyCodes=${keyCodes?.toList()} isAsciiMode=$isAsciiMode")
         val wasLongPressed = longPressTriggered && !longPressConsumed
         if (wasLongPressed) {
             longPressConsumed = true
@@ -1444,10 +1473,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val hasCands = rimeEngine.hasCandidates
         val cands = rimeEngine.candidates
 
+        Log.d("Cesia", "onKey: composing=$composing hasCands=$hasCands cands.size=${cands.size}")
+
         when (primaryCode) {
 
             // ======================== 字母键 a-z ========================
             in 97..122 -> {
+                // 取消可能的长按功能
+                functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+                functionalLongPressRunnable = null
                 if (isAsciiMode) {
                     ic?.commitText(primaryCode.toChar().toString(), 1)
                 } else {
@@ -1456,9 +1490,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
 
-            // ======================== 数字键 0-9（选候选词）=======================
+            // ======================== 数字键 0-9 ========================
             in 48..57 -> {
-                if (!isAsciiMode && composing && hasCands) {
+                if (keyboardMode == KeyboardMode.NUMBER) {
+                    // T9 模式：短按输入数字对应字母到拼音引擎，长按直接输入数字
+                    val digitChar = primaryCode.toChar()
+                    val digitStr = digitChar.toString()
+                    val t9Letters = when(digitChar) {
+                        '2' -> "abc"; '3' -> "def"; '4' -> "ghi"; '5' -> "jkl"
+                        '6' -> "mno"; '7' -> "pqrs"; '8' -> "tuv"; '9' -> "wxyz"
+                        else -> ""
+                    }
+                    if (t9Letters.isNotEmpty()) {
+                        // 取第一个字母输入到拼音引擎
+                        t9Engine?.inputLetter(t9Letters[0])
+                        updateCandidateBarFromT9()
+                    }
+                } else if (!isAsciiMode && composing && hasCands) {
                     val index = if (primaryCode == 48) 9 else (primaryCode - 49)
                     if (index < cands.size) {
                         val selected = rimeEngine.selectCandidate(index)
@@ -1498,12 +1546,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 退格键 ========================
             -5, Keyboard.KEYCODE_DELETE -> {
-                if (isAsciiMode) {
+                if (keyboardMode == KeyboardMode.NUMBER) {
+                    // T9 模式：退格清除 T9 拼音
+                    t9Engine?.backspace()
+                    updateCandidateBarFromT9()
+                } else if (isAsciiMode) {
                     ic?.deleteSurroundingText(1, 0)
                 } else {
                     val handled = rimeEngine.processKey("BackSpace")
                     if (!handled) {
-                        // Rime 没有处理（composing 已空），fallback 到系统删除
                         ic?.deleteSurroundingText(1, 0)
                     }
                     updateCandidateBar()
@@ -1525,17 +1576,33 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 updateCandidateBar()
             }
 
-            // ======================== Shift 键（中英切换开关）=======================
+            // ======================== Shift 键 ========================
             -1 -> {
-                if (!isAsciiMode) {
-                    isAsciiMode = true
-                    rimeEngine.setAsciiMode(true)
-                    rimeEngine.clear()
-                    updateCandidateBar()
+                when {
+                    // 大写锁定状态：切回中文
+                    isCapsLock -> {
+                        isCapsLock = false
+                        isAsciiMode = false
+                        rimeEngine.setAsciiMode(false)
+                        qwertyKeyboard.isShifted = false
+                        rimeEngine.clear()
+                    }
+                    // 英文模式：切换大写
+                    isAsciiMode -> {
+                        isCapsLock = true
+                        qwertyKeyboard.isShifted = true
+                    }
+                    // 中文模式：切换英文
+                    else -> {
+                        isAsciiMode = true
+                        rimeEngine.setAsciiMode(true)
+                        rimeEngine.clear()
+                        isCapsLock = false
+                        qwertyKeyboard.isShifted = false
+                    }
                 }
-                isCapsLock = !isCapsLock
-                qwertyKeyboard.isShifted = isCapsLock
                 keyboardView.invalidateAllKeys()
+                updateCandidateBar()
             }
 
             // ======================== 符号切换（符）=======================
@@ -1604,21 +1671,30 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     override fun onPress(primaryCode: Int) {
+        Log.d("Cesia", "onPress: primaryCode=$primaryCode")
         if (primaryCode > 0) {
             val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
             if (key != null && !key.popupCharacters.isNullOrEmpty()) {
                 startLongPressDetection(key)
             }
         }
-        // 功能键长按检测（中文模式 + QWERTY 键盘）
-        if (!isAsciiMode && primaryCode in 97..122 && keyboardMode == KeyboardMode.QWERTY) {
+        // 功能键长按检测（仅 QWERTY 中文模式，且 Rime 不在 composing 状态）
+        if (!isAsciiMode && primaryCode in 97..122 && keyboardMode == KeyboardMode.QWERTY && !rimeEngine.isComposing) {
             if (getFunctionalLongAction(primaryCode) != null) {
                 functionalLongPressRunnable = Runnable {
                     getFunctionalLongAction(primaryCode)?.invoke()
                     keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                 }
-                Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 400)
+                Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 500)
             }
+        }
+        // T9 模式：长按数字键直接输入数字
+        if (keyboardMode == KeyboardMode.NUMBER && primaryCode in 48..57) {
+            functionalLongPressRunnable = Runnable {
+                currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            }
+            Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 400)
         }
         if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
             backspaceRunnable = object : Runnable {
@@ -1662,8 +1738,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        Log.d("Cesia", "onStartInputView: restarting=$restarting package=${info?.packageName} fieldId=${info?.fieldId} inputType=${info?.inputType} hintText=${info?.hintText}")
         try {
-            if (!isViewInitialized) return
+            if (!isViewInitialized) {
+                Log.w("Cesia", "onStartInputView: isViewInitialized=false, skipping")
+                return
+            }
             loadSettings()
             val themeMode = getSharedPreferences("cesia_settings", MODE_PRIVATE)
                 .getInt(PREF_THEME_MODE, THEME_LIGHT)

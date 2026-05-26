@@ -49,7 +49,7 @@
             android:padding="4dp" />
     </LinearLayout>
 
-    <!-- 候选词栏（单行快速选择 + 展开箭头） -->
+    <!-- 候选词栏：拼音 + 横向滚动候选词 + 展开按钮 -->
     <LinearLayout
         android:id="@+id/candidate_bar"
         android:layout_width="match_parent"
@@ -77,14 +77,16 @@
             android:background="#CCCCCC"
             android:layout_marginEnd="4dp" />
 
-        <!-- 候选词 1-9（单行快速选） -->
-        <TextView android:id="@+id/tv_candidate_1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:textSize="15sp" android:textColor="#333333" android:background="?android:attr/selectableItemBackground" android:singleLine="true" />
-        <TextView android:id="@+id/tv_candidate_2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:textSize="15sp" android:textColor="#333333" android:background="?android:attr/selectableItemBackground" android:singleLine="true" />
-        <TextView android:id="@+id/tv_candidate_3" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:textSize="15sp" android:textColor="#333333" android:background="?android:attr/selectableItemBackground" android:singleLine="true" />
-        <TextView android:id="@+id/tv_candidate_4" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:textSize="15sp" android:textColor="#333333" android:background="?android:attr/selectableItemBackground" android:singleLine="true" />
-        <TextView android:id="@+id/tv_candidate_5" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:gravity="center" android:textSize="15sp" android:textColor="#333333" android:background="?android:attr/selectableItemBackground" android:singleLine="true" />
+        <!-- 横向滚动候选词列表 -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_candidates"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingEnd="4dp" />
 
-        <!-- 展开/收起候选词面板按钮 -->
+        <!-- 展开/收起候选词面板按钮（候选词>4时显示） -->
         <ImageButton
             android:id="@+id/btn_candidate_expand"
             android:layout_width="28dp"
@@ -93,27 +95,8 @@
             android:background="?android:attr/selectableItemBackground"
             android:scaleType="centerInside"
             android:padding="2dp"
+            android:visibility="gone"
             android:contentDescription="展开候选词" />
-
-        <ImageButton
-            android:id="@+id/btn_candidate_prev"
-            android:layout_width="28dp"
-            android:layout_height="match_parent"
-            android:src="@android:drawable/ic_media_previous"
-            android:background="?android:attr/selectableItemBackground"
-            android:scaleType="centerInside"
-            android:padding="2dp"
-            android:contentDescription="上一页" />
-
-        <ImageButton
-            android:id="@+id/btn_candidate_next"
-            android:layout_width="28dp"
-            android:layout_height="match_parent"
-            android:src="@android:drawable/ic_media_next"
-            android:background="?android:attr/selectableItemBackground"
-            android:scaleType="centerInside"
-            android:padding="2dp"
-            android:contentDescription="下一页" />
     </LinearLayout>
 
     <!-- 候选词展开面板（多行 GridView，初始隐藏） -->

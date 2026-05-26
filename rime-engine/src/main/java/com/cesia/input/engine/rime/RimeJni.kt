@@ -121,7 +121,13 @@ object RimeJni {
         if (!initialized) return emptyList()
         return try {
             val ctx = TrimeRime.getRimeContext()
-            ctx.menu.candidates.map { it.text }
+            val menu = ctx.menu
+            Log.d(TAG, "getCandidates: menu.candidates.size=${menu.candidates.size}, pageSize=${menu.pageSize}, pageNumber=${menu.pageNumber}, isLastPage=${menu.isLastPage}, composition.preedit=${ctx.composition.preedit}")
+            if (menu.candidates.isEmpty()) {
+                // 尝试打印 composition 状态帮助诊断
+                Log.d(TAG, "getCandidates: EMPTY - composition=${ctx.composition}, hasMenu=${ctx.menu.candidates.isNotEmpty()}")
+            }
+            menu.candidates.map { it.text }
         } catch (e: Throwable) {
             Log.e(TAG, "getCandidates failed", e)
             emptyList()
