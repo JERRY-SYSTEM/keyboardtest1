@@ -18,6 +18,7 @@ import android.view.View
 import android.view.animation.ScaleAnimation
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.widget.ArrayAdapter
 import android.widget.GridView
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -67,6 +68,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var tvCandidates: Array<TextView>
     private lateinit var btnCandidatePrev: ImageButton
     private lateinit var btnCandidateNext: ImageButton
+    private lateinit var btnCandidateExpand: ImageButton
+
+    // 候选词展开面板
+    private lateinit var candidatePanel: LinearLayout
+    private lateinit var tvPanelComposing: TextView
+    private lateinit var tvPageInfo: TextView
+    private lateinit var btnPanelPrev: ImageButton
+    private lateinit var btnPanelNext: ImageButton
+    private lateinit var btnPanelClose: ImageButton
+    private lateinit var gvCandidates: GridView
+    private var candidateAdapter: ArrayAdapter<String>? = null
+    private var isPanelExpanded = false
 
     // ======================== 核心组件 ========================
     private var typelessEngine: TypelessEngine? = null
@@ -235,6 +248,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         )
         btnCandidatePrev = view.findViewById(R.id.btn_candidate_prev)
         btnCandidateNext = view.findViewById(R.id.btn_candidate_next)
+        btnCandidateExpand = view.findViewById(R.id.btn_candidate_expand)
+
+        // 候选面板视图
+        candidatePanel = view.findViewById(R.id.candidate_panel)
+        tvPanelComposing = view.findViewById(R.id.tv_panel_composing)
+        tvPageInfo = view.findViewById(R.id.tv_page_info)
+        btnPanelPrev = view.findViewById(R.id.btn_panel_prev)
+        btnPanelNext = view.findViewById(R.id.btn_panel_next)
+        btnPanelClose = view.findViewById(R.id.btn_panel_close)
+        gvCandidates = view.findViewById(R.id.gv_candidates)
 
         // 初始化键盘
         Log.d("Cesia", "createInputViewSafe: 开始初始化键盘")
@@ -364,6 +387,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         setupButtonListeners()
         setupCandidateBar()
+        setupCandidatePanel()
         applyKeyboardTheme()
 
         updateStatus("Cesia 已就绪 | Rime init=${rimeEngine.isInitialized}" +
@@ -407,7 +431,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val index = i
             tvCandidates[i].setOnClickListener {
                 if (rimeEngine.hasCandidates) {
-                    // index 是当前页内的索引（0-4），直接传给 selectCandidate
                     val selected = rimeEngine.selectCandidate(index)
                     if (selected.isNotEmpty()) {
                         currentInputConnection?.commitText(selected, 1)
@@ -428,6 +451,61 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 updateCandidateBar()
             }
         }
+        // 展开候选面板
+        btnCandidateExpand.setOnClickListener {
+            if (isPanelExpanded) {
+                collapseCandidatePanel()
+            } else {
+                expandCandidatePanel()
+            }
+        }
+    }
+
+    private fun setupCandidatePanel() {
+        // GridView 适配器
+        candidateAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, mutableListOf())
+        gvCandidates.adapter = candidateAdapter
+
+        // GridView 点击选候选词
+        gvCandidates.setOnItemClickListener { _, _, position, _ ->
+            val candList = rimeEngine.candidates
+            if (position < candList.size) {
+                val selected = rimeEngine.selectCandidate(position)
+                if (selected.isNotEmpty()) {
+                    currentInputConnection?.commitText(selected, 1)
+                    if (isPanelExpanded) collapseCandidatePanel()
+                    updateCandidateBar()
+                }
+            }
+        }
+
+        // 翻页按钮
+        btnPanelPrev.setOnClickListener {
+            rimeEngine.prevPage()
+            updateCandidateBar()
+        }
+        btnPanelNext.setOnClickListener {
+            rimeEngine.nextPage()
+            updateCandidateBar()
+        }
+
+        // 收起按钮
+        btnPanelClose.setOnClickListener {
+            collapseCandidatePanel()
+        }
+    }
+
+    private fun expandCandidatePanel() {
+        isPanelExpanded = true
+        candidatePanel.visibility = View.VISIBLE
+        btnCandidateExpand.setImageResource(android.R.drawable.arrow_up_float)
+        updateCandidateBar()
+    }
+
+    private fun collapseCandidatePanel() {
+        isPanelExpanded = false
+        candidatePanel.visibility = View.GONE
+        btnCandidateExpand.setImageResource(android.R.drawable.arrow_down_float)
     }
 
     private fun updateCandidateBar() {
@@ -437,6 +515,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         if (!composing && pinyin.isEmpty()) {
             candidateBar.visibility = View.GONE
+            if (isPanelExpanded) collapseCandidatePanel()
             return
         }
 
@@ -449,9 +528,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             updateStatus("拼音: $pinyin | $candStr")
         }
 
+        // 更新单行候选词（1-5）
         for (i in tvCandidates.indices) {
             if (i < candidates.size) {
-                tvCandidates[i].text = candidates[i]
+                tvCandidates[i].text = "${i+1}.${candidates[i]}"
                 tvCandidates[i].visibility = View.VISIBLE
             } else {
                 tvCandidates[i].visibility = View.INVISIBLE
@@ -460,6 +540,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         btnCandidatePrev.isEnabled = rimeEngine.currentPage > 0
         btnCandidateNext.isEnabled = rimeEngine.currentPage < rimeEngine.pageCount - 1
+        btnCandidateExpand.visibility = if (candidates.size > 5) View.VISIBLE else View.GONE
+
+        // 更新展开面板
+        if (isPanelExpanded) {
+            tvPanelComposing.text = pinyin
+            tvPageInfo.text = "${rimeEngine.currentPage + 1}/${rimeEngine.pageCount}"
+            candidateAdapter?.clear()
+            candidateAdapter?.addAll(candidates.mapIndexed { idx, c -> "${idx+1}.$c" })
+            candidateAdapter?.notifyDataSetChanged()
+            btnPanelPrev.isEnabled = rimeEngine.currentPage > 0
+            btnPanelNext.isEnabled = rimeEngine.currentPage < rimeEngine.pageCount - 1
+        }
     }
 
     // ======================== 按钮监听 ========================
@@ -1409,8 +1501,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 if (isAsciiMode) {
                     ic?.deleteSurroundingText(1, 0)
                 } else {
-                    rimeEngine.processKey("BackSpace")
-                    if (!rimeEngine.isComposing && rimeEngine.composingText.isEmpty()) {
+                    val handled = rimeEngine.processKey("BackSpace")
+                    if (!handled) {
+                        // Rime 没有处理（composing 已空），fallback 到系统删除
                         ic?.deleteSurroundingText(1, 0)
                     }
                     updateCandidateBar()
@@ -1495,6 +1588,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             currentInputConnection?.commitText(text, 1)
         }
         rimeEngine.clear()
+        if (isPanelExpanded) collapseCandidatePanel()
         updateCandidateBar()
     }
 
@@ -1529,7 +1623,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
             backspaceRunnable = object : Runnable {
                 override fun run() {
-                    rimeEngine.processKey("BackSpace")
+                    val handled = rimeEngine.processKey("BackSpace")
+                    if (!handled) {
+                        // Rime composing 已空，fallback 系统删除
+                        currentInputConnection?.deleteSurroundingText(1, 0)
+                    }
                     updateCandidateBar()
                     backspaceHandler.postDelayed(this, 80)
                 }
@@ -1573,6 +1671,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             applyKeyboardTheme()
             aiReplyStyle = getSharedPreferences("cesia_settings", MODE_PRIVATE)
                 .getString(PREF_AI_STYLE, "自然") ?: "自然"
+            // 外部词库下载后需要重新部署 Rime
+            val dictPrefs = getSharedPreferences("cesia_dict", MODE_PRIVATE)
+            if (dictPrefs.getBoolean("dict_downloaded", false) && rimeEngine.isInitialized) {
+                val lastReload = prefs.getLong("last_dict_reload", 0)
+                val lastSync = dictPrefs.getLong("last_sync", 0)
+                if (lastSync > lastReload) {
+                    Log.i("Cesia", "检测到词库更新，重新部署 Rime")
+                    rimeEngine.reload()
+                    prefs.edit().putLong("last_dict_reload", System.currentTimeMillis()).apply()
+                }
+            }
         } catch (e: Exception) {
             Log.e("Cesia", "onStartInputView 异常(已忽略)", e)
         }

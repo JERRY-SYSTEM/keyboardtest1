@@ -54,31 +54,35 @@ class RimeEngine(private val context: Context) : InputEngine {
     fun lastError(): String? = RimeJni.unavailableMessage()
 
     private fun copyRimeAssetsIfNeeded() {
-        // 使用外部存储目录，避免卸载时丢失
-        val rimeDir = File(context.getExternalFilesDir(null), "rime")
+        // 统一使用 filesDir/rime/，与 PinyinDictManager 下载词库的路径一致
+        val rimeDir = File(context.filesDir, "rime")
         if (!rimeDir.exists()) rimeDir.mkdirs()
 
         try {
             val assetFiles = context.assets.list("rime") ?: emptyArray()
             Log.i(TAG, "assets/rime 文件列表: ${assetFiles.joinToString()}")
             for (fileName in assetFiles) {
-                val outFile = File(rimeDir, fileName)
-                // 首次安装或文件缺失时复制
-                // 词库文件（.dict.yaml）只在不存在时复制，避免覆盖用户数据
-                // schema 和 default 总是覆盖，确保更新生效
-                val shouldCopy = if (fileName.endsWith(".dict.yaml")) {
-                    !outFile.exists()
-                } else {
-                    true // schema 和 default 总是覆盖
-                }
-                if (shouldCopy) {
-                    context.assets.open("rime/$fileName").use { input ->
-                        outFile.outputStream().use { output -> input.copyTo(output) }
+                // 跳过 .dict.yaml —— 词库由用户从设置页下载，不覆盖
+                if (fileName.endsWith(".dict.yaml")) {
+                    val outFile = File(rimeDir, fileName)
+                    if (outFile.exists()) {
+                        Log.i(TAG, "跳过词库(已存在): $fileName (${outFile.length()} bytes)")
+                    } else {
+                        // 首次安装也没有下载词库时，复制内置精简版作为 fallback
+                        context.assets.open("rime/$fileName").use { input ->
+                            outFile.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        Log.i(TAG, "复制内置精简词库(fallback): $fileName (${outFile.length()} bytes)")
                     }
-                    Log.i(TAG, "复制: $fileName (${outFile.length()} bytes)")
-                } else {
-                    Log.i(TAG, "跳过(已存在): $fileName (${outFile.length()} bytes)")
+                    continue
                 }
+
+                // schema 和 default 配置总是覆盖（APK 更新时同步）
+                val outFile = File(rimeDir, fileName)
+                context.assets.open("rime/$fileName").use { input ->
+                    outFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                Log.i(TAG, "复制配置: $fileName (${outFile.length()} bytes)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "解压 Rime 资产失败", e)

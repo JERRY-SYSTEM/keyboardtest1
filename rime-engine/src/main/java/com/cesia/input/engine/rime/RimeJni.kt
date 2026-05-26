@@ -37,8 +37,8 @@ object RimeJni {
             System.loadLibrary("rime_jni")
             Log.i(TAG, "STEP1: librime_jni.so 加载成功")
 
-            // 使用外部存储目录，避免卸载时丢失词库
-            val rimeDir = File(context.getExternalFilesDir(null), "rime")
+            // 使用 filesDir/rime/，与 PinyinDictManager 下载词库路径一致
+            val rimeDir = File(context.filesDir, "rime")
             if (!rimeDir.exists()) rimeDir.mkdirs()
             val sharedDir = rimeDir.absolutePath
             val userDir = rimeDir.absolutePath
@@ -262,27 +262,28 @@ object RimeJni {
 
     private fun keyToRimeKeyCode(key: String): Int {
         if (key.length == 1) {
-            // 字母返回 Unicode 码点（与 Trime 的 KeyValue.fromKeyEvent 一致）
+            // 字母返回 Unicode 码点
             return key[0].code
         }
         return when (key) {
-            "BackSpace", "Back" -> 8
-            "Enter", "Return" -> 10
-            "Tab" -> 9
-            "Escape" -> 27
+            // X11 keysym values (与 Trime 的 RimeKeyMapping.keyCodeToVal 一致)
+            "BackSpace", "Back" -> 0xFF08  // XK_BackSpace
+            "Return", "Enter" -> 0xFF0D   // XK_Return
+            "Tab" -> 0xFF09               // XK_Tab
+            "Escape" -> 0xFF1B            // XK_Escape
             "Space" -> 32
-            "Delete", "Del" -> 127
-            "Up" -> 0xFF52        // XK_Up
-            "Down" -> 0xFF54      // XK_Down
-            "Left" -> 0xFF51      // XK_Left
-            "Right" -> 0xFF53     // XK_Right
-            "Home" -> 0xFF50      // XK_Home
-            "End" -> 0xFF57       // XK_End
-            "PageUp" -> 0xFF55    // XK_Page_Up
-            "PageDown" -> 0xFF56  // XK_Page_Down
+            "Delete", "Del" -> 0xFFFF     // XK_Delete
+            "Up" -> 0xFF52                // XK_Up
+            "Down" -> 0xFF54              // XK_Down
+            "Left" -> 0xFF51              // XK_Left
+            "Right" -> 0xFF53             // XK_Right
+            "Home" -> 0xFF50              // XK_Home
+            "End" -> 0xFF57               // XK_End
+            "PageUp" -> 0xFF55            // XK_Page_Up
+            "PageDown" -> 0xFF56          // XK_Page_Down
             else -> {
-                Log.w(TAG, "未知按键: $key, 使用 hashCode")
-                key.hashCode()
+                Log.w(TAG, "未知按键: $key, 尝试 getKeycodeByName")
+                try { RimeKeyEvent.getKeycodeByName(key) } catch (_: Throwable) { key.hashCode() }
             }
         }
     }
