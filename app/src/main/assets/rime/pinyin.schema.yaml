@@ -1,33 +1,34 @@
-# Rime schema definition for Cesia Pinyin
-# 拼音输入方案 — 使用 cn_dicts 词库
-
+# Rime schema — Cesia输入法 简化版
 schema:
   schema_id: pinyin
   name: 拼音
-  version: "1.1.0"
+  version: "1.1.1"
   author:
-    - Cesia Team
+    - Cesia
   description: |
-    拼音输入方案 — Cesia 输入法默认中文引擎
-    词库来源：rime-ice (iDvel/rime-ice)，GPL-3.0
-    用户需在设置页自行下载词库
-  dependencies:
+    雾凇拼音精简版 - Cesia输入法内置
+    Based on rime-ice (iDvel/rime-ice)
 
+# 开关
 switches:
+  - name: ascii_mode
+    reset: 0
+    states: [ 中, Ａ ]
+  - name: ascii_punct
+    states: [ ¥, $ ]
   - name: full_shape
     states: [ 半角, 全角 ]
-  - name: ascii_punct
-    states: [ ，。, ，． ]
-  - name: simplification
-    states: [ 繁, 简 ]
 
+# 输入引擎
 engine:
   processors:
     - ascii_composer
     - recognizer
     - key_binder
+    - speller
     - punctuator
     - selector
+    - navigator
     - express_editor
   segmentors:
     - ascii_segmentor
@@ -37,34 +38,91 @@ engine:
     - fallback_segmentor
   translators:
     - punct_translator
-    - table_translator
+    - script_translator
   filters:
-    - simplifier
     - uniquifier
 
+# 拼音拼写器
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+
+# 翻译器
 translator:
   dictionary: pinyin
-  enable_charset_filter: true
-  enable_sentence: true
-  enable_encoder: true
-  encode_commit_history: true
-  max_phrase_length: 5
-  initial_quality: 1.1
-
-abc_segmentor:
-  extra_tags:
-    - reverse_lookup
-
-reverse_lookup:
-  dictionary: pinyin
+  spelling_hints: 5
+  always_show_comment: false
   enable_completion: true
-  prefix: "`"
-  suffix: "'"
-  tips: 〔拼音反查〕
+  enable_sentence: true
+  enable_user_dict: true
+  comment_format:
+    - xform/.*//
 
+# 标点符号
 punctuator:
-  import_preset: default
+  full_shape:
+    " " : { commit: "　" }
+    "," : { commit: "，" }
+    "." : { commit: "。" }
+    "<" : { commit: "《" }
+    ">" : { commit: "》" }
+    "/" : { commit: "／" }
+    "?" : { commit: "？" }
+    ";" : { commit: "；" }
+    ":" : { commit: "：" }
+    "'" : { pair: [ "「", "」" ] }
+    "\"" : { pair: [ "『", "』" ] }
+    "\\" : { commit: "、" }
+    "|" : { commit: "｜" }
+    "`" : { commit: "·" }
+    "~" : { commit: "～" }
+    "!" : { commit: "！" }
+    "@" : { commit: "＠" }
+    "#" : { commit: "＃" }
+    "$" : { commit: "＄" }
+    "%" : { commit: "％" }
+    "^" : { commit: "＾" }
+    "&" : { commit: "＆" }
+    "*" : { commit: "＊" }
+    "(" : { commit: "（" }
+    ")" : { commit: "）" }
+    "_" : { commit: "＿" }
+    "+" : { commit: "＋" }
+  half_shape:
+    "," : { commit: "," }
+    "." : { commit: "." }
+    "<" : { commit: "<" }
+    ">" : { commit: ">" }
+    "/" : { commit: "/" }
+    "?" : { commit: "?" }
+    ";" : { commit: ";" }
+    ":" : { commit: ":" }
+    "'" : { commit: "'" }
+    "\"" : { commit: "\"" }
+    "\\" : { commit: "\\" }
+    "|" : { commit: "|" }
+    "`" : { commit: "`" }
+    "~" : { commit: "~" }
+    "!" : { commit: "!" }
+    "@" : { commit: "@" }
+    "#" : { commit: "#" }
+    "$" : { commit: "$" }
+    "%" : { commit: "%" }
+    "^" : { commit: "^" }
+    "&" : { commit: "&" }
+    "*" : { commit: "*" }
+    "(" : { commit: "(" }
+    ")" : { commit: ")" }
+    "_" : { commit: "_" }
+    "+" : { commit: "+" }
+    "-" : { commit: "-" }
+    "=" : { commit: "=" }
+    "[" : { commit: "[" }
+    "]" : { commit: "]" }
+    "{" : { commit: "{" }
+    "}" : { commit: "}" }
 
+# 快捷键
 key_binder:
   bindings:
     - { when: has_menu, accept: minus, send: Page_Up }
@@ -72,7 +130,6 @@ key_binder:
     - { when: paging, accept: comma, send: Page_Up }
     - { when: has_menu, accept: period, send: Page_Down }
 
+# 候选触发
 recognizer:
-  patterns:
-    uppercase: ""
-    reverse_lookup: "`[a-z]*'?$"
+  patterns: {}

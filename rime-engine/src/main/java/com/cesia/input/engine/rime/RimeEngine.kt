@@ -24,7 +24,11 @@ class RimeEngine(private val context: Context) : InputEngine {
         get() = isInitialized && RimeJni.isAvailable()
 
     override val isComposing: Boolean
-        get() = session?.hasComposing() ?: false
+        get() = try {
+            RimeJni.isComposing()
+        } catch (_: Throwable) {
+            session?.hasComposing() ?: false
+        }
     override val composingText: String
         get() = session?.composingText ?: ""
     override val candidates: List<String>
@@ -50,16 +54,30 @@ class RimeEngine(private val context: Context) : InputEngine {
     fun lastError(): String? = RimeJni.unavailableMessage()
 
     private fun copyRimeAssetsIfNeeded() {
-        val rimeDir = File(context.filesDir, "rime")
-        rimeDir.mkdirs()
+        // 使用外部存储目录，避免卸载时丢失
+        val rimeDir = File(context.getExternalFilesDir(null), "rime")
+        if (!rimeDir.exists()) rimeDir.mkdirs()
+
         try {
-            context.assets.list("rime")?.forEach { fileName ->
+            val assetFiles = context.assets.list("rime") ?: emptyArray()
+            Log.i(TAG, "assets/rime 文件列表: ${assetFiles.joinToString()}")
+            for (fileName in assetFiles) {
                 val outFile = File(rimeDir, fileName)
-                if (!outFile.exists()) {
+                // 首次安装或文件缺失时复制
+                // 词库文件（.dict.yaml）只在不存在时复制，避免覆盖用户数据
+                // schema 和 default 总是覆盖，确保更新生效
+                val shouldCopy = if (fileName.endsWith(".dict.yaml")) {
+                    !outFile.exists()
+                } else {
+                    true // schema 和 default 总是覆盖
+                }
+                if (shouldCopy) {
                     context.assets.open("rime/$fileName").use { input ->
                         outFile.outputStream().use { output -> input.copyTo(output) }
                     }
-                    Log.d(TAG, "解压: $fileName (${outFile.length()} bytes)")
+                    Log.i(TAG, "复制: $fileName (${outFile.length()} bytes)")
+                } else {
+                    Log.i(TAG, "跳过(已存在): $fileName (${outFile.length()} bytes)")
                 }
             }
         } catch (e: Exception) {

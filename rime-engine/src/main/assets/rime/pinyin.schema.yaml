@@ -60,7 +60,67 @@ translator:
 
 # 标点符号
 punctuator:
-  import_preset: default
+  full_shape:
+    " " : { commit: "　" }
+    "," : { commit: "，" }
+    "." : { commit: "。" }
+    "<" : { commit: "《" }
+    ">" : { commit: "》" }
+    "/" : { commit: "／" }
+    "?" : { commit: "？" }
+    ";" : { commit: "；" }
+    ":" : { commit: "：" }
+    "'" : { pair: [ "「", "」" ] }
+    "\"" : { pair: [ "『", "』" ] }
+    "\\" : { commit: "、" }
+    "|" : { commit: "｜" }
+    "`" : { commit: "·" }
+    "~" : { commit: "～" }
+    "!" : { commit: "！" }
+    "@" : { commit: "＠" }
+    "#" : { commit: "＃" }
+    "$" : { commit: "＄" }
+    "%" : { commit: "％" }
+    "^" : { commit: "＾" }
+    "&" : { commit: "＆" }
+    "*" : { commit: "＊" }
+    "(" : { commit: "（" }
+    ")" : { commit: "）" }
+    "_" : { commit: "＿" }
+    "+" : { commit: "＋" }
+  half_shape:
+    "," : { commit: "," }
+    "." : { commit: "." }
+    "<" : { commit: "<" }
+    ">" : { commit: ">" }
+    "/" : { commit: "/" }
+    "?" : { commit: "?" }
+    ";" : { commit: ";" }
+    ":" : { commit: ":" }
+    "'" : { commit: "'" }
+    "\"" : { commit: "\"" }
+    "\\" : { commit: "\\" }
+    "|" : { commit: "|" }
+    "`" : { commit: "`" }
+    "~" : { commit: "~" }
+    "!" : { commit: "!" }
+    "@" : { commit: "@" }
+    "#" : { commit: "#" }
+    "$" : { commit: "$" }
+    "%" : { commit: "%" }
+    "^" : { commit: "^" }
+    "&" : { commit: "&" }
+    "*" : { commit: "*" }
+    "(" : { commit: "(" }
+    ")" : { commit: ")" }
+    "_" : { commit: "_" }
+    "+" : { commit: "+" }
+    "-" : { commit: "-" }
+    "=" : { commit: "=" }
+    "[" : { commit: "[" }
+    "]" : { commit: "]" }
+    "{" : { commit: "{" }
+    "}" : { commit: "}" }
 
 # 快捷键
 key_binder:

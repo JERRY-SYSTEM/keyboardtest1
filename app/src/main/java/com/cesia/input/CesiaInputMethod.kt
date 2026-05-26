@@ -361,9 +361,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val index = i
             tvCandidates[i].setOnClickListener {
                 if (rimeEngine.hasCandidates) {
-                    val selected = rimeEngine.selectCandidate(
-                        rimeEngine.currentPage * 5 + index
-                    )
+                    // index 是当前页内的索引（0-4），直接传给 selectCandidate
+                    val selected = rimeEngine.selectCandidate(index)
                     if (selected.isNotEmpty()) {
                         currentInputConnection?.commitText(selected, 1)
                         updateCandidateBar()
@@ -1298,6 +1297,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     // ======================== KeyboardView 回调 ========================
+    // 参考 Trime 的 CommonKeyboardActionListener.onKey 逻辑：
+    // 1. 按键后调用 processKey，不检查返回值
+    // 2. 通过 getRimeContext/getRimeStatus 轮询状态更新 UI
+    // 3. 退格/空格/回车等控制键优先交给 Rime 处理
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
         val wasLongPressed = longPressTriggered && !longPressConsumed
@@ -1308,138 +1311,199 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
         cancelLongPress()
 
+        val ic = currentInputConnection
+        val composing = rimeEngine.isComposing
+        val hasCands = rimeEngine.hasCandidates
+        val cands = rimeEngine.candidates
+        val preedit = rimeEngine.composingText
+
         when (primaryCode) {
-            // 字母键 a-z → Rime 处理（英文模式直接上屏）
+
+            // ======================== 字母键 a-z ========================
             in 97..122 -> {
                 if (isEnglishMode) {
-                    currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                    ic?.commitText(primaryCode.toChar().toString(), 1)
                 } else {
-                    val c = primaryCode.toChar()
-                    statusText.text = "键:$c init=${rimeEngine.isInitialized} composing=${rimeEngine.isComposing}"
-                    val success = rimeEngine.processKey(c)
-                    Log.d("CesiaRime", "processKey('$c') success=$success composing=${rimeEngine.isComposing} text='${rimeEngine.composingText}' candidates=${rimeEngine.candidates.size}")
+                    // 交给 Rime 处理，然后更新候选栏
+                    rimeEngine.processKey(primaryCode.toChar())
                     updateCandidateBar()
                 }
             }
 
-            // 数字键 0-9
+            // ======================== 数字键 0-9（选候选词） ========================
             in 48..57 -> {
-                if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
-                    val index = primaryCode - 48
-                    if (index == 0) index + 1
-                    if (index <= rimeEngine.candidates.size) {
-                        val selected = rimeEngine.selectCandidate(index - 1)
-                        currentInputConnection?.commitText(selected, 1)
-                        rimeEngine.clear()
-                        updateCandidateBar()
+                if (composing && hasCands) {
+                    // 数字 1-9 选对应候选词，0 选第10个
+                    val index = if (primaryCode == 48) 9 else (primaryCode - 49)
+                    if (index < cands.size) {
+                        val selected = rimeEngine.selectCandidate(index)
+                        if (selected.isNotEmpty()) {
+                            ic?.commitText(selected, 1)
+                            // selectCandidate 内部已提交，Rime 会自动清除 composing
+                        } else {
+                            // selectCandidate 失败，尝试直接提交
+                            commitAndClear()
+                        }
+                    } else {
+                        // 索引超出范围，直接上屏数字
+                        ic?.commitText(primaryCode.toChar().toString(), 1)
                     }
+                } else if (composing) {
+                    // 有 composing 但无候选词，提交拼音后输出数字
+                    commitAndClear()
+                    ic?.commitText(primaryCode.toChar().toString(), 1)
                 } else {
-                    currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                    ic?.commitText(primaryCode.toChar().toString(), 1)
                 }
+                updateCandidateBar()
             }
 
-            // 空格键
+            // ======================== 空格键 ========================
             32 -> {
                 if (isEnglishMode) {
-                    currentInputConnection?.commitText(" ", 1)
-                } else if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
+                    ic?.commitText(" ", 1)
+                } else if (composing && hasCands) {
+                    // 选第一个候选词上屏
                     val selected = rimeEngine.selectCandidate(0)
-                    currentInputConnection?.commitText(selected, 1)
-                    rimeEngine.clear()
-                    updateCandidateBar()
-                } else if (rimeEngine.isComposing) {
-                    currentInputConnection?.commitText(rimeEngine.composingText, 1)
-                    rimeEngine.clear()
-                    updateCandidateBar()
+                    if (selected.isNotEmpty()) {
+                        ic?.commitText(selected, 1)
+                    } else {
+                        commitAndClear()
+                        ic?.commitText(" ", 1)
+                    }
+                } else if (composing) {
+                    // 无候选词，提交拼音
+                    commitAndClear()
+                    ic?.commitText(" ", 1)
                 } else {
-                    currentInputConnection?.commitText(" ", 1)
+                    ic?.commitText(" ", 1)
                 }
+                updateCandidateBar()
             }
 
-            // BackSpace
+            // ======================== 退格键 ========================
             -5, Keyboard.KEYCODE_DELETE -> {
                 if (isEnglishMode) {
-                    currentInputConnection?.deleteSurroundingText(1, 0)
-                } else if (rimeEngine.isComposing) {
-                    rimeEngine.processKey("BackSpace")
-                    updateCandidateBar()
+                    ic?.deleteSurroundingText(1, 0)
                 } else {
-                    currentInputConnection?.deleteSurroundingText(1, 0)
+                    // 总是先交给 Rime 处理（参考 Trime 的逻辑）
+                    // 即使 isComposing=false，Rime 内部可能仍有 composing 状态
+                    rimeEngine.processKey("BackSpace")
+                    // 如果 Rime 处理后退格仍生效（composing 已空），再直接删除
+                    if (!rimeEngine.isComposing && rimeEngine.composingText.isEmpty()) {
+                        ic?.deleteSurroundingText(1, 0)
+                    }
+                    updateCandidateBar()
                 }
             }
 
-            // 回车键
+            // ======================== 回车键 ========================
             10, Keyboard.KEYCODE_DONE -> {
                 if (isEnglishMode) {
-                    currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                    currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-                } else if (rimeEngine.isComposing) {
-                    val text = if (rimeEngine.hasCandidates) {
-                        rimeEngine.selectCandidate(0)
+                    sendDownUpEnter()
+                } else if (composing && hasCands) {
+                    val selected = rimeEngine.selectCandidate(0)
+                    if (selected.isNotEmpty()) {
+                        currentInputConnection?.commitText(selected, 1)
                     } else {
-                        rimeEngine.composingText
+                        commitAndClear()
+                        sendDownUpEnter()
                     }
-                    currentInputConnection?.commitText(text, 1)
-                    rimeEngine.clear()
-                    updateCandidateBar()
+                } else if (composing) {
+                    commitAndClear()
+                    sendDownUpEnter()
                 } else {
-                    currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                    currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                    sendDownUpEnter()
                 }
+                updateCandidateBar()
             }
 
-            // Shift
+            // ======================== Shift ========================
             -1 -> {
                 isCapsLock = !isCapsLock
                 qwertyKeyboard.isShifted = isCapsLock
                 keyboardView.invalidateAllKeys()
             }
 
-            // 符号切换 (?123/符/ABC)
+            // ======================== 符号切换 ========================
             KEYCODE_SWITCH_SYMBOL -> toggleKeyboard()
 
-            // 中英文切换 (🌐)
+            // ======================== 中英文切换 ========================
             KEYCODE_SWITCH_LANG -> toggleLanguage()
 
-            // 返回键
+            // ======================== 返回键 ========================
             KEYCODE_BACK_KEY -> switchToQwertyKeyboard()
 
-            // 发送键（纸飞机）
+            // ======================== 发送键（纸飞机） ========================
             -200 -> {
                 if (sendKeyLongPressTriggered) {
                     sendKeyLongPressTriggered = false
                     return
                 }
-                if (rimeEngine.isComposing) {
-                    val text = if (rimeEngine.hasCandidates) rimeEngine.selectCandidate(0) else rimeEngine.composingText
-                    currentInputConnection?.commitText(text, 1)
+                if (composing) {
+                    val text = if (hasCands) {
+                        rimeEngine.selectCandidate(0).ifEmpty { rimeEngine.composingText }
+                    } else {
+                        rimeEngine.composingText
+                    }
+                    if (text.isNotEmpty()) {
+                        ic?.commitText(text, 1)
+                    }
                     rimeEngine.clear()
                     updateCandidateBar()
                 }
-                val ic = currentInputConnection
                 val editorInfo = currentInputEditorInfo
                 val imeOptions = editorInfo?.imeOptions ?: 0
                 val action = imeOptions and EditorInfo.IME_MASK_ACTION
                 val hasSendAction = action == EditorInfo.IME_ACTION_SEND || action == EditorInfo.IME_ACTION_DONE
                 if (hasSendAction) ic?.performEditorAction(action)
-                else {
-                    ic?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                    ic?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-                }
+                else sendDownUpEnter()
             }
 
-            // 其他按键（标点符号等）
+            // ======================== 其他按键（标点等） ========================
             else -> {
-                val c = primaryCode.toChar()
-                if (rimeEngine.isComposing) {
-                    val text = if (rimeEngine.hasCandidates) rimeEngine.selectCandidate(0) else rimeEngine.composingText
-                    currentInputConnection?.commitText(text, 1)
+                if (composing) {
+                    // 有 composing 时，先提交当前输入再输出字符
+                    val text = if (hasCands) {
+                        rimeEngine.selectCandidate(0).ifEmpty { rimeEngine.composingText }
+                    } else {
+                        rimeEngine.composingText
+                    }
+                    if (text.isNotEmpty()) {
+                        ic?.commitText(text, 1)
+                    }
                     rimeEngine.clear()
                     updateCandidateBar()
                 }
-                currentInputConnection?.commitText(c.toString(), 1)
+                val c = primaryCode.toChar()
+                if (c != '\u0000') {
+                    ic?.commitText(c.toString(), 1)
+                }
             }
         }
+    }
+
+    /**
+     * 提交当前 composing 文本并清除状态
+     */
+    private fun commitAndClear() {
+        val text = rimeEngine.commit()
+        if (text.isNotEmpty()) {
+            currentInputConnection?.commitText(text, 1)
+        }
+        rimeEngine.clear()
+        updateCandidateBar()
+    }
+
+    /**
+     * 发送回车键事件
+     */
+    private fun sendDownUpEnter() {
+        val ic = currentInputConnection ?: return
+        ic.sendKeyEvent(KeyEvent(android.os.SystemClock.uptimeMillis(), android.os.SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0))
+        ic.sendKeyEvent(KeyEvent(android.os.SystemClock.uptimeMillis(), android.os.SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0))
     }
 
     override fun onPress(primaryCode: Int) {
