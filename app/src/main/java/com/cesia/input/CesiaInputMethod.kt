@@ -98,6 +98,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var pendingAiMode: Boolean? = null
     private var recognizedText: String = ""
     private var isAsciiMode = false  // 与 Rime ascii_mode 对应
+    private var isShiftMode = false  // 数字键盘 Shift 状态（临时切换）
+    private var isShiftLocked = false  // Shift 锁定状态
+    private var t9InputBuffer = StringBuilder()  // T9 数字输入缓冲
+    private val t9Map = mapOf(
+        2 to "abc", 3 to "def", 4 to "ghi", 5 to "jkl",
+        6 to "mno", 7 to "pqrs", 8 to "tuv", 9 to "wxyz", 0 to " "
+    )
+    // 主字符 → 副字符(T9数字) 映射
+    private val mainToSub = mapOf(
+        50 to 2, 51 to 3, 52 to 4, 53 to 5, 54 to 6,
+        55 to 7, 56 to 8, 57 to 9, 48 to 0
+    )
+    // 副字符(T9数字) → 主字符 映射
+    private val subToMain = mainToSub.entries.associate { (k, v) -> v to k }
 
     // 长按检测
     private var longPressHandler = Handler(Looper.getMainLooper())
@@ -187,6 +201,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         const val KEYCODE_SWITCH_SYMBOL = -100
         const val KEYCODE_SWITCH_LANG = -101
         const val KEYCODE_SWITCH_NUMBER = -102
+        const val KEYCODE_SHIFT = -104
+        const val KEYCODE_CONTROL = -103
         const val KEYCODE_BACK_KEY = -999
         const val THEME_LIGHT = 0
         const val THEME_DARK = 1
@@ -1401,6 +1417,169 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (keyboardMode == KeyboardMode.NUMBER) switchToKeyboard(KeyboardMode.QWERTY)
         else {
             switchToKeyboard(KeyboardMode.NUMBER)
+            resetNumberKeyboardState()
+        }
+    }
+
+    // ======================== 数字键盘核心逻辑 ========================
+
+    private fun resetT9State() {
+        t9InputBuffer.clear()
+        rimeEngine.clear()
+        isShiftMode = false
+        isShiftLocked = false
+        updateCandidateBar()
+        updateStatus("Cesia 已就绪")
+    }
+
+    // ======================== 数字键盘长按逻辑 ========================
+
+    private var numberLongPressKeyCode = 0
+    private var numberLongPressRunnable: Runnable? = null
+
+    private fun startNumberKeyboardLongPress(primaryCode: Int, isOneKey: Boolean) {
+        numberLongPressKeyCode = primaryCode
+        numberLongPressRunnable = Runnable {
+            if (isOneKey) {
+                // 1 键长按：弹出符号候选
+                showSymbolPopup()
+            } else {
+                // T9 键长按：弹出字母候选 (a/b/c 等)
+                val letters = t9Map[mainToSub[primaryCode]] ?: ""
+                showLetterPopup(primaryCode, letters)
+            }
+            keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        }
+        Handler(Looper.getMainLooper()).postDelayed(numberLongPressRunnable!!, 400)
+    }
+
+    private fun cancelNumberLongPress() {
+        numberLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        numberLongPressRunnable = null
+        numberLongPressKeyCode = 0
+    }
+
+    /** 长按 T9 键弹出字母候选窗 */
+    private fun showLetterPopup(keyCode: Int, letters: String) {
+        if (letters.isEmpty()) return
+        val items = letters.map { it.toString() }
+        // 隐藏候选栏，显示展开面板作为字母选单
+        candidateBar.visibility = View.VISIBLE
+        candidateAdapter?.updateData(items)
+        btnCandidateExpand.visibility = View.GONE
+        // 临时切换到字母选择模式
+        updateStatus("选择字母: ${items.joinToString("/")}")
+    }
+
+    /** 长按 1 键弹出符号候选窗 */
+    private fun showSymbolPopup() {
+        val symbols = listOf(
+            ".", ",", "?", "!", ":", ";", "'", "\"", "(", ")",
+            "-", "+", "=", "/", "\\", "@", "#", "$", "%", "^",
+            "&", "*", "_", "~", "`", "|", "{", "}", "[", "]",
+            "<", ">", "。", "，", "？", "！", "：", "；", "、",
+            "…", "—", "·", "《", "》", "「", "」", "【", "】",
+            "（", "）"
+        )
+        // 在状态栏显示提示，用展开面板显示符号网格
+        updateStatus("1键副字符：选择符号后长按1输入")
+        candidateBar.visibility = View.VISIBLE
+        candidateAdapter?.updateData(symbols)
+        btnCandidateExpand.visibility = View.GONE
+    }
+
+    private fun resetNumberKeyboardState() {
+        isShiftMode = false
+        isShiftLocked = false
+        t9InputBuffer.clear()
+        updateShiftIndicator()
+    }
+
+    private fun updateShiftIndicator() {
+        // 通过 invalidateAllKeys 刷新按键外观
+        keyboardView.invalidateAllKeys()
+    }
+
+    private fun handleShiftKey() {
+        if (isShiftLocked) {
+            // 锁定状态 → 解除
+            isShiftLocked = false
+            isShiftMode = false
+            commitT9AndClear()
+        } else if (isShiftMode) {
+            // 临时切换状态 → 锁定
+            isShiftLocked = true
+            // isShiftMode 保持 true
+        } else {
+            // 正常状态 → 临时切换
+            isShiftMode = true
+        }
+        updateShiftIndicator()
+    }
+
+    private fun handleNumberKeyboardKey(primaryCode: Int) {
+        if (isShiftMode) {
+            // Shift模式：直接输入数字
+            val digit = mainToSub[primaryCode] ?: primaryCode - 48
+            currentInputConnection?.commitText(digit.toString(), 1)
+            // 临时 Shift 模式输入一次后自动退出
+            if (!isShiftLocked) {
+                isShiftMode = false
+                updateShiftIndicator()
+            }
+        } else {
+            // 主字符模式：T9拼音输入
+            val t9Digit = mainToSub[primaryCode]
+            if (t9Digit != null) {
+                t9InputBuffer.append(t9Digit)
+                processT9Input()
+            } else {
+                // 非T9键(1/符号等)直接上屏
+                currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+            }
+        }
+    }
+
+    private fun processT9Input() {
+        val digits = t9InputBuffer.toString()
+        // 通过 Rime 处理 T9 拼音
+        rimeEngine.clear()
+        for (ch in digits) {
+            rimeEngine.processKey(ch)
+        }
+        updateCandidateBar()
+    }
+
+    private fun commitT9AndClear() {
+        if (t9InputBuffer.isNotEmpty()) {
+            if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
+                val selected = rimeEngine.selectCandidate(0)
+                if (selected.isNotEmpty()) {
+                    currentInputConnection?.commitText(selected, 1)
+                }
+            }
+            t9InputBuffer.clear()
+            rimeEngine.clear()
+            updateCandidateBar()
+        }
+    }
+
+    // 控制键—按键对调模式
+    private var isSwapMode = false
+    private var swapFirstKey: Keyboard.Key? = null
+
+    private fun handleControlKey() {
+        if (!isSwapMode) {
+            isSwapMode = true
+            swapFirstKey = null
+            updateStatus("🔄 对调模式：先点第一个按键")
+            keyboardView.invalidateAllKeys()
+        } else {
+            // 退出对调模式
+            isSwapMode = false
+            swapFirstKey = null
+            updateStatus("Cesia 已就绪")
+            keyboardView.invalidateAllKeys()
         }
     }
 
@@ -1500,34 +1679,51 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
 
-            // ======================== 数字键 0-9 ========================
+            // ======================== 数字键区域 (0-9 及字母键 abc/def...) ========================
+            // 主字符模式：abc=2, def=3, ghi=4... T9拼音输入
+            // Shift模式：直接输入数字
             in 48..57 -> {
                 if (keyboardMode == KeyboardMode.NUMBER) {
-                    ic?.commitText(primaryCode.toChar().toString(), 1)
-                } else if (!isAsciiMode && composing && hasCands) {
-                    val index = if (primaryCode == 48) 9 else (primaryCode - 49)
-                    if (index < cands.size) {
-                        val selected = rimeEngine.selectCandidate(index)
-                        if (selected.isNotEmpty()) {
-                            ic?.commitText(selected, 1)
+                    handleNumberKeyboardKey(primaryCode)
+                } else {
+                    // 全键盘模式的数字键原有逻辑
+                    if (!isAsciiMode && composing && hasCands) {
+                        val index = if (primaryCode == 48) 9 else (primaryCode - 49)
+                        if (index < cands.size) {
+                            val selected = rimeEngine.selectCandidate(index)
+                            if (selected.isNotEmpty()) {
+                                ic?.commitText(selected, 1)
+                            } else { commitAndClear() }
                         } else {
-                            commitAndClear()
+                            ic?.commitText(primaryCode.toChar().toString(), 1)
                         }
                     } else {
                         ic?.commitText(primaryCode.toChar().toString(), 1)
                     }
-                } else if (!isAsciiMode && composing) {
-                    commitAndClear()
-                    ic?.commitText(primaryCode.toChar().toString(), 1)
-                } else {
-                    ic?.commitText(primaryCode.toChar().toString(), 1)
+                    updateCandidateBar()
                 }
-                updateCandidateBar()
             }
 
             // ======================== 空格键 ========================
             32 -> {
-                if (isAsciiMode) {
+                if (keyboardMode == KeyboardMode.NUMBER) {
+                    // 数字键盘空格：T9模式下输入空格分隔拼音，否则直接上屏
+                    if (isShiftMode) {
+                        // Shift模式直接上屏空格
+                        ic?.commitText(" ", 1)
+                    } else if (t9InputBuffer.isNotEmpty()) {
+                        // T9模式：输入空格 = 选择首候选
+                        val handled = rimeEngine.processKey(" ")
+                        if (!handled || !rimeEngine.isComposing) {
+                            // 没有匹配，直接上屏空格
+                            commitT9AndClear()
+                            ic?.commitText(" ", 1)
+                        }
+                        updateCandidateBar()
+                    } else {
+                        ic?.commitText(" ", 1)
+                    }
+                } else if (isAsciiMode) {
                     ic?.commitText(" ", 1)
                 } else if (composing && hasCands) {
                     val selected = rimeEngine.selectCandidate(0)
@@ -1539,12 +1735,25 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 } else {
                     ic?.commitText(" ", 1)
                 }
-                updateCandidateBar()
+                if (keyboardMode != KeyboardMode.NUMBER) updateCandidateBar()
             }
 
             // ======================== 退格键 ========================
             -5, Keyboard.KEYCODE_DELETE -> {
-                if (isAsciiMode) {
+                if (keyboardMode == KeyboardMode.NUMBER) {
+                    // 数字键盘退格：先删T9缓冲
+                    if (!isShiftMode && t9InputBuffer.isNotEmpty()) {
+                        t9InputBuffer.deleteCharAt(t9InputBuffer.length - 1)
+                        if (t9InputBuffer.isNotEmpty()) {
+                            processT9Input()
+                        } else {
+                            rimeEngine.clear()
+                            resetT9State()
+                        }
+                    } else {
+                        ic?.deleteSurroundingText(1, 0)
+                    }
+                } else if (isAsciiMode) {
                     ic?.deleteSurroundingText(1, 0)
                 } else {
                     val wasComposing = rimeEngine.isComposing
@@ -1552,7 +1761,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     if (!handled) {
                         ic?.deleteSurroundingText(1, 0)
                     }
-                    // 如果刚退出 composing 状态，恢复初始状态
                     if (wasComposing && !rimeEngine.isComposing) {
                         resetToIdle()
                     } else {
@@ -1610,6 +1818,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 数字切换（123）=======================
             KEYCODE_SWITCH_NUMBER -> toggleNumberKeyboard()
+            KEYCODE_CONTROL -> handleControlKey()
+            KEYCODE_SHIFT -> handleShiftKey()
 
             // ======================== 中英文切换（🌐）=======================
             KEYCODE_SWITCH_LANG -> toggleLanguage()
@@ -1678,6 +1888,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 startLongPressDetection(key)
             }
         }
+        // 数字键盘按键长按检测（T9字母候选 / 符号候选）
+        if (keyboardMode == KeyboardMode.NUMBER && primaryCode != -104 && primaryCode != -100 && primaryCode != -101 && primaryCode != -103 && primaryCode != -5 && primaryCode != 10) {
+            val isT9Key = mainToSub.containsKey(primaryCode)
+            val isOneKey = (primaryCode == 49)
+            if (isT9Key || isOneKey) {
+                startNumberKeyboardLongPress(primaryCode, isOneKey)
+            }
+        }
         // 功能键长按检测（仅 QWERTY 中文模式，且 Rime 不在 composing 状态）
         if (!isAsciiMode && primaryCode in 97..122 && keyboardMode == KeyboardMode.QWERTY && !rimeEngine.isComposing) {
             if (getFunctionalLongAction(primaryCode) != null) {
@@ -1709,6 +1927,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onRelease(primaryCode: Int) {
         cancelLongPress()
+        cancelNumberLongPress()
         functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         functionalLongPressRunnable = null
         cancelSendKeyLongPress()
