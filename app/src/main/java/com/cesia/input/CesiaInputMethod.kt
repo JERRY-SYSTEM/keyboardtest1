@@ -325,9 +325,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             109 to "Del"    // m
         ))
         // 设置 T9 数字键盘副字符标签
+        // T9 数字键盘副字符：显示符号（与 qwerty 顶行数字键长按弹出的符号一致）
         keyboardView.setT9Labels(mapOf(
-            50 to "2", 51 to "3", 52 to "4", 53 to "5", 54 to "6",
-            55 to "7", 56 to "8", 57 to "9", 48 to "0"
+            50 to "@", 51 to "#", 52 to "$", 53 to "%", 54 to "^",
+            55 to "&", 56 to "*", 57 to "(", 48 to ")"
         ))
         Log.d("Cesia", "createInputViewSafe: 键盘设置完成")
 
@@ -1909,8 +1910,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     override fun onPress(primaryCode: Int) {
-        shortPressHandled = false  // 重置短按标志
-        Log.d("Cesia", "onPress: primaryCode=$primaryCode")
+        shortPressHandled = false
+        Log.d("Cesia", "onPress: primaryCode=$primaryCode keyLabel=${getKeyLabel(primaryCode)}")
         // 功能键长按检测（仅 QWERTY 中文模式，且 Rime 不在 composing 状态）
         // 注意：功能键长按优先于 popupCharacters 长按，避免冲突
         var functionalLongPressRegistered = false
@@ -1919,7 +1920,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 Log.d("CesiaLongPress", "onPress: 注册长按 primaryCode=$primaryCode")
                 functionalLongPressRunnable = Runnable {
                     Log.d("CesiaLongPress", "长按触发! primaryCode=$primaryCode shortPressHandled=$shortPressHandled")
-                    // 如果短按已处理，不执行长按功能
                     if (!shortPressHandled) {
                         getFunctionalLongAction(primaryCode)?.invoke()
                         keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
@@ -1939,7 +1939,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 startLongPressDetection(key)
             }
         }
-        // 数字键盘按键长按检测（T9字母候选 / 符号候选）
+        // 数字键盘按键长按检测
         if (keyboardMode == KeyboardMode.NUMBER && primaryCode != -104 && primaryCode != -100 && primaryCode != -101 && primaryCode != -103 && primaryCode != -5 && primaryCode != 10) {
             val isT9Key = mainToSub.containsKey(primaryCode)
             val isOneKey = (primaryCode == 49)
@@ -1952,7 +1952,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 override fun run() {
                     val handled = rimeEngine.processKey("BackSpace")
                     if (!handled) {
-                        // Rime composing 已空，fallback 系统删除
                         currentInputConnection?.deleteSurroundingText(1, 0)
                     }
                     updateCandidateBar()
@@ -1964,6 +1963,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (primaryCode == -200) {
             startSendKeyLongPress()
         }
+    }
+
+    private fun getKeyLabel(primaryCode: Int): String {
+        val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
+        return key?.label?.toString() ?: "?"
     }
 
     override fun onRelease(primaryCode: Int) {
