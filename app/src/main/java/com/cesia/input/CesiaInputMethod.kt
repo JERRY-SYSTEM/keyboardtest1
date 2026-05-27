@@ -1930,6 +1930,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     if (!shortPressHandled) {
                         getFunctionalLongAction(primaryCode)?.invoke()
                         keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                        longPressTriggered = true
+                        longPressConsumed = false
                     }
                     currentLongPressKey = null
                 }
