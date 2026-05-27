@@ -3,6 +3,7 @@ package com.cesia.input.engine.rime
 import android.content.Context
 import android.util.Log
 import java.io.File
+import com.osfans.trime.core.Rime
 
 /**
  * Rime 输入引擎
@@ -192,6 +193,11 @@ class RimeEngine(private val context: Context) : InputEngine {
 
     fun setAsciiMode(ascii: Boolean) {
         RimeJni.setAsciiMode(ascii)
+    }
+
+    /** 切换 Rime schema */
+    fun selectSchema(schemaId: String): Boolean {
+        return Rime.selectRimeSchemas(arrayOf(schemaId))
     }
 
 }

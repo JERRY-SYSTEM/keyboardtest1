@@ -99,6 +99,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var recognizedText: String = ""
     private var isAsciiMode = false  // 与 Rime ascii_mode 对应
     private var isShiftMode = false  // 数字键盘 Shift 状态（临时切换）
+    private var shortPressHandled = false  // 当前按键是否已处理短按（防止长按重复触发）
     private var isShiftLocked = false  // Shift 锁定状态
     private var t9InputBuffer = StringBuilder()  // T9 数字输入缓冲
     private val t9Map = mapOf(
@@ -326,6 +327,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             122 to "撤销",  // z
             110 to "Ins",   // n
             109 to "Del"    // m
+        ))
+        // 设置 T9 数字键盘副字符标签
+        keyboardView.setT9Labels(mapOf(
+            50 to "2", 51 to "3", 52 to "4", 53 to "5", 54 to "6",
+            55 to "7", 56 to "8", 57 to "9", 48 to "0"
         ))
         Log.d("Cesia", "createInputViewSafe: 键盘设置完成")
 
@@ -1414,9 +1420,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun toggleNumberKeyboard() {
-        if (keyboardMode == KeyboardMode.NUMBER) switchToKeyboard(KeyboardMode.QWERTY)
-        else {
+        if (keyboardMode == KeyboardMode.NUMBER) {
+            switchToKeyboard(KeyboardMode.QWERTY)
+            rimeEngine.selectSchema("pinyin")
+        } else {
             switchToKeyboard(KeyboardMode.NUMBER)
+            rimeEngine.selectSchema("t9_pinyin")
             resetNumberKeyboardState()
         }
     }
@@ -1519,9 +1528,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
         if (isShiftMode) {
-            // Shift模式：直接输入数字
-            val digit = mainToSub[primaryCode] ?: primaryCode - 48
-            currentInputConnection?.commitText(digit.toString(), 1)
+            // Shift模式：直接输入数字（副字符）
+            val digit = mainToSub[primaryCode]
+            if (digit != null) {
+                currentInputConnection?.commitText(digit.toString(), 1)
+            } else {
+                currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+            }
             // 临时 Shift 模式输入一次后自动退出
             if (!isShiftLocked) {
                 isShiftMode = false
@@ -1534,18 +1547,25 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 t9InputBuffer.append(t9Digit)
                 processT9Input()
             } else {
-                // 非T9键(1/符号等)直接上屏
-                currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                // 非T9键(1/标点/符号)直接上屏
+                when (primaryCode) {
+                    49 -> currentInputConnection?.commitText("1", 1)
+                    65292 -> currentInputConnection?.commitText("，", 1)
+                    12290 -> currentInputConnection?.commitText("。", 1)
+                    65311 -> currentInputConnection?.commitText("？", 1)
+                    65281 -> currentInputConnection?.commitText("！", 1)
+                    else -> currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                }
             }
         }
     }
 
     private fun processT9Input() {
         val digits = t9InputBuffer.toString()
-        // 通过 Rime 处理 T9 拼音
+        // T9 数字序列直接传给 Rime（T9 schema 的 speller 接受 2-9）
         rimeEngine.clear()
         for (ch in digits) {
-            rimeEngine.processKey(ch)
+            rimeEngine.processKey(ch.toString())
         }
         updateCandidateBar()
     }
@@ -1881,6 +1901,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     override fun onPress(primaryCode: Int) {
+        shortPressHandled = false  // 重置短按标志
         Log.d("Cesia", "onPress: primaryCode=$primaryCode")
         if (primaryCode > 0) {
             val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
@@ -1900,8 +1921,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (!isAsciiMode && primaryCode in 97..122 && keyboardMode == KeyboardMode.QWERTY && !rimeEngine.isComposing) {
             if (getFunctionalLongAction(primaryCode) != null) {
                 functionalLongPressRunnable = Runnable {
-                    getFunctionalLongAction(primaryCode)?.invoke()
-                    keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    // 如果短按已处理，不执行长按功能
+                    if (!shortPressHandled) {
+                        getFunctionalLongAction(primaryCode)?.invoke()
+                        keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    }
+                    currentLongPressKey = null
                 }
                 Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 500)
             }
