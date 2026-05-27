@@ -1,0 +1,13 @@
+# Rime prism — Cesia T9 九键拼音
+# 参考 xiaobai-t9 的 derivation 方案
+alphabet: "23456789"
+
+derivation:
+  - derive/^[abc]$/2/
+  - derive/^[def]$/3/
+  - derive/^[ghi]$/4/
+  - derive/^[jkl]$/5/
+  - derive/^[mno]$/6/
+  - derive/^[pqrs]$/7/
+  - derive/^[tuv]$/8/
+  - derive/^[wxyz]$/9/

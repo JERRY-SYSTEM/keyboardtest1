@@ -109,7 +109,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 主字符 → 副字符(T9数字) 映射
     private val mainToSub = mapOf(
         50 to 2, 51 to 3, 52 to 4, 53 to 5, 54 to 6,
-        55 to 7, 56 to 8, 57 to 9, 48 to 0
+        55 to 7, 56 to 8, 57 to 9, 48 to 0,
+        32 to 0  // 空格键 = 0
     )
     // 副字符(T9数字) → 主字符 映射
     private val subToMain = mainToSub.entries.associate { (k, v) -> v to k }
@@ -331,7 +332,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 设置 T9 数字键盘副字符标签
         keyboardView.setT9Labels(mapOf(
             50 to "2", 51 to "3", 52 to "4", 53 to "5", 54 to "6",
-            55 to "7", 56 to "8", 57 to "9", 48 to "0"
+            55 to "7", 56 to "8", 57 to "9", 48 to "0",
+            32 to "0"  // 空格键副字符也是0
         ))
         Log.d("Cesia", "createInputViewSafe: 键盘设置完成")
 
@@ -1422,10 +1424,21 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun toggleNumberKeyboard() {
         if (keyboardMode == KeyboardMode.NUMBER) {
             switchToKeyboard(KeyboardMode.QWERTY)
-            rimeEngine.selectSchema("pinyin")
+            val ok = rimeEngine.selectSchema("pinyin")
+            Log.i("CesiaT9", "切回 pinyin schema: ok=$ok")
         } else {
             switchToKeyboard(KeyboardMode.NUMBER)
-            rimeEngine.selectSchema("t9_pinyin")
+            val ok = rimeEngine.selectSchema("t9_pinyin")
+            Log.i("CesiaT9", "切换到 t9_pinyin schema: ok=$ok")
+            // 验证当前 schema
+            try {
+                val schemas = com.osfans.trime.core.Rime.getRimeSchemaList()
+                Log.i("CesiaT9", "可用 schemas: ${schemas.size}")
+                val current = com.osfans.trime.core.Rime.getCurrentRimeSchema()
+                Log.i("CesiaT9", "当前 schema: $current")
+            } catch (e: Throwable) {
+                Log.e("CesiaT9", "获取 schema 失败", e)
+            }
             resetNumberKeyboardState()
         }
     }
@@ -1562,10 +1575,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun processT9Input() {
         val digits = t9InputBuffer.toString()
+        Log.d("CesiaT9", "processT9Input: digits='$digits'")
         // T9 数字序列直接传给 Rime（T9 schema 的 speller 接受 2-9）
         rimeEngine.clear()
         for (ch in digits) {
-            rimeEngine.processKey(ch.toString())
+            val result = rimeEngine.processKey(ch.toString())
+            Log.d("CesiaT9", "  processKey('$ch') result=$result composing=${rimeEngine.isComposing} candidates=${rimeEngine.candidates.size}")
         }
         updateCandidateBar()
     }
