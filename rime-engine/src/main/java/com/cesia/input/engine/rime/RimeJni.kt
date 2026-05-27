@@ -57,13 +57,7 @@ object RimeJni {
             TrimeRime.startupRime(sharedDir, userDir, "1.0.0", true)
             Log.i(TAG, "STEP4: startupRime 完成")
 
-            // 激活所有 schema（pinyin + t9_pinyin）
-            val schemaList = TrimeRime.getRimeSchemaList()
-            Log.i(TAG, "STEP4a: schemaList size=${schemaList.size}")
-            for (s in schemaList) {
-                Log.i(TAG, "STEP4a: schema=${s.id} name=${s.name}")
-            }
-            // 确保切换到 pinyin schema
+            // 确保选中 pinyin schema
             val currentSchema = TrimeRime.getCurrentRimeSchema()
             Log.i(TAG, "STEP4b: currentSchema=$currentSchema")
             if (currentSchema != "pinyin") {

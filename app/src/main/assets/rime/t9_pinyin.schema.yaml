@@ -1,6 +1,4 @@
 # Rime schema — Cesia T9 九键拼音
-# 参考 xiaobai-t9 (xiaobai9978) 架构
-# 核心：prism 把字母映射为数字，speller 接受数字，script_translator 查词典
 schema:
   schema_id: t9_pinyin
   name: 九键拼音
@@ -29,13 +27,12 @@ engine:
     - express_editor
   segmentors:
     - ascii_segmentor
-    - matcher
     - abc_segmentor
     - punct_segmentor
     - fallback_segmentor
   translators:
     - punct_translator
-    - script_translator@translator
+    - table_translator
   filters:
     - uniquifier
 
@@ -43,12 +40,11 @@ engine:
 speller:
   alphabet: "23456789"
   delimiter: "'"
-  max_code_length: 10
+  max_code_length: 20
 
-# 翻译器 — 用 script_translator + prism 把数字反向映射为拼音查词典
+# 翻译器 — 数字序列 → 拼音
 translator:
-  dictionary: pinyin
-  prism: t9_pinyin
+  dictionary: t9_pinyin
   spelling_hints: 5
   enable_completion: true
   enable_sentence: true

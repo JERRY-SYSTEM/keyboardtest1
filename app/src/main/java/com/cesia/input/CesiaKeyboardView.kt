@@ -11,12 +11,12 @@ import android.util.TypedValue
 
 /**
  * 自定义 KeyboardView — 在功能键右上角显示长按副功能文字（灰色小字）
- * 同时支持数字键盘的 T9 副字符标签
+ * 同时支持数字键盘的 T9 功能键标签
  */
 class CesiaKeyboardView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = context.resources.getIdentifier("keyboardViewStyle", "attr", "android").takeIf { it != 0 } ?: 0
+    defStyleAttr: Int = 0
 ) : KeyboardView(context, attrs, defStyleAttr) {
 
     // 副功能文字映射：primaryCode -> 显示文字

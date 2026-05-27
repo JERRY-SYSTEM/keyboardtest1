@@ -109,8 +109,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 主字符 → 副字符(T9数字) 映射
     private val mainToSub = mapOf(
         50 to 2, 51 to 3, 52 to 4, 53 to 5, 54 to 6,
-        55 to 7, 56 to 8, 57 to 9, 48 to 0,
-        32 to 0  // 空格键 = 0
+        55 to 7, 56 to 8, 57 to 9, 48 to 0
     )
     // 副字符(T9数字) → 主字符 映射
     private val subToMain = mainToSub.entries.associate { (k, v) -> v to k }
@@ -332,8 +331,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 设置 T9 数字键盘副字符标签
         keyboardView.setT9Labels(mapOf(
             50 to "2", 51 to "3", 52 to "4", 53 to "5", 54 to "6",
-            55 to "7", 56 to "8", 57 to "9", 48 to "0",
-            32 to "0"  // 空格键副字符也是0
+            55 to "7", 56 to "8", 57 to "9", 48 to "0"
         ))
         Log.d("Cesia", "createInputViewSafe: 键盘设置完成")
 
@@ -1424,21 +1422,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun toggleNumberKeyboard() {
         if (keyboardMode == KeyboardMode.NUMBER) {
             switchToKeyboard(KeyboardMode.QWERTY)
-            val ok = rimeEngine.selectSchema("pinyin")
-            Log.i("CesiaT9", "切回 pinyin schema: ok=$ok")
+            rimeEngine.selectSchema("pinyin")
         } else {
             switchToKeyboard(KeyboardMode.NUMBER)
-            val ok = rimeEngine.selectSchema("t9_pinyin")
-            Log.i("CesiaT9", "切换到 t9_pinyin schema: ok=$ok")
-            // 验证当前 schema
-            try {
-                val schemas = com.osfans.trime.core.Rime.getRimeSchemaList()
-                Log.i("CesiaT9", "可用 schemas: ${schemas.size}")
-                val current = com.osfans.trime.core.Rime.getCurrentRimeSchema()
-                Log.i("CesiaT9", "当前 schema: $current")
-            } catch (e: Throwable) {
-                Log.e("CesiaT9", "获取 schema 失败", e)
-            }
+            rimeEngine.selectSchema("t9_pinyin")
             resetNumberKeyboardState()
         }
     }
@@ -1575,12 +1562,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun processT9Input() {
         val digits = t9InputBuffer.toString()
-        Log.d("CesiaT9", "processT9Input: digits='$digits'")
         // T9 数字序列直接传给 Rime（T9 schema 的 speller 接受 2-9）
         rimeEngine.clear()
         for (ch in digits) {
-            val result = rimeEngine.processKey(ch.toString())
-            Log.d("CesiaT9", "  processKey('$ch') result=$result composing=${rimeEngine.isComposing} candidates=${rimeEngine.candidates.size}")
+            rimeEngine.processKey(ch.toString())
         }
         updateCandidateBar()
     }
@@ -1683,9 +1668,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 3. 退格/空格/回车等控制键优先交给 Rime 处理
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
-        Log.d("Cesia", "onKey: primaryCode=$primaryCode keyCodes=${keyCodes?.toList()} isAsciiMode=$isAsciiMode")
+        Log.d("Cesia", "onKey: primaryCode=$primaryCode isAsciiMode=$isAsciiMode keyboardMode=$keyboardMode")
         val wasLongPressed = longPressTriggered && !longPressConsumed
         if (wasLongPressed) {
+            Log.d("Cesia", "onKey: 被长按拦截 primaryCode=$primaryCode")
             longPressConsumed = true
             cancelLongPress()
             return
@@ -1703,9 +1689,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 字母键 a-z ========================
             in 97..122 -> {
-                // 取消可能的长按功能
+                Log.d("CesisLongPress", "onKey: 字母键 primaryCode=$primaryCode")
+                Log.d("CesiaLongPress", "onKey: 取消长按 primaryCode=$primaryCode")
                 functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
                 functionalLongPressRunnable = null
+                shortPressHandled = true
                 if (isAsciiMode) {
                     ic?.commitText(primaryCode.toChar().toString(), 1)
                 } else {
@@ -1935,7 +1923,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 功能键长按检测（仅 QWERTY 中文模式，且 Rime 不在 composing 状态）
         if (!isAsciiMode && primaryCode in 97..122 && keyboardMode == KeyboardMode.QWERTY && !rimeEngine.isComposing) {
             if (getFunctionalLongAction(primaryCode) != null) {
+                Log.d("CesiaLongPress", "onPress: 注册长按 primaryCode=$primaryCode")
                 functionalLongPressRunnable = Runnable {
+                    Log.d("CesiaLongPress", "长按触发! primaryCode=$primaryCode shortPressHandled=$shortPressHandled")
                     // 如果短按已处理，不执行长按功能
                     if (!shortPressHandled) {
                         getFunctionalLongAction(primaryCode)?.invoke()
