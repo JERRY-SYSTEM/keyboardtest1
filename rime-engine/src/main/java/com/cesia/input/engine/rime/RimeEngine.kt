@@ -197,7 +197,7 @@ class RimeEngine(private val context: Context) : InputEngine {
 
     /** 切换 Rime schema */
     fun selectSchema(schemaId: String): Boolean {
-        return Rime.selectRimeSchemas(arrayOf(schemaId))
+        return Rime.selectRimeSchema(schemaId)
     }
 
 }
