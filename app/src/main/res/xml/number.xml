@@ -2,10 +2,8 @@
 <!--
     数字键盘 — 5×4 布局
     T9拼音输入 + 符号副字符
-    第1行: ，(逗号)  1(符号)  abc(2)  def(3)  ？(问号)
-    第2行: 。(句号)  ghi(4)  jkl(5)  mno(6)  ！(叹号)
-    第3行: Shift     pqrs(7) tuv(8)  wxyz(9)  ⌫退格
-    第4行: 符号切换  T9       空格     控制键   ↵回车
+    主字符（abc/def...）由 CesiaKeyboardView 自定义绘制
+    副字符（数字2-9）由 popupCharacters + 红色小字绘制
 -->
 <Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
     android:keyWidth="20%p"
@@ -16,24 +14,24 @@
     <Row>
         <Key android:codes="65292" android:keyLabel="，" android:keyEdgeFlags="left" />
         <Key android:codes="49" android:keyLabel="1" android:popupCharacters="!" />
-        <Key android:codes="50" android:keyLabel="abc" />
-        <Key android:codes="51" android:keyLabel="def" />
+        <Key android:codes="50" android:keyLabel="" android:popupCharacters="2" />
+        <Key android:codes="51" android:keyLabel="" android:popupCharacters="3" />
         <Key android:codes="65311" android:keyLabel="？" android:keyEdgeFlags="right" />
     </Row>
 
     <Row>
         <Key android:codes="12290" android:keyLabel="。" android:keyEdgeFlags="left" />
-        <Key android:codes="52" android:keyLabel="ghi" />
-        <Key android:codes="53" android:keyLabel="jkl" />
-        <Key android:codes="54" android:keyLabel="mno" />
+        <Key android:codes="52" android:keyLabel="" android:popupCharacters="4" />
+        <Key android:codes="53" android:keyLabel="" android:popupCharacters="5" />
+        <Key android:codes="54" android:keyLabel="" android:popupCharacters="6" />
         <Key android:codes="65281" android:keyLabel="！" android:keyEdgeFlags="right" />
     </Row>
 
     <Row>
         <Key android:codes="-104" android:keyLabel="⇧" android:keyEdgeFlags="left" />
-        <Key android:codes="55" android:keyLabel="pqrs" />
-        <Key android:codes="56" android:keyLabel="tuv" />
-        <Key android:codes="57" android:keyLabel="wxyz" />
+        <Key android:codes="55" android:keyLabel="" android:popupCharacters="7" />
+        <Key android:codes="56" android:keyLabel="" android:popupCharacters="8" />
+        <Key android:codes="57" android:keyLabel="" android:popupCharacters="9" />
         <Key android:codes="-5" android:keyLabel="⌫" android:isRepeatable="true" android:keyEdgeFlags="right" />
     </Row>
 
