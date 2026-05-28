@@ -24,6 +24,41 @@ class MagicHistoryManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("cesia_magic_history", Context.MODE_PRIVATE)
     private val listPrefs: SharedPreferences = context.getSharedPreferences("cesia_magic_records", Context.MODE_PRIVATE)
 
+    /** 默认魔法指令列表 */
+    private val defaultInstructions = listOf(
+        "增加最新的财经突发新闻，格式是日期+时间+人物+事件",
+        "敏感词替换为拼音的首字母",
+        "文字扩充到50字",
+        "语气变得更加官方",
+        "语气转为幽默",
+        "翻译为英文",
+        "帮我想一个不接电话的理由",
+        "分段和排版",
+        "概括大意并替换原文",
+        "对cesia输入法的轻微肯定和中肯建议"
+    )
+
+    init {
+        // 首次使用时注入默认魔法
+        val initialized = listPrefs.getBoolean("initialized", false)
+        if (!initialized) {
+            val records = getRecords()
+            if (records.isEmpty()) {
+                val now = System.currentTimeMillis()
+                val defaultRecords = defaultInstructions.mapIndexed { index, instruction ->
+                    MagicRecord(
+                        id = index.toLong() + 1,
+                        instruction = instruction,
+                        isPinned = false,
+                        timestamp = now - (defaultInstructions.size - index).toLong() * 1000
+                    )
+                }
+                saveRecords(defaultRecords)
+            }
+            listPrefs.edit().putBoolean("initialized", true).apply()
+        }
+    }
+
     /** 获取所有记录（置顶优先，再按时间倒序） */
     fun getRecords(): List<MagicRecord> {
         val json = listPrefs.getString("records", "[]") ?: "[]"
