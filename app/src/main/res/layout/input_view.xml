@@ -198,7 +198,7 @@
             android:layout_width="0dp"
             android:layout_height="44dp"
             android:layout_weight="1"
-            android:src="@drawable/ic_edit"
+            android:src="@android:drawable/ic_menu_edit"
             android:background="@drawable/button_background_gray"
             android:scaleType="centerInside"
             android:contentDescription="魔法记忆"
