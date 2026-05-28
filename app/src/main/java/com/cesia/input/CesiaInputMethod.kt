@@ -262,7 +262,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         rvCandidates = view.findViewById(R.id.rv_candidates)
         candidateAdapter = CandidateAdapter { index, _ ->
             if (rimeEngine.hasCandidates) {
-                selectCandidateByGlobalIndex(index)
+                val selected = rimeEngine.selectCandidate(index)
+                if (selected.isNotEmpty()) {
+                    currentInputConnection?.commitText(selected, 1)
+                    if (::candidateBar.isInitialized) updateCandidateBar()
+                }
             }
         }
         rvCandidates?.adapter = candidateAdapter
@@ -1914,10 +1918,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onPress(primaryCode: Int) {
         shortPressHandled = false
-        Log.d("Cesia", "onPress: primaryCode=$primaryCode keyLabel=${getKeyLabel(primaryCode)}")
+        Log.d("Cesia", "onPress: primaryCode=$primaryCode")
+        if (primaryCode > 0) {
+            val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
+            if (key != null && !key.popupCharacters.isNullOrEmpty()) {
+                startLongPressDetection(key)
+            }
+        }
+        // 数字键盘按键长按检测（T9字母候选 / 符号候选）
+        if (keyboardMode == KeyboardMode.NUMBER && primaryCode != -104 && primaryCode != -100 && primaryCode != -101 && primaryCode != -103 && primaryCode != -5 && primaryCode != 10) {
+            val isT9Key = mainToSub.containsKey(primaryCode)
+            val isOneKey = (primaryCode == 49)
+            if (isT9Key || isOneKey) {
+                startNumberKeyboardLongPress(primaryCode, isOneKey)
+            }
+        }
         // 功能键长按检测（仅 QWERTY 中文模式，且 Rime 不在 composing 状态）
-        // 注意：功能键长按优先于 popupCharacters 长按，避免冲突
-        var functionalLongPressRegistered = false
         if (!isAsciiMode && primaryCode in 97..122 && keyboardMode == KeyboardMode.QWERTY && !rimeEngine.isComposing) {
             if (getFunctionalLongAction(primaryCode) != null) {
                 Log.d("CesiaLongPress", "onPress: 注册长按 primaryCode=$primaryCode")
@@ -1932,22 +1948,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     currentLongPressKey = null
                 }
                 Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 500)
-                functionalLongPressRegistered = true
-            }
-        }
-        // popupCharacters 长按检测（仅当没有功能键长按检测时）
-        if (!functionalLongPressRegistered && primaryCode > 0) {
-            val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
-            if (key != null && !key.popupCharacters.isNullOrEmpty()) {
-                startLongPressDetection(key)
-            }
-        }
-        // 数字键盘按键长按检测
-        if (keyboardMode == KeyboardMode.NUMBER && primaryCode != -104 && primaryCode != -100 && primaryCode != -101 && primaryCode != -103 && primaryCode != -5 && primaryCode != 10) {
-            val isT9Key = mainToSub.containsKey(primaryCode)
-            val isOneKey = (primaryCode == 49)
-            if (isT9Key || isOneKey) {
-                startNumberKeyboardLongPress(primaryCode, isOneKey)
             }
         }
         if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
@@ -1966,11 +1966,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (primaryCode == -200) {
             startSendKeyLongPress()
         }
-    }
-
-    private fun getKeyLabel(primaryCode: Int): String {
-        val key = currentKeyboard?.keys?.find { it.codes?.contains(primaryCode) == true }
-        return key?.label?.toString() ?: "?"
     }
 
     override fun onRelease(primaryCode: Int) {
