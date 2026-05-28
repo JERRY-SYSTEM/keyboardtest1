@@ -262,11 +262,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         rvCandidates = view.findViewById(R.id.rv_candidates)
         candidateAdapter = CandidateAdapter { index, _ ->
             if (rimeEngine.hasCandidates) {
-                val selected = rimeEngine.selectCandidate(index)
-                if (selected.isNotEmpty()) {
-                    currentInputConnection?.commitText(selected, 1)
-                    if (::candidateBar.isInitialized) updateCandidateBar()
-                }
+                selectCandidateByGlobalIndex(index)
             }
         }
         rvCandidates?.adapter = candidateAdapter
@@ -545,18 +541,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnCandidateExpand.setImageResource(android.R.drawable.arrow_down_float)
     }
 
-    /** 通过全局索引选择候选词（自动翻页） */
+    /** 通过全局索引选择候选词（自动翻页选中） */
     private fun selectCandidateByGlobalIndex(globalIndex: Int) {
-        val allCands = rimeEngine.getAllCandidates()
-        if (globalIndex >= allCands.size) return
-        // Rime 默认每页9个
-        val pageSize = 9
-        val targetPage = globalIndex / pageSize
-        val idxInPage = globalIndex % pageSize
+        if (globalIndex < 0) return
+        val curSize = rimeEngine.candidates.size
+        if (curSize <= 0) return
+        val targetPage = globalIndex / curSize
+        val idxInPage = globalIndex % curSize
         // 翻页到目标页
         var curPage = rimeEngine.currentPage
         while (curPage < targetPage) { rimeEngine.nextPage(); curPage++ }
-        while (curPage > targetPage) { rimeEngine.prevPage(); curPage-- }
+        while (curPage > targetPage) { rimeEngine.prevPage() }
         val selected = rimeEngine.selectCandidate(idxInPage)
         if (selected.isNotEmpty()) {
             currentInputConnection?.commitText(selected, 1)
