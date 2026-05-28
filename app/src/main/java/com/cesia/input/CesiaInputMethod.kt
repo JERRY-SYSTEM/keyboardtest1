@@ -947,6 +947,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             items.addAll(records)
 
             val btnPin = popupView.findViewById<TextView>(R.id.btn_pin_manage)
+            val btnAdd = popupView.findViewById<TextView>(R.id.btn_add_manage)
+            val btnEdit = popupView.findViewById<TextView>(R.id.btn_edit_manage)
             val btnDelete = popupView.findViewById<TextView>(R.id.btn_delete_manage)
             val btnUndo = popupView.findViewById<TextView>(R.id.btn_undo_manage)
 
@@ -1052,6 +1054,72 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 popupMenu.show()
             }
 
+            // ===== 新增：弹出文本框输入新魔法 =====
+            btnAdd.setOnClickListener {
+                val editText = android.widget.EditText(this).apply {
+                    hint = "输入魔法指令..."
+                    setPadding(32, 16, 32, 16)
+                }
+                AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+                    .setTitle("➕ 新增魔法")
+                    .setView(editText)
+                    .setPositiveButton("添加") { _, _ ->
+                        val text = editText.text.toString().trim()
+                        if (text.isNotEmpty()) {
+                            mgr.addRecord(text)
+                            items.clear()
+                            items.addAll(mgr.getRecords())
+                            (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
+                            updateStatus("✅ 已新增：${text.take(20)}")
+                        }
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+
+            // ===== 修改：点击魔法后在原地编辑 =====
+            btnEdit.setOnClickListener {
+                if (items.isEmpty()) return@setOnClickListener
+                val popupMenu = android.widget.PopupMenu(this, btnEdit)
+                for (r in items) {
+                    val title = if (r.isPinned) "📌 ${r.instruction.take(25)}" else r.instruction.take(25)
+                    popupMenu.menu.add(0, r.id.toInt(), 0, title)
+                }
+                popupMenu.setOnMenuItemClickListener { item ->
+                    val record = items.find { it.id.toInt() == item.itemId }
+                    if (record != null) {
+                        // 弹出编辑对话框
+                        val editText = android.widget.EditText(this).apply {
+                            setText(record.instruction)
+                            setSelection(record.instruction.length)
+                            setPadding(32, 16, 32, 16)
+                        }
+                        AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+                            .setTitle("✏️ 修改魔法")
+                            .setView(editText)
+                            .setPositiveButton("保存") { _, _ ->
+                                val newText = editText.text.toString().trim()
+                                if (newText.isNotEmpty() && newText != record.instruction) {
+                                    // 删除旧的，添加新的
+                                    mgr.removeRecord(record.id)
+                                    mgr.addRecord(newText)
+                                    items.clear()
+                                    items.addAll(mgr.getRecords())
+                                    (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
+                                    if (currentMagicPrompt == record.instruction) {
+                                        currentMagicPrompt = newText
+                                    }
+                                    updateStatus("✅ 已修改：${newText.take(20)}")
+                                }
+                            }
+                            .setNegativeButton("取消", null)
+                            .show()
+                    }
+                    true
+                }
+                popupMenu.show()
+            }
+
             btnDelete.setOnClickListener {
                 if (items.isEmpty()) return@setOnClickListener
                 val popupMenu = android.widget.PopupMenu(this, btnDelete)
@@ -1083,33 +1151,19 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 popupMenu.show()
             }
 
+            // ===== 撤销 =====
             btnUndo.setOnClickListener {
-                // 弹出魔法选择菜单，点击后插入光标位置
-                if (items.isEmpty()) return@setOnClickListener
-                val popupMenu = android.widget.PopupMenu(this, btnUndo)
-                for (r in items) {
-                    val title = if (r.isPinned) "📌 ${r.instruction.take(20)}" else r.instruction.take(20)
-                    popupMenu.menu.add(0, r.id.toInt(), 0, title)
-                }
-                popupMenu.setOnMenuItemClickListener { item ->
-                    val record = items.find { it.id.toInt() == item.itemId }
-                    if (record != null) {
-                        val ic = currentInputConnection ?: return@setOnMenuItemClickListener true
-                        // 在光标位置插入魔法文字
-                        ic.commitText(record.instruction, 1)
-                        updateStatus("✅ 已插入：${record.instruction.take(20)}")
-                    }
-                    true
-                }
-                popupMenu.show()
+                popup.dismiss()
+                performUndo()
             }
 
             if (items.isEmpty()) {
                 btnPin.visibility = View.GONE
+                btnAdd.visibility = View.GONE
+                btnEdit.visibility = View.GONE
                 btnDelete.visibility = View.GONE
                 btnUndo.visibility = View.GONE
             }
-
             popup.showAtLocation(keyboardView, Gravity.TOP, 0, 0)
         } catch (e: Exception) {
             Log.e("Cesia", "showMagicHistoryPopup 异常", e)

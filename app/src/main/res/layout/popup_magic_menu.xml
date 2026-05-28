@@ -21,14 +21,14 @@
         android:fastScrollEnabled="true"
         android:listSelector="@android:color/transparent" />
 
-    <!-- 底部管理栏 -->
+    <!-- 底部管理栏 5个按钮 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="44dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="#F5F5F5"
-        android:paddingHorizontal="8dp">
+        android:paddingHorizontal="4dp">
 
         <TextView
             android:id="@+id/btn_pin_manage"
@@ -36,11 +36,47 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="📌 置顶"
-            android:textSize="13sp"
+            android:text="📌"
+            android:textSize="15sp"
             android:textColor="#333333"
             android:background="?attr/selectableItemBackground"
-            android:drawablePadding="3dp" />
+            android:contentDescription="置顶" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center_vertical"
+            android:background="#DDDDDD" />
+
+        <TextView
+            android:id="@+id/btn_add_manage"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="➕"
+            android:textSize="15sp"
+            android:textColor="#333333"
+            android:background="?attr/selectableItemBackground"
+            android:contentDescription="新增" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center_vertical"
+            android:background="#DDDDDD" />
+
+        <TextView
+            android:id="@+id/btn_edit_manage"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="✏️"
+            android:textSize="15sp"
+            android:textColor="#333333"
+            android:background="?attr/selectableItemBackground"
+            android:contentDescription="修改" />
 
         <View
             android:layout_width="1dp"
@@ -54,11 +90,11 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="🗑️ 删除"
-            android:textSize="13sp"
+            android:text="🗑️"
+            android:textSize="15sp"
             android:textColor="#333333"
             android:background="?attr/selectableItemBackground"
-            android:drawablePadding="3dp" />
+            android:contentDescription="删除" />
 
         <View
             android:layout_width="1dp"
@@ -72,11 +108,11 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="✏️ 修改"
-            android:textSize="13sp"
+            android:text="↩️"
+            android:textSize="15sp"
             android:textColor="#333333"
             android:background="?attr/selectableItemBackground"
-            android:drawablePadding="3dp" />
+            android:contentDescription="撤销" />
 
     </LinearLayout>
 
