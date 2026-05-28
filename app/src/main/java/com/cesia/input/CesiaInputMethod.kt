@@ -1611,7 +1611,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun toggleLanguage() {
         isAsciiMode = !isAsciiMode
         rimeEngine.setAsciiMode(isAsciiMode)
-        switchToKeyboard(KeyboardMode.QWERTY)
+        // 如果当前在数字键盘，保持在数字键盘（只是切换中英文模式）
+        if (keyboardMode != KeyboardMode.NUMBER) {
+            switchToKeyboard(KeyboardMode.QWERTY)
+        }
         rimeEngine.clear()
         updateCandidateBar()
     }

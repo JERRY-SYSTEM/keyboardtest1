@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     数字键盘 — 5×4 布局
-    主字符(副字符)，Shift切换主副，长按输入副字符/弹出候选
+    T9拼音输入 + 符号副字符
     第1行: ，(逗号)  1(符号)  abc(2)  def(3)  ？(问号)
     第2行: 。(句号)  ghi(4)  jkl(5)  mno(6)  ！(叹号)
     第3行: Shift     pqrs(7) tuv(8)  wxyz(9)  ⌫退格
-    第4行: 符号切换  英文切换  空格(0)  控制键   ↵回车
+    第4行: 符号切换  T9       空格     控制键   ↵回车
 -->
 <Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
     android:keyWidth="20%p"
@@ -15,7 +15,7 @@
 
     <Row>
         <Key android:codes="65292" android:keyLabel="，" android:keyEdgeFlags="left" />
-        <Key android:codes="49" android:keyLabel="1" />
+        <Key android:codes="49" android:keyLabel="1" android:popupCharacters="!" />
         <Key android:codes="50" android:keyLabel="abc" />
         <Key android:codes="51" android:keyLabel="def" />
         <Key android:codes="65311" android:keyLabel="？" android:keyEdgeFlags="right" />
@@ -39,7 +39,7 @@
 
     <Row>
         <Key android:codes="-100" android:keyLabel="符" android:keyEdgeFlags="left" />
-        <Key android:codes="-101" android:keyLabel="英" />
+        <Key android:codes="-101" android:keyLabel="T9" />
         <Key android:codes="32" android:keyLabel="空格" />
         <Key android:codes="-103" android:keyLabel="控" />
         <Key android:codes="10" android:keyLabel="↵" android:keyEdgeFlags="right" />
