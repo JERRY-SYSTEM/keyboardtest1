@@ -1084,8 +1084,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
 
             btnUndo.setOnClickListener {
-                popup.dismiss()
-                performUndo()
+                // 弹出魔法选择菜单，点击后插入光标位置
+                if (items.isEmpty()) return@setOnClickListener
+                val popupMenu = android.widget.PopupMenu(this, btnUndo)
+                for (r in items) {
+                    val title = if (r.isPinned) "📌 ${r.instruction.take(20)}" else r.instruction.take(20)
+                    popupMenu.menu.add(0, r.id.toInt(), 0, title)
+                }
+                popupMenu.setOnMenuItemClickListener { item ->
+                    val record = items.find { it.id.toInt() == item.itemId }
+                    if (record != null) {
+                        val ic = currentInputConnection ?: return@setOnMenuItemClickListener true
+                        // 在光标位置插入魔法文字
+                        ic.commitText(record.instruction, 1)
+                        updateStatus("✅ 已插入：${record.instruction.take(20)}")
+                    }
+                    true
+                }
+                popupMenu.show()
             }
 
             if (items.isEmpty()) {

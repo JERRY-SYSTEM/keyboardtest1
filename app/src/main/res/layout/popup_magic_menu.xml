@@ -72,9 +72,9 @@
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="↩️ 撤销"
+            android:text="✏️ 修改"
             android:textSize="13sp"
-            android:textColor="#FF5722"
+            android:textColor="#333333"
             android:background="?attr/selectableItemBackground"
             android:drawablePadding="3dp" />
 
