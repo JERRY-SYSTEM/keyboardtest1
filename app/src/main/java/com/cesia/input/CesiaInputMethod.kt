@@ -1709,15 +1709,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
+        Log.d("CesiaT9", "handleNumberKeyboardKey: primaryCode=$primaryCode isShiftMode=$isShiftMode keyboardMode=$keyboardMode")
         if (isShiftMode) {
-            // Shift模式：直接输入数字（副字符）
+            // Shift模式：直接输入数字
             val digit = mainToSub[primaryCode]
             if (digit != null) {
                 currentInputConnection?.commitText(digit.toString(), 1)
             } else {
                 currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
             }
-            // 临时 Shift 模式输入一次后自动退出
             if (!isShiftLocked) {
                 isShiftMode = false
                 updateShiftIndicator()
@@ -1725,11 +1725,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } else {
             // 主字符模式：T9拼音输入
             val t9Digit = mainToSub[primaryCode]
+            Log.d("CesiaT9", "T9 path: t9Digit=$t9Digit")
             if (t9Digit != null) {
                 t9InputBuffer.append(t9Digit)
+                Log.d("CesiaT9", "t9InputBuffer=$t9InputBuffer")
                 processT9Input()
             } else {
-                // 非T9键(1/标点/符号)直接上屏
                 when (primaryCode) {
                     49 -> currentInputConnection?.commitText("1", 1)
                     65292 -> currentInputConnection?.commitText("，", 1)
@@ -1744,11 +1745,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun processT9Input() {
         val digits = t9InputBuffer.toString()
-        // T9 数字序列直接传给 Rime（T9 schema 的 speller 接受 2-9）
+        Log.d("CesiaT9", "processT9Input: digits='$digits' schema=${rimeEngine.isInitialized}")
         rimeEngine.clear()
         for (ch in digits) {
-            rimeEngine.processKey(ch.toString())
+            val result = rimeEngine.processKey(ch.toString())
+            Log.d("CesiaT9", "processKey('$ch') result=$result")
         }
+        val composing = rimeEngine.composingText
+        val cands = rimeEngine.candidates
+        Log.d("CesiaT9", "after processKey: composing='$composing' candidates=${cands.size} hasCands=${rimeEngine.hasCandidates}")
         updateCandidateBar()
     }
 
