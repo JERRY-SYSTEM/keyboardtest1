@@ -27,6 +27,7 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.text.TextUtils
+import android.graphics.Typeface
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -154,6 +155,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 初始化标志
     private var isViewInitialized = false
 
+    // 清屏键长按标志
+    private var deleteLongPressTriggered = false
+
     // 主题
     private var isDarkTheme = false
     private var apiUrl = "https://openrouter.ai/api/v1/chat/completions"
@@ -176,6 +180,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             120 -> { { currentInputConnection?.performContextMenuAction(android.R.id.cut) } }  // x=剪切
             99  -> { { currentInputConnection?.performContextMenuAction(android.R.id.copy) } }  // c=复制
             118 -> { { currentInputConnection?.performContextMenuAction(android.R.id.paste) } }  // v=粘贴
+            98  -> { { toggleBold() } }  // b=粗体
             122 -> { { sendCtrlKey(KeyEvent.KEYCODE_Z) } }  // z=撤销
             110 -> { { sendControlKey(KeyEvent.KEYCODE_INSERT) } }  // n=Insert
             109 -> { { sendControlKey(KeyEvent.KEYCODE_FORWARD_DEL) } }  // m=Delete
@@ -191,6 +196,33 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun sendCtrlKey(keyCode: Int) = sendControlKey(keyCode, KeyEvent.META_CTRL_ON)
+
+    /** 切换选中文字的粗体样式 */
+    private fun toggleBold() {
+        val ic = currentInputConnection ?: return
+        try {
+            // 如果有选中文字，给选中文字加粗
+            val selectedText = ic.getSelectedText(0)
+            if (selectedText != null && selectedText.isNotEmpty()) {
+                // 有选中文字 → 用 Spannable 加粗
+                val newSpan = android.text.SpannableString(selectedText)
+                newSpan.setSpan(
+                    android.text.style.StyleSpan(Typeface.BOLD),
+                    0, newSpan.length,
+                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                ic.commitText(newSpan, 1)
+                updateStatus("✅ 已加粗选中文字")
+            } else {
+                // 没有选中文字 → 进入粗体模式（后续输入的文字加粗）
+                // 发送一个零宽空格标记，提示用户进入粗体模式
+                updateStatus("⚠️ 请先选中文字，长按 b 可将其加粗")
+            }
+        } catch (e: Exception) {
+            Log.e("Cesia", "toggleBold 异常", e)
+            updateStatus("❌ 加粗失败: ${e.message}")
+        }
+    }
 
     companion object {
         const val PREF_API_URL = "api_url"
@@ -322,16 +354,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             120 to "剪切",  // x
             99 to "复制",   // c
             118 to "粘贴",  // v
+            98 to "粗体",   // b=粗体
             122 to "撤销",  // z
             110 to "Ins",   // n
             109 to "Del"    // m
         ))
-        // 设置 T9 数字键盘副字符标签
-        // T9 数字键盘副字符：显示符号（与 qwerty 顶行数字键长按弹出的符号一致）
-        keyboardView.setT9Labels(mapOf(
-            50 to "@", 51 to "#", 52 to "$", 53 to "%", 54 to "^",
-            55 to "&", 56 to "*", 57 to "(", 48 to ")"
-        ))
+        // T9Labels 已清空（数字键不再显示灰色副字符）
+        keyboardView.setT9Labels(mapOf())
         Log.d("Cesia", "createInputViewSafe: 键盘设置完成")
 
         // 初始化引擎
@@ -634,7 +663,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnMicNoAi.setOnClickListener { onAiCrossSelected() }
         btnSettings.setOnClickListener { showSettings() }
 
+        deleteLongPressTriggered = false
+
         btnDelete.setOnClickListener {
+            if (deleteLongPressTriggered) {
+                deleteLongPressTriggered = false
+                return@setOnClickListener
+            }
             if (rimeEngine.isComposing) {
                 rimeEngine.processKey("BackSpace")
                 updateCandidateBar()
@@ -643,6 +678,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
         btnDelete.setOnLongClickListener {
+            deleteLongPressTriggered = true
             if (rimeEngine.isComposing) {
                 rimeEngine.processKey("BackSpace")
                 updateCandidateBar()
@@ -1815,17 +1851,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 回车键 ========================
             10, Keyboard.KEYCODE_DONE -> {
-                if (!isAsciiMode && composing && hasCands) {
-                    val selected = rimeEngine.selectCandidate(0)
-                    if (selected.isNotEmpty()) {
-                        ic?.commitText(selected, 1)
-                    } else { commitAndClear(); sendDownUpEnter() }
-                } else if (!isAsciiMode && composing) {
-                    commitAndClear(); sendDownUpEnter()
+                if (!isAsciiMode && composing) {
+                    // 直接上屏当前拼音字母（不转换成汉字）
+                    val pinyinText = rimeEngine.composingText
+                    if (pinyinText.isNotEmpty()) {
+                        ic?.commitText(pinyinText, 1)
+                    } else if (hasCands) {
+                        val selected = rimeEngine.selectCandidate(0)
+                        if (selected.isNotEmpty()) {
+                            ic?.commitText(selected, 1)
+                        }
+                    }
+                    rimeEngine.clear()
+                    updateCandidateBar()
                 } else {
                     sendDownUpEnter()
                 }
-                updateCandidateBar()
             }
 
             // ======================== Shift 键 ========================

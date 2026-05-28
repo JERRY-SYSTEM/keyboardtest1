@@ -42,7 +42,7 @@ class CesiaKeyboardView @JvmOverloads constructor(
     }
 
     private var labelTextSize = 9f
-    private var popupTextSize = 8f
+    private var popupTextSize = 12f
 
     fun setFunctionalLabels(labels: Map<Int, String>) {
         functionalLabels = labels
@@ -72,12 +72,12 @@ class CesiaKeyboardView @JvmOverloads constructor(
             val code = key.codes?.firstOrNull() ?: continue
             if (key.label == null) continue
 
-            val x = key.x + key.width - 3f
+            val x = key.x + key.width - 10f
 
             // 1. functionalLabels / t9Labels（灰色，功能键编辑功能提示）
             val fnLabel = functionalLabels[code] ?: t9Labels[code]
             if (fnLabel != null) {
-                val y = key.y + spSize + 1f
+                val y = key.y + 10f + spSize
                 canvas.drawText(fnLabel, x, y, labelPaint)
             }
 
@@ -87,9 +87,9 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 val symbol = popup[0].toString()
                 // 如果有 functionalLabels，popup 画在下方；否则画在上方
                 val y = if (fnLabel != null) {
-                    key.y + spSize + popupSpSize + 2f
+                    key.y + 10f + spSize + popupSpSize + 2f
                 } else {
-                    key.y + popupSpSize + 1f
+                    key.y + 10f + popupSpSize
                 }
                 canvas.drawText(symbol, x, y, popupPaint)
             }
