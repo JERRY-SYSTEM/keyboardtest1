@@ -1663,6 +1663,25 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         updateStatus("Cesia 已就绪")
     }
 
+    private fun commitT9Candidate() {
+        // 选中首候选上屏，然后彻底重置
+        val cands = rimeEngine.candidates
+        if (cands.isNotEmpty()) {
+            val selected = rimeEngine.selectCandidate(0)
+            if (selected.isNotEmpty()) {
+                currentInputConnection?.commitText(selected, 1)
+            }
+        } else {
+            // 没有候选，上屏空格
+            currentInputConnection?.commitText(" ", 1)
+        }
+        // 彻底重置：清空 buffer + 重建 Rime session
+        t9InputBuffer.clear()
+        rimeEngine.clear()
+        rimeEngine.createSession()
+        resetT9State()
+    }
+
     // ======================== 数字键盘长按逻辑 ========================
 
     private var numberLongPressKeyCode = 0
@@ -1785,13 +1804,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun processT9Input() {
         val digits = t9InputBuffer.toString()
-        Log.d("CesiaT9", "processT9Input: digits='$digits'")
-        // 只传入最新的数字键（不是重输全部）
+        Log.d("CesiaT9", "processT9Input: digits='$digits', composing=${rimeEngine.isComposing}, cands=${rimeEngine.candidates.size}")
         if (digits.isNotEmpty()) {
             val lastDigit = digits.last().toString()
             val result = rimeEngine.processKey(lastDigit)
-            Log.d("CesiaT9", "processKey('$lastDigit') result=$result composing=${rimeEngine.isComposing} hasCands=${rimeEngine.hasCandidates}")
+            Log.d("CesiaT9", "processKey('$lastDigit') result=$result, composing=${rimeEngine.isComposing}, cands=${rimeEngine.candidates.size}")
         }
+        val allCands = rimeEngine.getAllCandidates()
+        Log.d("CesiaT9", "processT9Input: allCands.size=${allCands.size}, first=${allCands.firstOrNull() ?: \"(empty)\"}")
         updateCandidateBar()
     }
 
@@ -1966,16 +1986,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         ic?.commitText(" ", 1)
                     } else if (t9InputBuffer.isNotEmpty()) {
                         // T9模式：空格 = 选择首候选上屏
-                        val cands = rimeEngine.candidates
-                        if (cands.isNotEmpty()) {
-                            val selected = rimeEngine.selectCandidate(0)
-                            if (selected.isNotEmpty()) {
-                                ic?.commitText(selected, 1)
-                            }
-                        } else {
-                            ic?.commitText(" ", 1)
-                        }
-                        resetT9State()
+                        commitT9Candidate()
                     } else {
                         ic?.commitText(" ", 1)
                     }
