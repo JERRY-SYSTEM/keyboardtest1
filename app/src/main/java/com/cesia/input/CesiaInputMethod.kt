@@ -1734,7 +1734,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (digits.isNotEmpty()) {
             val lastDigit = digits.last().toString()
             val result = rimeEngine.processKey(lastDigit)
-            Log.d("CesiaT9", "processKey('$lastDigit') result=$result, after: composing=${rimeEngine.isComposing}, composingText='${rimeEngine.composingText}', candidates=${rimeEngine.candidates}")
+            // 最快速度加按2再退格，触发Rime正确处理数字
+            rimeEngine.processKey("2")
+            rimeEngine.processKey("BackSpace")
+            Log.d("CesiaT9", "processKey('$lastDigit') +2+BackSpace result=$result, after: composing=${rimeEngine.isComposing}, composingText='${rimeEngine.composingText}', candidates=${rimeEngine.candidates}")
         }
         updateCandidateBar()
     }
