@@ -1629,7 +1629,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 // 设置标志，阻止 onKey 的短按逻辑
                 numberLongPressFired = true
             }
-            keyboardView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         }
         Handler(Looper.getMainLooper()).postDelayed(numberLongPressRunnable!!, 500)
     }
