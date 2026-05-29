@@ -1133,7 +1133,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     true
                 )
                 editPopup.elevation = 8f
-                editPopup.isOutsideTouchable(true)
+                editPopup.isOutsideTouchable = true
                 editPopup.inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
 
                 // 显示在 btnAdd 上方
