@@ -628,6 +628,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
 
         // 更新候选词列表
+        Log.d("CesiaT9", "updateCandidateBar: allCands content=$allCands")
         candidateAdapter?.updateData(allCands)
         btnCandidateExpand.visibility = if (allCands.size > 4) View.VISIBLE else View.GONE
 
