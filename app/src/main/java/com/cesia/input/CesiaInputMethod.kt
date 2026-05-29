@@ -126,7 +126,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var backspaceHandler = Handler(Looper.getMainLooper())
     private var backspaceRunnable: Runnable? = null
 
-    // T9 数字键长按标志：长按触发后设为 true，阻止 onKey 处理短按逻辑
+    // T9 数字键短按键码缓存：onKey 收到后暂存，onRelease 时再决定是否执行短按
+    private var pendingT9KeyCode: Int? = null
+
+    // T9 数字键长按标志：长按触发后设为 true，阻止 onRelease 执行短按逻辑
     private var numberLongPressFired = false
 
     // 发送键长按检测
@@ -1606,28 +1609,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     // ======================== 数字键盘长按逻辑 ========================
 
-    private var numberLongPressKeyCode = 0
     private var numberLongPressRunnable: Runnable? = null
 
     private fun startNumberKeyboardLongPress(primaryCode: Int, isOneKey: Boolean) {
-        numberLongPressKeyCode = primaryCode
         numberLongPressRunnable = Runnable {
+            // 取消待处理的短按任务
+            pendingT9KeyCode = null
+            numberLongPressFired = true
             if (isOneKey) {
-                // 1 键长按：弹出符号候选
                 showSymbolPopup()
             } else {
-                // T9 键长按：直接上屏数字，清空拼音状态，不显示任何候选
+                // T9 键长按：直接上屏数字，清空拼音状态
                 val digit = mainToSub[primaryCode]
                 val text = if (digit != null) digit.toString() else primaryCode.toChar().toString()
                 currentInputConnection?.commitText(text, 1)
-                // 清空 T9 缓冲和拼音引擎
                 t9InputBuffer.clear()
                 rimeEngine.clear()
-                // 清空候选栏和状态栏
                 candidateAdapter?.updateData(emptyList())
                 updateStatus("")
-                // 设置标志，阻止 onKey 的短按逻辑
-                numberLongPressFired = true
             }
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         }
@@ -1637,7 +1636,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun cancelNumberLongPress() {
         numberLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         numberLongPressRunnable = null
-        numberLongPressKeyCode = 0
+    }
+
+    /** 在 onRelease 时执行待处理的 T9 短按（如果长按未触发） */
+    private fun flushPendingT9Key() {
+        val code = pendingT9KeyCode
+        pendingT9KeyCode = null
+        if (code != null && !numberLongPressFired) {
+            handleNumberKeyboardKey(code)
+        }
+        numberLongPressFired = false
     }
 
     /** 长按 1 键弹出符号候选窗 */
@@ -1884,18 +1892,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
 
-            // ======================== 数字键区域 (0-9 及字母键 abc/def...) ========================
-            // 主字符模式：abc=2, def=3, ghi=4... T9拼音输入
-            // Shift模式：直接输入数字
+            // ======================== 数字键区域 (0-9) ========================
+            // T9 模式：onKey 只缓存键码，onRelease 时才执行短按逻辑
+            // 长按（500ms）会取消缓存并上屏数字
             in 48..57 -> {
                 if (keyboardMode == KeyboardMode.NUMBER) {
-                    cancelNumberLongPress()
-                    // 如果长按已触发，跳过 T9 处理
-                    if (numberLongPressFired) {
-                        numberLongPressFired = false
-                        return
-                    }
-                    handleNumberKeyboardKey(primaryCode)
+                    pendingT9KeyCode = primaryCode
                 } else {
                     // 全键盘模式的数字键原有逻辑
                     if (!isAsciiMode && composing && hasCands) {
@@ -2171,7 +2173,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     override fun onRelease(primaryCode: Int) {
         cancelLongPress()
         cancelNumberLongPress()
-        numberLongPressFired = false
+        // 松手时执行待处理的 T9 短按（如果长按未触发）
+        if (keyboardMode == KeyboardMode.NUMBER && pendingT9KeyCode != null) {
+            flushPendingT9Key()
+        } else {
+            numberLongPressFired = false
+        }
         functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         functionalLongPressRunnable = null
         cancelSendKeyLongPress()
