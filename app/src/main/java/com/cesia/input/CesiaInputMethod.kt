@@ -615,15 +615,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         tvComposing.text = ""
         tvComposing.visibility = View.GONE
 
-        // T9 模式：显示数字序列 + 首候选词
+        // T9 模式：状态栏只显示数字序列，候选词在候选栏
         if (keyboardMode == KeyboardMode.NUMBER && t9InputBuffer.isNotEmpty()) {
-            val cands = rimeEngine.candidates
-            val digits = t9InputBuffer.toString()
-            if (cands.isNotEmpty()) {
-                updateStatus("$digits → ${cands[0]}")
-            } else {
-                updateStatus(digits)
-            }
+            updateStatus(t9InputBuffer.toString())
         } else {
             updateStatus(pinyin)
         }
@@ -1971,14 +1965,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         // Shift模式直接上屏空格
                         ic?.commitText(" ", 1)
                     } else if (t9InputBuffer.isNotEmpty()) {
-                        // T9模式：输入空格 = 选择首候选
-                        val handled = rimeEngine.processKey(" ")
-                        if (!handled || !rimeEngine.isComposing) {
-                            // 没有匹配，直接上屏空格
-                            commitT9AndClear()
+                        // T9模式：空格 = 选择首候选上屏
+                        val cands = rimeEngine.candidates
+                        if (cands.isNotEmpty()) {
+                            val selected = rimeEngine.selectCandidate(0)
+                            if (selected.isNotEmpty()) {
+                                ic?.commitText(selected, 1)
+                            }
+                        } else {
                             ic?.commitText(" ", 1)
                         }
-                        updateCandidateBar()
+                        resetT9State()
                     } else {
                         ic?.commitText(" ", 1)
                     }
