@@ -609,13 +609,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             return
         }
 
-        // 有输入时：状态栏只显示拼音
+        // 有输入时：状态栏显示拼音（T9模式显示首候选词的拼音）
         candidateBar.visibility = View.VISIBLE
         Log.d("Cesia", "updateCandidateBar: SHOW candidateBar")
-        // 候选词栏不显示拼音，只显示候选词（拼音在状态栏）
         tvComposing.text = ""
         tvComposing.visibility = View.GONE
-        updateStatus(pinyin)
+
+        // T9 模式：显示数字序列 + 首候选词
+        if (keyboardMode == KeyboardMode.NUMBER && t9InputBuffer.isNotEmpty()) {
+            val cands = rimeEngine.candidates
+            val digits = t9InputBuffer.toString()
+            if (cands.isNotEmpty()) {
+                updateStatus("$digits → ${cands[0]}")
+            } else {
+                updateStatus(digits)
+            }
+        } else {
+            updateStatus(pinyin)
+        }
 
         // 更新候选词列表（全部）
         val allCandsForBar = rimeEngine.getAllCandidates()
@@ -1989,14 +2000,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             // ======================== 退格键 ========================
             -5, Keyboard.KEYCODE_DELETE -> {
                 if (keyboardMode == KeyboardMode.NUMBER) {
-                    // 数字键盘退格：先删T9缓冲
+                    // 数字键盘退格
                     if (!isShiftMode && t9InputBuffer.isNotEmpty()) {
+                        // 先告诉 Rime 删除一个按键
+                        rimeEngine.processKey("BackSpace")
+                        // 同步更新缓冲
                         t9InputBuffer.deleteCharAt(t9InputBuffer.length - 1)
-                        if (t9InputBuffer.isNotEmpty()) {
-                            processT9Input()
-                        } else {
+                        if (t9InputBuffer.isEmpty()) {
                             rimeEngine.clear()
                             resetT9State()
+                        } else {
+                            updateCandidateBar()
                         }
                     } else {
                         ic?.deleteSurroundingText(1, 0)
