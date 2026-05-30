@@ -128,19 +128,7 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 canvas.drawText(symbol, x, y, popupPaint)
             }
 
-            // ===== 3. Shift 键图标覆盖 =====
-            if (code == -104 && isT9Mode) {
-                val shiftPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    textAlign = Paint.Align.CENTER
-                    textSize = key.height * 0.55f
-                    color = if (isShiftLocked) 0xFF111111.toInt() else 0xFF888888.toInt()
-                }
-                val shiftCx = key.x + key.width / 2f
-                val shiftCy = key.y + key.height / 2f + shiftPaint.textSize * 0.35f
-                canvas.drawText("⇧", shiftCx, shiftCy, shiftPaint)
-            }
-
-            // ===== 4. 1键主字符（绿色"全选"） =====
+            // ===== 3. 1键主字符（绿色"全选"） =====
             if (code == 49 && isT9Mode) {
                 val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     textAlign = Paint.Align.CENTER
@@ -152,28 +140,26 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 canvas.drawText("全选", cx, cy, greenPaint)
             }
 
-            // ===== 5. 剪贴板按键主字符 =====
+            // ===== 4. 剪贴板按键主字符 =====
             if (code == -108 && isT9Mode) {
-                // 粘贴键：主字符"粘"（绿色），副字符"贴"（灰色）通过 functionalLabels
                 val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     textAlign = Paint.Align.CENTER
-                    textSize = key.height * 0.4f
+                    textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics)
                     color = 0xFF44AA44.toInt()
                 }
                 val cx = key.x + key.width / 2f
                 val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
-                canvas.drawText("粘", cx, cy, greenPaint)
+                canvas.drawText("全选", cx, cy, greenPaint)
             }
             if (code == -109 && isT9Mode) {
-                // 复制键：主字符"复"（绿色），副字符"剪切"（灰色）通过 functionalLabels
                 val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     textAlign = Paint.Align.CENTER
-                    textSize = key.height * 0.4f
+                    textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics)
                     color = 0xFF44AA44.toInt()
                 }
                 val cx = key.x + key.width / 2f
                 val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
-                canvas.drawText("复", cx, cy, greenPaint)
+                canvas.drawText("复制", cx, cy, greenPaint)
             }
         }
     }

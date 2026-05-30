@@ -1607,12 +1607,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleShiftKey() {
-        // 单击 shift：toggle on/off
+        // 单击 shift：toggle 锁定/解除
         isShiftMode = !isShiftMode
+        isShiftLocked = isShiftMode  // 锁定时设为 true，输入数字不会自动退回
         if (!isShiftMode) {
             commitT9AndClear()
         }
-        isShiftLocked = false
         updateShiftIndicator()
     }
 
@@ -1969,10 +1969,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             KEYCODE_SHIFT -> handleShiftKey()
 
             // ======================== 剪贴板功能键 ========================
-            -108 -> { // 全选（短按）
+            -108 -> { // 全选（短按），长按取消检测
+                clipboardPasteRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+                clipboardPasteRunnable = null
+                shortPressHandled = true
                 currentInputConnection?.performContextMenuAction(android.R.id.selectAll)
             }
-            -109 -> { // 复制（短按）
+            -109 -> { // 复制（短按），长按取消检测
+                clipboardCutRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+                clipboardCutRunnable = null
+                shortPressHandled = true
                 currentInputConnection?.performContextMenuAction(android.R.id.copy)
             }
 
