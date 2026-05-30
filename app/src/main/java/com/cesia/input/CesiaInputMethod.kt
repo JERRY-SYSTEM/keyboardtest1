@@ -1603,9 +1603,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 // 1 键长按：弹出符号候选
                 showSymbolPopup()
             } else {
-                // T9 键长按：弹出字母候选 (a/b/c 等)
-                val letters = t9Map[mainToSub[primaryCode]] ?: ""
-                showLetterPopup(primaryCode, letters)
+                // T9 键长按：直接上屏数字，不清空候选栏
+                val digit = mainToSub[primaryCode]
+                val text = if (digit != null) digit.toString() else primaryCode.toChar().toString()
+                currentInputConnection?.commitText(text, 1)
             }
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         }
@@ -1615,15 +1616,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun cancelNumberLongPress() {
         numberLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         numberLongPressRunnable = null
-    }
-
-    /** 长按 T9 键弹出字母候选窗 */
-    private fun showLetterPopup(keyCode: Int, letters: String) {
-        if (letters.isEmpty()) return
-        val items = letters.map { it.toString() }
-        candidateBar.visibility = View.VISIBLE
-        candidateAdapter?.updateData(items)
-        btnCandidateExpand.visibility = View.GONE
     }
 
     /** 长按 1 键弹出符号候选窗 */
