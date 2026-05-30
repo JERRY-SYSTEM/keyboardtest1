@@ -128,50 +128,36 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 canvas.drawText(symbol, x, y, popupPaint)
             }
 
-            // ===== 3. 1键主字符（灰色"黑体"） =====
-            if (code == 49 && isT9Mode) {
+            // ===== 3. T9 1键/剪贴板键 表面文字（统一灰色12px） =====
+            if (isT9Mode && (code == 49 || code == -108 || code == -109)) {
                 val grayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     textAlign = Paint.Align.CENTER
-                    textSize = key.height * 0.3f
+                    textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 12f, resources.displayMetrics)
                     color = 0xFF888888.toInt()
                 }
                 val cx = key.x + key.width / 2f
                 val cy = key.y + key.height / 2f + grayPaint.textSize * 0.35f
-                canvas.drawText("黑体", cx, cy, grayPaint)
+                val label = when (code) {
+                    49 -> "黑体"
+                    -108 -> "全选"
+                    -109 -> "复制"
+                    else -> ""
+                }
+                canvas.drawText(label, cx, cy, grayPaint)
             }
 
-            // ===== 4. Shift 锁定红色圆点 =====
+            // ===== 4. Shift 锁定红色圆点（大一倍=8f，距右/上10px） =====
             if (code == -104 && isT9Mode && isShiftLocked) {
                 val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = 0xFFCC0000.toInt()
                     style = Paint.Style.FILL
                 }
-                val dotX = key.x + key.width - 8f
-                val dotY = key.y + 8f
-                canvas.drawCircle(dotX, dotY, 4f, dotPaint)
+                val dotX = key.x + key.width - 10f
+                val dotY = key.y + 10f + 8f  // 圆心下移半径
+                canvas.drawCircle(dotX, dotY, 8f, dotPaint)
             }
 
-            // ===== 5. 剪贴板按键主字符 =====
-            if (code == -108 && isT9Mode) {
-                val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    textAlign = Paint.Align.CENTER
-                    textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics)
-                    color = 0xFF44AA44.toInt()
-                }
-                val cx = key.x + key.width / 2f
-                val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
-                canvas.drawText("全选", cx, cy, greenPaint)
-            }
-            if (code == -109 && isT9Mode) {
-                val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    textAlign = Paint.Align.CENTER
-                    textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics)
-                    color = 0xFF44AA44.toInt()
-                }
-                val cx = key.x + key.width / 2f
-                val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
-                canvas.drawText("复制", cx, cy, greenPaint)
-            }
+            // ===== 5. (剪贴板字符已合并到 section 3) =====
         }
     }
 }

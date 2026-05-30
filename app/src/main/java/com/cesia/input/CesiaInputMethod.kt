@@ -103,7 +103,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isShiftMode = false  // 数字键盘 Shift 状态（临时切换）
     private var shortPressHandled = false  // 当前按键是否已处理短按（防止长按重复触发）
     private var isShiftLocked = false  // Shift 锁定状态
-    private var isBoldMode = false  // 黑体模式（聊天可见加粗）
     private var t9InputBuffer = StringBuilder()  // T9 数字输入缓冲
     private val t9Map = mapOf(
         2 to "abc", 3 to "def", 4 to "ghi", 5 to "jkl",
@@ -208,19 +207,25 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun sendCtrlKey(keyCode: Int) = sendControlKey(keyCode, KeyEvent.META_CTRL_ON)
 
-    /** 切换黑体模式（聊天可见加粗，使用 Mathematical Bold Unicode） */
+    /** 黑体：对选中文字应用 Mathematical Bold Unicode 加粗 */
     private fun toggleBold() {
-        isBoldMode = !isBoldMode
-        if (isBoldMode) {
-            updateStatus("🅱️ 黑体模式：开启")
-        } else {
-            updateStatus("Cesia 已就绪")
+        val ic = currentInputConnection ?: return
+        val selectedText = ic.getSelectedText(0)?.toString()
+        if (selectedText.isNullOrEmpty()) {
+            updateStatus("请先选中要加粗的文字")
+            return
         }
+        val boldText = toBoldText(selectedText)
+        // 删除选区并插入加粗文本
+        val time = SystemClock.uptimeMillis()
+        ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0))
+        ic.sendKeyEvent(KeyEvent(time, time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL, 0))
+        ic.commitText(boldText, 1)
+        updateStatus("✅ 已加粗 ${selectedText.length} 字")
     }
 
     /** 将文本转换为 Mathematical Bold Unicode（聊天可见加粗） */
     private fun toBoldText(text: String): String {
-        if (!isBoldMode) return text
         return text.map { ch ->
             when (ch) {
                 in 'a'..'z' -> (0x1D41A + (ch - 'a')).toChar()
@@ -229,6 +234,19 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 else -> ch
             }
         }.joinToString("")
+    }
+
+    /** 如果有选中文本则删除选区，否则删除光标前一个字符 */
+    private fun deleteSelectionOrChar() {
+        val ic = currentInputConnection ?: return
+        val selectedText = ic.getSelectedText(0)?.toString()
+        if (!selectedText.isNullOrEmpty()) {
+            ic.deleteSurroundingText(0, 0)  // 发送 delete 键事件清除选区
+            ic.sendKeyEvent(KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0))
+            ic.sendKeyEvent(KeyEvent(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL, 0))
+        } else {
+            ic.deleteSurroundingText(1, 0)
+        }
     }
 
     companion object {
@@ -1614,28 +1632,74 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (isShiftLocked) {
             // 锁定状态 → 单击解除锁定，退回正常
             isShiftLocked = false
-            isShiftMode = false
-            commitT9AndClear()
-        } else if (isShiftMode) {
+            if (keyboardMode == KeyboardMode.NUMBER) {
+                isShiftMode = false
+                commitT9AndClear()
+            } else {
+                isAsciiMode = false
+                rimeEngine.setAsciiMode(false)
+                rimeEngine.clear()
+            }
+        } else if (isShiftActive()) {
             // 临时shift状态 → 单击退回正常
-            isShiftMode = false
-            commitT9AndClear()
+            if (keyboardMode == KeyboardMode.NUMBER) {
+                isShiftMode = false
+                commitT9AndClear()
+            } else {
+                isAsciiMode = false
+                rimeEngine.setAsciiMode(false)
+                rimeEngine.clear()
+            }
         } else {
-            // 正常状态 → 单击临时shift（输入一个数字后自动退回）
-            isShiftMode = true
+            // 正常状态 → 单击临时shift（输入一个字符后自动退回）
+            if (keyboardMode == KeyboardMode.NUMBER) {
+                isShiftMode = true
+            } else {
+                isAsciiMode = true
+                rimeEngine.setAsciiMode(true)
+                rimeEngine.clear()
+            }
             isShiftLocked = false
         }
         updateShiftIndicator()
+        keyboardView.invalidateAllKeys()
+        updateCandidateBar()
     }
 
     private fun handleShiftLongPress() {
-        // 长按 shift：锁定shift（右上角红色圆点）
-        isShiftMode = true
+        // 长按 shift：锁定shift
         isShiftLocked = true
+        if (keyboardMode == KeyboardMode.NUMBER) {
+            isShiftMode = true
+        } else {
+            isAsciiMode = true
+            rimeEngine.setAsciiMode(true)
+            rimeEngine.clear()
+        }
         longPressTriggered = true
         longPressConsumed = false
         updateShiftIndicator()
+        keyboardView.invalidateAllKeys()
         keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+    }
+
+    /** 当前是否处于 shift 激活状态（T9模式下=isShiftMode，QWERTY模式下=isAsciiMode） */
+    private fun isShiftActive(): Boolean {
+        return if (keyboardMode == KeyboardMode.NUMBER) isShiftMode else isAsciiMode
+    }
+
+    /** 临时shift输入一个字符后自动退回 */
+    private fun autoExitShift() {
+        if (!isShiftLocked && isShiftActive()) {
+            if (keyboardMode == KeyboardMode.NUMBER) {
+                isShiftMode = false
+            } else {
+                isAsciiMode = false
+                rimeEngine.setAsciiMode(false)
+            }
+            updateShiftIndicator()
+            keyboardView.invalidateAllKeys()
+        }
     }
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
@@ -1643,9 +1707,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             // Shift模式：直接输入数字
             val digit = mainToSub[primaryCode]
             if (digit != null) {
-                currentInputConnection?.commitText(toBoldText(digit.toString()), 1)
+                currentInputConnection?.commitText(digit.toString(), 1)
             } else {
-                currentInputConnection?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
+                currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
             }
             if (!isShiftLocked) {
                 isShiftMode = false
@@ -1660,13 +1724,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             } else {
                 when (primaryCode) {
                     49 -> {
-                        // 1键：切换黑体模式
-                        isBoldMode = !isBoldMode
-                        if (isBoldMode) {
-                            updateStatus("🅱️ 黑体模式：开启")
-                        } else {
-                            updateStatus("Cesia 已就绪")
-                        }
+                        // 1键：黑体 — 对选中文字加粗
+                        toggleBold()
                     }
                     65292 -> {
                         currentInputConnection?.commitText("，", 1)
@@ -1833,7 +1892,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 functionalLongPressRunnable = null
                 shortPressHandled = true
                 if (isAsciiMode) {
-                    ic?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
+                    ic?.commitText(primaryCode.toChar().toString(), 1)
+                    // QWERTY临时shift：输入一个字母后自动退回中文
+                    if (!isShiftLocked && keyboardMode != KeyboardMode.NUMBER) {
+                        isAsciiMode = false
+                        rimeEngine.setAsciiMode(false)
+                        updateShiftIndicator()
+                        keyboardView.invalidateAllKeys()
+                    }
                 } else {
                     rimeEngine.processKey(primaryCode.toChar())
                     updateCandidateBar()
@@ -1851,13 +1917,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         if (index < cands.size) {
                             val selected = rimeEngine.selectCandidate(index)
                             if (selected.isNotEmpty()) {
-                                ic?.commitText(toBoldText(selected), 1)
+                                ic?.commitText(selected, 1)  // 中文候选，不加粗
                             } else { commitAndClear() }
                         } else {
-                            ic?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
+                            ic?.commitText(primaryCode.toChar().toString(), 1)
+                            autoExitShift()
                         }
                     } else {
-                        ic?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
+                        ic?.commitText(primaryCode.toChar().toString(), 1)
+                        autoExitShift()
                     }
                     updateCandidateBar()
                 }
@@ -1902,6 +1970,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 退格键 ========================
             -5, Keyboard.KEYCODE_DELETE -> {
+                // 优先检查是否有选中文本
+                val sel = ic?.getSelectedText(0)
+                if (sel != null && sel.isNotEmpty()) {
+                    deleteSelectionOrChar()
+                    return
+                }
                 if (keyboardMode == KeyboardMode.NUMBER) {
                     // 数字键盘退格
                     if (!isShiftMode && t9InputBuffer.isNotEmpty()) {
@@ -1916,15 +1990,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                             updateCandidateBar()
                         }
                     } else {
-                        ic?.deleteSurroundingText(1, 0)
+                        deleteSelectionOrChar()
                     }
                 } else if (isAsciiMode) {
-                    ic?.deleteSurroundingText(1, 0)
+                    deleteSelectionOrChar()
                 } else {
                     val wasComposing = rimeEngine.isComposing
                     val handled = rimeEngine.processKey("BackSpace")
                     if (!handled) {
-                        ic?.deleteSurroundingText(1, 0)
+                        deleteSelectionOrChar()
                     }
                     if (wasComposing && !rimeEngine.isComposing) {
                         resetToIdle()
@@ -1941,11 +2015,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     // 直接上屏当前拼音字母（不转换成汉字）
                     val pinyinText = rimeEngine.composingText
                     if (pinyinText.isNotEmpty()) {
-                        ic?.commitText(toBoldText(pinyinText), 1)
+                        ic?.commitText(pinyinText, 1)
                     } else if (hasCands) {
                         val selected = rimeEngine.selectCandidate(0)
                         if (selected.isNotEmpty()) {
-                            ic?.commitText(toBoldText(selected), 1)
+                            ic?.commitText(selected, 1)
                         }
                     }
                     rimeEngine.clear()
@@ -1956,34 +2030,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
 
-            // ======================== Shift 键 ========================
-            -1 -> {
-                when {
-                    // 大写锁定状态：切回中文
-                    isCapsLock -> {
-                        isCapsLock = false
-                        isAsciiMode = false
-                        rimeEngine.setAsciiMode(false)
-                        qwertyKeyboard.isShifted = false
-                        rimeEngine.clear()
-                    }
-                    // 英文模式：切换大写
-                    isAsciiMode -> {
-                        isCapsLock = true
-                        qwertyKeyboard.isShifted = true
-                    }
-                    // 中文模式：切换英文
-                    else -> {
-                        isAsciiMode = true
-                        rimeEngine.setAsciiMode(true)
-                        rimeEngine.clear()
-                        isCapsLock = false
-                        qwertyKeyboard.isShifted = false
-                    }
-                }
-                keyboardView.invalidateAllKeys()
-                updateCandidateBar()
-            }
+            // ======================== Shift 键（QWERTY -1 / T9 -104 统一行为）=======================
+            -1 -> { shortPressHandled = true; handleShiftKey() }
 
             // ======================== 符号切换（符）=======================
             KEYCODE_SWITCH_SYMBOL -> toggleSymbolKeyboard()
@@ -2043,7 +2091,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                 } else primaryCode
                 val c = adjustedCode.toChar()
-                if (c != '\u0000') { ic?.commitText(toBoldText(c.toString()), 1) }
+                if (c != '\u0000') { ic?.commitText(c.toString(), 1) }
             }
         }
     }
@@ -2100,9 +2148,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 startLongPressDetection(key)
             }
         }
-        // 数字键盘按键长按已通过 popupCharacters → startLongPressDetection 统一处理
+        // 2-9 键长按已通过 popupCharacters → startLongPressDetection 统一处理
         // Shift 键长按检测（锁定shift）
-        if (primaryCode == KEYCODE_SHIFT && keyboardMode == KeyboardMode.NUMBER) {
+        // Shift 键长按检测（T9=-104 / QWERTY=-1 统一）
+        if (primaryCode == KEYCODE_SHIFT || primaryCode == -1) {
             shiftLongPressRunnable = Runnable {
                 if (!shortPressHandled) {
                     handleShiftLongPress()

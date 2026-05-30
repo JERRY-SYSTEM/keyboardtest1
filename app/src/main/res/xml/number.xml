@@ -17,7 +17,7 @@
         <Key android:codes="49" android:keyLabel="" android:popupCharacters="1" />
         <Key android:codes="50" android:keyLabel="" android:popupCharacters="2" />
         <Key android:codes="51" android:keyLabel="" android:popupCharacters="3" />
-        <Key android:codes="65311" android:keyLabel="？" android:popupCharacters="?" android:keyEdgeFlags="right"
+        <Key android:codes="-5" android:keyLabel="⌫" android:isRepeatable="true" android:keyEdgeFlags="right"
             android:keyWidth="16%p" />
     </Row>
 
@@ -37,7 +37,7 @@
         <Key android:codes="55" android:keyLabel="" android:popupCharacters="7" />
         <Key android:codes="56" android:keyLabel="" android:popupCharacters="8" />
         <Key android:codes="57" android:keyLabel="" android:popupCharacters="9" />
-        <Key android:codes="-5" android:keyLabel="⌫" android:isRepeatable="true" android:keyEdgeFlags="right"
+        <Key android:codes="65311" android:keyLabel="？" android:popupCharacters="?" android:keyEdgeFlags="right"
             android:keyWidth="16%p" />
     </Row>
 
