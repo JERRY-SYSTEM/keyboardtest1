@@ -128,19 +128,30 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 canvas.drawText(symbol, x, y, popupPaint)
             }
 
-            // ===== 3. 1键主字符（绿色"全选"） =====
+            // ===== 3. 1键主字符（灰色"黑体"） =====
             if (code == 49 && isT9Mode) {
-                val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                val grayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     textAlign = Paint.Align.CENTER
-                    textSize = key.height * 0.35f
-                    color = 0xFF44AA44.toInt()
+                    textSize = key.height * 0.3f
+                    color = 0xFF888888.toInt()
                 }
                 val cx = key.x + key.width / 2f
-                val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
-                canvas.drawText("全选", cx, cy, greenPaint)
+                val cy = key.y + key.height / 2f + grayPaint.textSize * 0.35f
+                canvas.drawText("黑体", cx, cy, grayPaint)
             }
 
-            // ===== 4. 剪贴板按键主字符 =====
+            // ===== 4. Shift 锁定红色圆点 =====
+            if (code == -104 && isT9Mode && isShiftLocked) {
+                val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = 0xFFCC0000.toInt()
+                    style = Paint.Style.FILL
+                }
+                val dotX = key.x + key.width - 8f
+                val dotY = key.y + 8f
+                canvas.drawCircle(dotX, dotY, 4f, dotPaint)
+            }
+
+            // ===== 5. 剪贴板按键主字符 =====
             if (code == -108 && isT9Mode) {
                 val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     textAlign = Paint.Align.CENTER

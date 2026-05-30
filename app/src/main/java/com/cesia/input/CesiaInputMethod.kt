@@ -103,6 +103,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isShiftMode = false  // 数字键盘 Shift 状态（临时切换）
     private var shortPressHandled = false  // 当前按键是否已处理短按（防止长按重复触发）
     private var isShiftLocked = false  // Shift 锁定状态
+    private var isBoldMode = false  // 黑体模式（聊天可见加粗）
     private var t9InputBuffer = StringBuilder()  // T9 数字输入缓冲
     private val t9Map = mapOf(
         2 to "abc", 3 to "def", 4 to "ghi", 5 to "jkl",
@@ -134,6 +135,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 剪贴板键长按
     private var clipboardPasteRunnable: Runnable? = null
     private var clipboardCutRunnable: Runnable? = null
+
+    // Shift 键长按检测
+    private var shiftLongPressRunnable: Runnable? = null
+
+    // 回车键长按检测
+    private var enterLongPressRunnable: Runnable? = null
 
     // 魔法模式
     private var magicMode = false
@@ -201,31 +208,27 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun sendCtrlKey(keyCode: Int) = sendControlKey(keyCode, KeyEvent.META_CTRL_ON)
 
-    /** 切换选中文字的粗体样式 */
+    /** 切换黑体模式（聊天可见加粗，使用 Mathematical Bold Unicode） */
     private fun toggleBold() {
-        val ic = currentInputConnection ?: return
-        try {
-            // 如果有选中文字，给选中文字加粗
-            val selectedText = ic.getSelectedText(0)
-            if (selectedText != null && selectedText.isNotEmpty()) {
-                // 有选中文字 → 用 Spannable 加粗
-                val newSpan = android.text.SpannableString(selectedText)
-                newSpan.setSpan(
-                    android.text.style.StyleSpan(Typeface.BOLD),
-                    0, newSpan.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-                ic.commitText(newSpan, 1)
-                updateStatus("✅ 已加粗选中文字")
-            } else {
-                // 没有选中文字 → 进入粗体模式（后续输入的文字加粗）
-                // 发送一个零宽空格标记，提示用户进入粗体模式
-                updateStatus("⚠️ 请先选中文字，长按 b 可将其加粗")
-            }
-        } catch (e: Exception) {
-            Log.e("Cesia", "toggleBold 异常", e)
-            updateStatus("❌ 加粗失败: ${e.message}")
+        isBoldMode = !isBoldMode
+        if (isBoldMode) {
+            updateStatus("🅱️ 黑体模式：开启")
+        } else {
+            updateStatus("Cesia 已就绪")
         }
+    }
+
+    /** 将文本转换为 Mathematical Bold Unicode（聊天可见加粗） */
+    private fun toBoldText(text: String): String {
+        if (!isBoldMode) return text
+        return text.map { ch ->
+            when (ch) {
+                in 'a'..'z' -> (0x1D41A + (ch - 'a')).toChar()
+                in 'A'..'Z' -> (0x1D400 + (ch - 'A')).toChar()
+                in '0'..'9' -> (0x1D7CE + (ch - '0')).toChar()
+                else -> ch
+            }
+        }.joinToString("")
     }
 
     companion object {
@@ -352,12 +355,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             120 to "剪切",  // x
             99 to "复制",   // c
             118 to "粘贴",  // v
-            98 to "粗体",   // b=粗体
+            98 to "黑体",   // b=黑体（聊天可见加粗）
             122 to "撤销",  // z
             110 to "Ins",   // n
             109 to "Del",   // m
             -108 to "粘贴", // 剪贴板键：副字符
-            -109 to "剪切"  // 复制键：副字符
+            -109 to "剪切",  // 复制键：副字符
+            10 to "撤销"    // 回车键：副字符
         ))
         // T9Labels 已清空（数字键不再显示灰色副字符）
         keyboardView.setT9Labels(mapOf())
@@ -1607,13 +1611,31 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleShiftKey() {
-        // 单击 shift：toggle 锁定/解除
-        isShiftMode = !isShiftMode
-        isShiftLocked = isShiftMode  // 锁定时设为 true，输入数字不会自动退回
-        if (!isShiftMode) {
+        if (isShiftLocked) {
+            // 锁定状态 → 单击解除锁定，退回正常
+            isShiftLocked = false
+            isShiftMode = false
             commitT9AndClear()
+        } else if (isShiftMode) {
+            // 临时shift状态 → 单击退回正常
+            isShiftMode = false
+            commitT9AndClear()
+        } else {
+            // 正常状态 → 单击临时shift（输入一个数字后自动退回）
+            isShiftMode = true
+            isShiftLocked = false
         }
         updateShiftIndicator()
+    }
+
+    private fun handleShiftLongPress() {
+        // 长按 shift：锁定shift（右上角红色圆点）
+        isShiftMode = true
+        isShiftLocked = true
+        longPressTriggered = true
+        longPressConsumed = false
+        updateShiftIndicator()
+        keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
     }
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
@@ -1621,9 +1643,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             // Shift模式：直接输入数字
             val digit = mainToSub[primaryCode]
             if (digit != null) {
-                currentInputConnection?.commitText(digit.toString(), 1)
+                currentInputConnection?.commitText(toBoldText(digit.toString()), 1)
             } else {
-                currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                currentInputConnection?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
             }
             if (!isShiftLocked) {
                 isShiftMode = false
@@ -1638,14 +1660,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             } else {
                 when (primaryCode) {
                     49 -> {
-                        // 1键：短按粘贴剪贴板
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                        val clip = clipboard?.primaryClip
-                        if (clip != null && clip.itemCount > 0) {
-                            val text = clip.getItemAt(0).text
-                            if (text != null) {
-                                currentInputConnection?.commitText(text, 1)
-                            }
+                        // 1键：切换黑体模式
+                        isBoldMode = !isBoldMode
+                        if (isBoldMode) {
+                            updateStatus("🅱️ 黑体模式：开启")
+                        } else {
+                            updateStatus("Cesia 已就绪")
                         }
                     }
                     65292 -> {
@@ -1810,7 +1830,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 functionalLongPressRunnable = null
                 shortPressHandled = true
                 if (isAsciiMode) {
-                    ic?.commitText(primaryCode.toChar().toString(), 1)
+                    ic?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
                 } else {
                     rimeEngine.processKey(primaryCode.toChar())
                     updateCandidateBar()
@@ -1828,13 +1848,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         if (index < cands.size) {
                             val selected = rimeEngine.selectCandidate(index)
                             if (selected.isNotEmpty()) {
-                                ic?.commitText(selected, 1)
+                                ic?.commitText(toBoldText(selected), 1)
                             } else { commitAndClear() }
                         } else {
-                            ic?.commitText(primaryCode.toChar().toString(), 1)
+                            ic?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
                         }
                     } else {
-                        ic?.commitText(primaryCode.toChar().toString(), 1)
+                        ic?.commitText(toBoldText(primaryCode.toChar().toString()), 1)
                     }
                     updateCandidateBar()
                 }
@@ -1911,23 +1931,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
 
-            // ======================== 回车键 ========================
+            // ======================== 回车键（只换行，不发送）=======================
             10, Keyboard.KEYCODE_DONE -> {
                 if (!isAsciiMode && composing) {
                     // 直接上屏当前拼音字母（不转换成汉字）
                     val pinyinText = rimeEngine.composingText
                     if (pinyinText.isNotEmpty()) {
-                        ic?.commitText(pinyinText, 1)
+                        ic?.commitText(toBoldText(pinyinText), 1)
                     } else if (hasCands) {
                         val selected = rimeEngine.selectCandidate(0)
                         if (selected.isNotEmpty()) {
-                            ic?.commitText(selected, 1)
+                            ic?.commitText(toBoldText(selected), 1)
                         }
                     }
                     rimeEngine.clear()
                     updateCandidateBar()
                 } else {
-                    sendDownUpEnter()
+                    // 只发送换行，不触发发送动作
+                    ic?.commitText("\n", 1)
                 }
             }
 
@@ -2018,7 +2039,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                 } else primaryCode
                 val c = adjustedCode.toChar()
-                if (c != '\u0000') { ic?.commitText(c.toString(), 1) }
+                if (c != '\u0000') { ic?.commitText(toBoldText(c.toString()), 1) }
             }
         }
     }
@@ -2076,11 +2097,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
         // 数字键盘按键长按已通过 popupCharacters → startLongPressDetection 统一处理
-        // Shift 键在 NUMBER 模式下通过 popupCharacters 机制处理（如有需要）
+        // Shift 键长按检测（锁定shift）
+        if (primaryCode == KEYCODE_SHIFT && keyboardMode == KeyboardMode.NUMBER) {
+            shiftLongPressRunnable = Runnable {
+                if (!shortPressHandled) {
+                    handleShiftLongPress()
+                }
+            }.also {
+                Handler(Looper.getMainLooper()).postDelayed(it, 400)
+            }
+        }
         // 剪贴板键长按：-108=粘贴，-109=剪切
         if (primaryCode == -108) {
             clipboardPasteRunnable = Runnable {
                 if (!shortPressHandled) {
+                    longPressTriggered = true
+                    longPressConsumed = false
                     currentInputConnection?.performContextMenuAction(android.R.id.paste)
                 }
             }
@@ -2089,6 +2121,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (primaryCode == -109) {
             clipboardCutRunnable = Runnable {
                 if (!shortPressHandled) {
+                    longPressTriggered = true
+                    longPressConsumed = false
                     currentInputConnection?.performContextMenuAction(android.R.id.cut)
                 }
             }
@@ -2107,6 +2141,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             backspaceHandler.postDelayed(backspaceRunnable!!, 400)
         }
+        // 回车键长按：撤销 Ctrl+Z
+        if (primaryCode == 10 || primaryCode == Keyboard.KEYCODE_DONE) {
+            enterLongPressRunnable = Runnable {
+                if (!shortPressHandled) {
+                    longPressTriggered = true
+                    longPressConsumed = false
+                    sendCtrlKey(KeyEvent.KEYCODE_Z)
+                }
+            }.also {
+                Handler(Looper.getMainLooper()).postDelayed(it, 400)
+            }
+        }
         if (primaryCode == -200) {
             startSendKeyLongPress()
         }
@@ -2120,6 +2166,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         clipboardPasteRunnable = null
         clipboardCutRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         clipboardCutRunnable = null
+        shiftLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        shiftLongPressRunnable = null
+        enterLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        enterLongPressRunnable = null
         cancelSendKeyLongPress()
         backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
         backspaceRunnable = null
