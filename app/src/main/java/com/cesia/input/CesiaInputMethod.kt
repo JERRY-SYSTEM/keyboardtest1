@@ -164,6 +164,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private val sentMessages = mutableListOf<String>()
     private val maxSentMessages = 10
 
+    // 剪贴板管理器：收藏/锁定条目 (text -> isLocked)
+    private val clipboardFavorites = mutableMapOf<String, Boolean>()
+    private val clipboardHistory = mutableListOf<String>()
+    private val maxClipboardHistory = 50
+
     // 初始化标志
     private var isViewInitialized = false
 
@@ -2065,6 +2070,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         sendKeyRunnable = Runnable {
             sendKeyLongPressTriggered = true
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            showClipboardManagerPopup()
         }.also {
             sendKeyHandler.postDelayed(it, 500)
         }
@@ -2073,6 +2079,272 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun cancelSendKeyLongPress() {
         sendKeyRunnable?.let { sendKeyHandler.removeCallbacks(it) }
         sendKeyRunnable = null
+    }
+
+    /**
+     * 剪贴板管理器弹窗 — 两列风格，支持分词/收藏/锁定/删除/搜索/关闭/长按编辑
+     */
+    private fun showClipboardManagerPopup() {
+        try {
+            val inflater2 = android.view.LayoutInflater.from(this)
+            val popupView = inflater2.inflate(R.layout.popup_clipboard_manager, null)
+            val gvClipboard = popupView.findViewById<GridView>(R.id.gv_clipboard_items)
+            val etSearch = popupView.findViewById<android.widget.EditText>(R.id.et_clipboard_search)
+            val btnClose = popupView.findViewById<TextView>(R.id.btn_clipboard_close)
+            val tvEmpty = popupView.findViewById<TextView>(R.id.tv_clipboard_empty)
+
+            // 加载剪贴板历史
+            val clipboardMgr = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            val items = mutableListOf<ClipboardItem>()
+            var searchFilter = ""
+
+            fun loadClipboardHistory() {
+                clipboardHistory.clear()
+                clipboardFavorites.clear()
+                try {
+                    if (clipboardMgr?.hasPrimaryClip() == true) {
+                        val clip = clipboardMgr.primaryClip ?: return
+                        for (i in 0 until clip.itemCount) {
+                            val text = clip.getItemAt(i).text?.toString()?.trim() ?: ""
+                            if (text.isNotEmpty() && text.length <= 500) {
+                                items.add(ClipboardItem(text = text, isPinned = false))
+                            }
+                        }
+                        // 从 SharedPreferences 读取持久化的收藏
+                        val prefs = getSharedPreferences("cesia_clipboard", MODE_PRIVATE)
+                        val favStr = prefs.getString("favorites", "") ?: ""
+                        if (favStr.isNotEmpty()) {
+                            for (fav in favStr.split("\n").filter { it.isNotEmpty() }) {
+                                items.removeAll { it.text == fav }
+                                items.add(0, ClipboardItem(text = fav, isPinned = true))
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+                if (items.isEmpty()) {
+                    items.add(ClipboardItem(text = "(剪贴板为空)", isPinned = true, isEmpty = true))
+                }
+            }
+            loadClipboardHistory()
+
+            val filteredItems = mutableListOf<ClipboardItem>()
+
+            fun applyFilter() {
+                filteredItems.clear()
+                if (searchFilter.isEmpty()) {
+                    filteredItems.addAll(items)
+                } else {
+                    filteredItems.addAll(items.filter { it.text.contains(searchFilter, ignoreCase = true) })
+                }
+                tvEmpty.visibility = if (filteredItems.isEmpty()) View.VISIBLE else View.GONE
+                (gvClipboard.adapter as? ClipboardAdapter)?.notifyDataSetChanged()
+            }
+            applyFilter()
+
+            etSearch.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    searchFilter = s?.toString() ?: ""
+                    applyFilter()
+                }
+            })
+
+            gvClipboard.adapter = ClipboardAdapter(inflater2, filteredItems, this)
+
+            // 单击：插入文本（非空条目）
+            gvClipboard.setOnItemClickListener { _, _, position, _ ->
+                val item = filteredItems.getOrNull(position) ?: return@setOnItemClickListener
+                if (item.isEmpty) return@setOnItemClickListener
+                currentInputConnection?.commitText(item.text, 1)
+                popup.dismiss()
+            }
+
+            // 长按：操作菜单（收藏/锁定/删除/编辑/分词）
+            gvClipboard.setOnItemLongClickListener { _, _, position, _ ->
+                val item = filteredItems.getOrNull(position) ?: return@setOnItemLongClickListener true
+                if (item.isEmpty) return@setOnItemLongClickListener true
+                showClipboardItemActions(item, items) { loadClipboardHistory(); applyFilter() }
+                true
+            }
+
+            val keyboardWidth = keyboardView.width
+            val popupWidth = if (keyboardWidth > 0) keyboardWidth else resources.displayMetrics.widthPixels
+            val totalHeight = (resources.displayMetrics.heightPixels * 0.5f).toInt()
+
+            val popup = PopupWindow(popupView, popupWidth, totalHeight, true)
+            popup.isOutsideTouchable = true
+            popup.inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
+            popup.elevation = 8f
+
+            btnClose.setOnClickListener { popup.dismiss() }
+
+            popup.showAtLocation(keyboardView, android.view.Gravity.TOP or android.view.Gravity.START, 0, -totalHeight)
+
+            // 保存到历史
+            if (clipboardMgr?.hasPrimaryClip() == true) {
+                try {
+                    val clip = clipboardMgr.primaryClip ?: return@showClipboardManagerPopup
+                    for (i in 0 until clip.itemCount) {
+                        val text = clip.getItemAt(i).text?.toString()?.trim() ?: ""
+                        if (text.isNotEmpty()) {
+                            clipboardHistory.remove(text)
+                            clipboardHistory.add(0, text)
+                        }
+                    }
+                    while (clipboardHistory.size > maxClipboardHistory) {
+                        clipboardHistory.removeAt(clipboardHistory.size - 1)
+                    }
+                } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            updateStatus("❌ 剪贴板管理器异常: ${e.message}")
+        }
+    }
+
+    private fun showClipboardItemActions(
+        item: ClipboardItem,
+        allItems: MutableList<ClipboardItem>,
+        onUpdate: () -> Unit
+    ) {
+        val actions = mutableListOf<String>()
+        if (!item.isEmpty) {
+            actions.add("📋 插入文本")
+            actions.add(if (item.isPinned) "📌 取消置顶" else "📌 置顶收藏")
+            actions.add(if (clipboardFavorites[item.text] == true) "🔓 解锁删除" else "🔒 锁定防删")
+            actions.add("✂️ 分词处理")
+            actions.add("✏️ 编辑文本")
+            actions.add("🔍 搜索文本")
+            actions.add("🗑️ 删除条目")
+            actions.add("📤 分享文本")
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(item.text.take(30) + if (item.text.length > 30) "…" else "")
+            .setItems(actions.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> currentInputConnection?.commitText(item.text, 1) // 插入
+                    1 -> { // 置顶
+                        allItems.remove(item)
+                        val toggled = item.copy(isPinned = !item.isPinned)
+                        if (toggled.isPinned) allItems.add(0, toggled) else allItems.add(toggled)
+                        updateClipboardFavorites(); onUpdate()
+                    }
+                    2 -> { // 锁定
+                        val key = item.text
+                        if (clipboardFavorites[key] == true) clipboardFavorites.remove(key)
+                        else clipboardFavorites[key] = true
+                        updateClipboardFavorites(); onUpdate()
+                    }
+                    3 -> { // 分词 — 用空格分词后逐段插入
+                        val words = item.text.split(Regex("[\s,，。；;:：！!？?、]+"))
+                            .filter { it.isNotEmpty() }
+                        if (words.size > 1) {
+                            currentInputConnection?.commitText(words.joinToString(" "), 1)
+                        } else {
+                            updateStatus("✂️ 已单段插入")
+                            currentInputConnection?.commitText(item.text, 1)
+                        }
+                    }
+                    4 -> { // 编辑
+                        showClipboardEditDialog(item.text) { newText ->
+                            allItems.remove(item)
+                            allItems.add(0, ClipboardItem(text = newText, isPinned = item.isPinned))
+                            updateClipboardFavorites(); onUpdate()
+                        }
+                    }
+                    5 -> { // 搜索
+                        try {
+                            Intent(Intent.ACTION_WEB_SEARCH).apply {
+                                putExtra("query", item.text)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(this)
+                            }
+                        } catch (_: Exception) {
+                            updateStatus("❌ 无法启动搜索")
+                        }
+                    }
+                    6 -> { // 删除
+                        if (clipboardFavorites[item.text] == false) {
+                            allItems.remove(item)
+                            updateClipboardFavorites(); onUpdate()
+                        } else {
+                            updateStatus("⚠️ 已锁定，无法删除")
+                        }
+                    }
+                    7 -> { // 分享
+                        try {
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, item.text)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(Intent.createChooser(this, "分享"))
+                            }
+                        } catch (_: Exception) {
+                            updateStatus("❌ 无法启动分享")
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .create()
+        try { dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT) } catch (_: Exception) {}
+        dialog.show()
+    }
+
+    private fun showClipboardEditDialog(original: String, onSave: (String) -> Unit) {
+        val editText = android.widget.EditText(this).apply {
+            setText(original)
+            setSelection(original.length)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("✏️ 编辑文本")
+            .setView(editText)
+            .setPositiveButton("保存") { _, _ ->
+                val newText = editText.text.toString().trim()
+                if (newText.isNotEmpty()) onSave(newText)
+                else updateStatus("⚠️ 文本为空，未保存")
+            }
+            .setNegativeButton("取消", null)
+            .create()
+        try { dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT) } catch (_: Exception) {}
+        dialog.show()
+    }
+
+    private fun updateClipboardFavorites() {
+        val prefs = getSharedPreferences("cesia_clipboard", MODE_PRIVATE)
+        // 持久化：收藏+锁定条目
+        val favItems = clipboardHistory.filter { clipboardFavorites[it] == true }
+        prefs.edit().putString("favorites", favItems.joinToString("\n")).apply()
+    }
+
+    data class ClipboardItem(val text: String, val isPinned: Boolean = false, val isEmpty: Boolean = false)
+
+    private class ClipboardAdapter(
+        private val inflater: android.view.LayoutInflater,
+        private val items: List<ClipboardItem>,
+        private val context: CesiaInputMethod
+    ) : android.widget.BaseAdapter() {
+        override fun getCount() = items.size
+        override fun getItem(p: Int) = items[p]
+        override fun getItemId(p: Int) = items[p].text.hashCode().toLong()
+        override fun getView(p: Int, cv: android.view.View?, parent: android.view.ViewGroup?): android.view.View {
+            val v = cv ?: inflater.inflate(R.layout.item_clipboard_grid, parent, false)
+            val item = items[p]
+            val tv = v.findViewById<TextView>(R.id.tv_clipboard_text)
+            val tvPin = v.findViewById<TextView>(R.id.tv_clipboard_pin)
+            if (item.isEmpty) {
+                tv.text = item.text
+                tv.setTextColor(0xFF999999.toInt())
+                tv.textSize = 13f
+                tvPin.visibility = View.GONE
+            } else {
+                tv.text = if (item.text.length > 80) item.text.take(80) + "…" else item.text
+                tv.setTextColor(0xFF333333.toInt())
+                tv.textSize = 13f
+                tvPin.visibility = if (item.isPinned) View.VISIBLE else View.GONE
+            }
+            return v
+        }
     }
 
     // ======================== KeyboardView 回调 ========================
