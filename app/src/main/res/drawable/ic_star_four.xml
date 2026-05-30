@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 四角星 shape -->
+    <path
+        android:fillColor="#888888"
+        android:pathData="M12,2L13.8,9.2L21,12L13.8,14.8L12,22L10.2,14.8L3,12L10.2,9.2Z"/>
+</vector>

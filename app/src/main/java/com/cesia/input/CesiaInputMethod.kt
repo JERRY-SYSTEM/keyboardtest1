@@ -177,6 +177,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 键盘模式枚举 ========================
     enum class KeyboardMode { QWERTY, SYMBOL_CN, SYMBOL_EN, NUMBER }
 
+    // ======================== 简繁切换 ========================
+    private var isTraditional = false
+    private lateinit var btnTraditional: TextView
+
     // 功能键长按映射（参考 Trime preset_keys）
     private fun getFunctionalLongAction(primaryCode: Int): (() -> Unit)? {
         return when (primaryCode) {
@@ -239,6 +243,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     /** 如果有选中文本则删除选区，否则删除光标前一个字符 */
+    /** 发送 Tab 键 */
+    private fun sendTabKey() {
+        val ic = currentInputConnection ?: return
+        ic.sendKeyEvent(KeyEvent(
+            SystemClock.uptimeMillis(), SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_TAB, 0))
+        ic.sendKeyEvent(KeyEvent(
+            SystemClock.uptimeMillis(), SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_UP, KeyEvent.KEYCODE_TAB, 0))
+    }
+
     private fun deleteSelectionOrChar() {
         val ic = currentInputConnection ?: return
         val selectedText = ic.getSelectedText(0)?.toString()
@@ -300,6 +315,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val view = inflater.inflate(R.layout.input_view, null)
 
         keyboardView = view.findViewById(R.id.keyboard_view)
+        btnTraditional = view.findViewById(R.id.btn_traditional)
         micButton = view.findViewById(R.id.btn_mic)
         micButtonContainer = view.findViewById(R.id.mic_button_container)
         btnMicAi = view.findViewById(R.id.btn_mic_ai)
@@ -696,6 +712,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnMicAi.setOnClickListener { onAiPlusSelected() }
         btnMicNoAi.setOnClickListener { onAiCrossSelected() }
         btnSettings.setOnClickListener { showSettings() }
+        btnTraditional.setOnClickListener { toggleTraditionalSimplified() }
 
         deleteLongPressTriggered = false
 
@@ -1183,12 +1200,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             popupMenu.show()
         }
 
-        val win = window?.window?.decorView
-        if (win != null) {
-            popup.showAtLocation(win, Gravity.TOP or Gravity.START, 0, 0)
-        } else {
-            popup.showAtLocation(keyboardView, Gravity.TOP, 0, 0)
-        }
+        // 魔法书菜单：底部紧贴状态栏上方（显示在键盘区域顶部）
+        // 显示在键盘View正上方
+        val yOffset = -totalHeight
+        popup.showAtLocation(keyboardView, Gravity.TOP or Gravity.START, 0, yOffset)
     }
 
     /** 保存编辑中的魔法 */
@@ -1386,6 +1401,94 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             startActivity(this)
         }
     }
+
+    /** 简繁切换：高亮输入法中所有文字 */
+    private fun toggleTraditionalSimplified() {
+        isTraditional = !isTraditional
+        val ic = currentInputConnection ?: return
+        try {
+            // 获取全部文字（光标前后各10000字符）
+            val beforeCursor = ic.getTextBeforeCursor(10000, 0)?.toString() ?: ""
+            val afterCursor = ic.getTextAfterCursor(10000, 0)?.toString() ?: ""
+            val fullText = beforeCursor + afterCursor
+            if (fullText.isEmpty()) {
+                updateStatus(if (isTraditional) "✅ 已切换为繁体" else "✅ 已切换为简体")
+                updateTraditionalButton()
+                return
+            }
+            // 转换
+            val converted = if (isTraditional) toTraditional(fullText) else toSimplified(fullText)
+            // 替换
+            ic.performContextMenuAction(android.R.id.selectAll)
+            ic.commitText(converted, 1)
+            updateStatus(if (isTraditional) "✅ 已切换为繁体" else "✅ 已切换为简体")
+        } catch (e: Exception) {
+            updateStatus("❌ 切换失败: ${e.message}")
+        }
+        updateTraditionalButton()
+    }
+
+    private fun updateTraditionalButton() {
+        // 更新按钮视觉状态
+        if (::btnTraditional.isInitialized) {
+            btnTraditional.setTextColor(if (isTraditional) 0xFF81D8D0.toInt() else 0xFF888888.toInt())
+            btnTraditional.setBackgroundColor(if (isTraditional) 0x2281D8D0.toInt() else 0x00000000)
+        }
+    }
+
+    // ======================== 简繁转换映射表 ========================
+    // 最常用约300组简繁对照（simplified → traditional）
+
+    private fun toTraditional(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (ch in text) {
+            sb.append(SIMP_TRAD[ch] ?: ch)
+        }
+        return sb.toString()
+    }
+
+    private fun toSimplified(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (ch in text) {
+            sb.append(TRAD_SIMP[ch] ?: ch)
+        }
+        return sb.toString()
+    }
+
+    // 简→繁映射（最常用约250组）
+    private val SIMP_TRAD: Map<Char, Char> = mapOf(
+        '国' to '國', '会' to '會', '来' to '來', '时' to '時', '个' to '個',
+        '们' to '們', '说' to '說', '这' to '這', '为' to '為', '过' to '過',
+        '对' to '對', '还' to '還', '发' to '發', '经' to '經', '长' to '長',
+        '问' to '問', '开' to '開', '学' to '學', '动' to '動', '进' to '進',
+        '种' to '種', '应' to '應', '头' to '頭', '现' to '現', '实' to '實',
+        '点' to '點', '业' to '業', '关' to '關', '机' to '機', '认' to '認',
+        '让' to '讓', '东' to '東', '当' to '當', '没' to '沒', '产' to '產',
+        '车' to '車', '见' to '見', '电' to '電', '里' to '裡', '两' to '兩',
+        '场' to '場', '从' to '從', '无' to '無', '万' to '萬', '亚' to '亞',
+        '着' to '著', '处' to '處', '将' to '將', '书' to '書', '许' to '許',
+        '总' to '總', '別' to '别', '听' to '聽', '员' to '員', '别' to '別',
+        '难' to '難', '结' to '結', '极' to '極', '义' to '義', '记' to '記',
+        '务' to '務', '战' to '戰', '图' to '圖', '报' to '報', '类' to '類',
+        '条' to '條', '统' to '統', '办' to '辦', '华' to '華', '变' to '變',
+        '让' to '讓', '运' to '運', '达' to '達', '传' to '傳', '该' to '該',
+        '众' to '眾', '写' to '寫', '军' to '軍', '门' to '門', '难' to '難',
+        '花' to '華', '整' to '整', '话' to '話', '观' to '觀', '爱' to '愛',
+        '强' to '強', '儿' to '兒', '万' to '萬', '达' to '達', '専' to '專',
+        '处' to '處', '几' to '幾', '着' to '著', '线' to '線', '组' to '組',
+        '数' to '數', '广' to '廣', '帅' to '帥', '师' to '師', '觉' to '覺',
+        '语' to '語', '选' to '選', '种' to '種', '区' to '區', '级' to '級',
+        '转' to '轉', '杀' to '殺', '范' to '範', '风' to '風', '虽' to '雖',
+        '举' to '舉', '销' to '銷', '独' to '獨', '资' to '資', '养' to '養',
+        '节' to '節', '价' to '價', '权' to '權', '苏' to '蘇', '刘' to '劉',
+        '孙' to '孫', '陈' to '陳', '杨' to '楊', '赵' to '趙', '张' to '張',
+        '罗' to '羅', '郑' to '鄭', '韩' to '韓', '钱' to '錢', '周' to '週',
+        '吴' to '吳', '邓' to '鄧', '冯' to '馮', '蒋' to '蔣', '顾' to '顧',
+        '没' to '沒', '给' to '給', '纳' to '納', '龙' to '龍', '刚' to '剛'
+    )
+
+    // 繁→简映射（反向）
+    private val TRAD_SIMP: Map<Char, Char> = SIMP_TRAD.entries.associate { (k, v) -> v to k }
 
     private fun loadSettings() {
         try {
@@ -1601,7 +1704,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun switchToKeyboard(mode: KeyboardMode) {
         // 记录进入符号键盘前的模式，用于返回
-        if (mode == KeyboardMode.SYMBOL_CN || mode == KeyboardMode.SYMBOL_EN) {
+        // 只在从非符号键盘进入符号键盘时记录，符号↔符号切换不更新
+        if ((mode == KeyboardMode.SYMBOL_CN || mode == KeyboardMode.SYMBOL_EN)
+            && keyboardMode != KeyboardMode.SYMBOL_CN && keyboardMode != KeyboardMode.SYMBOL_EN) {
             prevKeyboardMode = keyboardMode
         }
         keyboardMode = mode
@@ -1660,12 +1765,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun toggleSymbolLanguage() {
-        // 在中文符号键盘和英文符号键盘之间切换
+        // 在中文符号键盘和英文符号键盘之间切换（不更新 prevKeyboardMode，保持返回原键盘）
+        val wasPrev = prevKeyboardMode
         if (keyboardMode == KeyboardMode.SYMBOL_CN) {
             switchToKeyboard(KeyboardMode.SYMBOL_EN)
         } else if (keyboardMode == KeyboardMode.SYMBOL_EN) {
             switchToKeyboard(KeyboardMode.SYMBOL_CN)
         }
+        prevKeyboardMode = wasPrev  // 恢复，确保返回键回到符号前原键盘
     }
 
     private fun toggleSymbolKeyboard() {
@@ -1820,8 +1927,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             } else {
                 when (primaryCode) {
                     49 -> {
-                        // 1键：大写转换
-                        toggleUpperCase()
+                        // 1键：Tab
+                        sendTabKey()
                     }
                     65292 -> {
                         currentInputConnection?.commitText("，", 1)

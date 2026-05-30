@@ -86,7 +86,7 @@ class CesiaKeyboardView @JvmOverloads constructor(
     private val popupPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.DEFAULT
         textAlign = Paint.Align.RIGHT
-        color = 0xFFCC4444.toInt()
+        color = 0xFF81D8D0.toInt()
     }
 
     // T9 主字符画笔（大号字母，居中）
@@ -174,7 +174,7 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 val cx = key.x + key.width / 2f
                 val cy = key.y + key.height / 2f + grayPaint.textSize * 0.35f
                 val label = when (code) {
-                    49 -> "大写"
+                    49 -> "Tab"
                     -108 -> "全选"
                     -109 -> "复制"
                     else -> ""
@@ -186,7 +186,7 @@ class CesiaKeyboardView @JvmOverloads constructor(
             // T9 shift=-104，QWERTY shift=-1，共用 isShiftLocked 状态
             if ((code == -104 || code == -1) && isShiftLocked) {
                 val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = 0xFFCC0000.toInt()
+                    color = 0xFF81D8D0.toInt()
                     style = Paint.Style.FILL
                 }
                 val dotX = key.x + key.width - 30f
