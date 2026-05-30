@@ -1596,14 +1596,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 数字键盘长按逻辑 ========================
 
     private var numberLongPressRunnable: Runnable? = null
+    private var numberShortPressHandled = false  // 标志：短按是否已执行，阻止长按误触发
 
     private fun startNumberKeyboardLongPress(primaryCode: Int, isOneKey: Boolean) {
+        numberShortPressHandled = false
         numberLongPressRunnable = Runnable {
+            if (numberShortPressHandled) return@Runnable  // 短按已执行，跳过长按
             if (isOneKey) {
-                // 1 键长按：弹出符号候选
                 showSymbolPopup()
             } else {
-                // T9 键长按：直接上屏数字，不清空候选栏
+                // T9 键长按：直接上屏数字
                 val digit = mainToSub[primaryCode]
                 val text = if (digit != null) digit.toString() else primaryCode.toChar().toString()
                 currentInputConnection?.commitText(text, 1)
@@ -1616,6 +1618,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun cancelNumberLongPress() {
         numberLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         numberLongPressRunnable = null
+        numberShortPressHandled = false
     }
 
     /** 长按 1 键弹出符号候选窗 */
@@ -1704,6 +1707,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
         }
+        numberShortPressHandled = true  // 短按已执行，阻止长按Runnable误触发
     }
 
     private fun processT9Input() {
