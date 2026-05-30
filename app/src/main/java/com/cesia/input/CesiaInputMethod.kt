@@ -267,12 +267,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun createInputViewSafe(): View {
-        Log.d("Cesia", "createInputViewSafe: 开始加载布局")
         val inflater = LayoutInflater.from(this)
         val view = inflater.inflate(R.layout.input_view, null)
 
         keyboardView = view.findViewById(R.id.keyboard_view)
-        Log.d("Cesia", "createInputViewSafe: keyboardView 获取成功")
         micButton = view.findViewById(R.id.btn_mic)
         micButtonContainer = view.findViewById(R.id.mic_button_container)
         btnMicAi = view.findViewById(R.id.btn_mic_ai)
@@ -309,19 +307,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         gvCandidates = view.findViewById(R.id.gv_candidates)
 
         // 初始化键盘
-        Log.d("Cesia", "createInputViewSafe: 开始初始化键盘")
         qwertyKeyboard = Keyboard(this, R.xml.qwerty)
-        Log.d("Cesia", "createInputViewSafe: qwerty 键盘加载成功")
         try {
             symbolKeyboardEn = Keyboard(this, R.xml.symbols)
-            Log.d("Cesia", "createInputViewSafe: symbols 键盘加载成功")
         } catch (e: Exception) {
             Log.e("Cesia", "加载英文符号键盘失败", e)
             symbolKeyboardEn = qwertyKeyboard
         }
         try {
             symbolKeyboardCn = Keyboard(this, R.xml.symbols_cn)
-            Log.d("Cesia", "createInputViewSafe: symbols_cn 键盘加载成功")
         } catch (e: Exception) {
             Log.e("Cesia", "加载中文符号键盘失败", e)
             symbolKeyboardCn = symbolKeyboardEn
@@ -359,10 +353,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         ))
         // T9Labels 已清空（数字键不再显示灰色副字符）
         keyboardView.setT9Labels(mapOf())
-        Log.d("Cesia", "createInputViewSafe: 键盘设置完成")
 
         // 初始化引擎
-        Log.d("Cesia", "createInputViewSafe: 开始初始化引擎")
         statsManager = PolishStatsManager(this)
         magicHistoryManager = MagicHistoryManager(this)
         currentMagicPrompt = magicHistoryManager?.getActiveInstruction()
@@ -597,20 +589,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val composing = rimeEngine.isComposing
         val pinyin = rimeEngine.composingText
         val allCands = rimeEngine.getAllCandidates()
-        Log.d("CesiaT9", "updateCandidateBar: composing=$composing, pinyin='$pinyin', cands=${allCands.size}, t9Buf='$t9InputBuffer', mode=$keyboardMode")
 
         // 没有输入时恢复初始状态
         if (!composing && pinyin.isEmpty()) {
             candidateBar.visibility = View.GONE
             if (isPanelExpanded) collapseCandidatePanel()
             updateStatus("Cesia 已就绪")
-            Log.d("CesiaT9", "updateCandidateBar: HIDE (not composing)")
             return
         }
 
         // 有输入时
         candidateBar.visibility = View.VISIBLE
-        Log.d("CesiaT9", "updateCandidateBar: SHOW cands=$allCands")
 
         // T9 模式：状态栏只显示数字序列
         if (keyboardMode == KeyboardMode.NUMBER && t9InputBuffer.isNotEmpty()) {
@@ -621,7 +610,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // 更新候选词列表
         // 更新候选词列表
-        Log.d("CesiaT9", "updateCandidateBar: allCands=$allCands")
         candidateAdapter?.updateData(allCands)
         btnCandidateExpand.visibility = if (allCands.size > 4) View.VISIBLE else View.GONE
 
@@ -786,8 +774,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             return
         }
 
-        Log.d("CesiaMagic", "原文: $magicOriginalText")
-        Log.d("CesiaMagic", "指令: $instruction")
         updateStatus("✨ 正在施展魔法...")
 
         val prompt = buildMagicPrompt(magicOriginalText, instruction)
@@ -1596,27 +1582,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 数字键盘长按逻辑 ========================
 
     private var numberLongPressRunnable: Runnable? = null
-    private var t9PressSequence = 0  // 每次 onPress 递增，Runnable 检查序列号来判断短按是否已处理
 
     private fun startNumberKeyboardLongPress(primaryCode: Int, isOneKey: Boolean) {
-        val mySequence = ++t9PressSequence
-        val capturedCode = primaryCode
-        val capturedIsOneKey = isOneKey
+        if (!isOneKey) return  // 2-9键：不再使用独立定时器，通过 popupCharacters 走 startLongPressDetection
+        // 1键：保留独立定时器用于弹出符号选择窗
         numberLongPressRunnable = Runnable {
-            Log.d("CesiaT9", "!!! LONG PRESS: seq=$mySequence current=$t9PressSequence")
-            if (mySequence != t9PressSequence) {
-                Log.d("CesiaT9", "SKIPPED: short press already handled")
-                return@Runnable
-            }
-            if (capturedIsOneKey) {
-                showSymbolPopup()
-            } else {
-                // T9 键长按：直接上屏数字
-                val digit = mainToSub[capturedCode]
-                val text = if (digit != null) digit.toString() else capturedCode.toChar().toString()
-                Log.d("CesiaT9", "LONG commitText: $text")
-                currentInputConnection?.commitText(text, 1)
-            }
+            showSymbolPopup()
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         }
         Handler(Looper.getMainLooper()).postDelayed(numberLongPressRunnable!!, 400)
@@ -1625,7 +1596,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun cancelNumberLongPress() {
         numberLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         numberLongPressRunnable = null
-        t9PressSequence++  // 递增序列号，使正在等待的长按Runnable失效
     }
 
     /** 长按 1 键弹出符号候选窗 */
@@ -1675,15 +1645,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
-        Log.d("CesiaT9", ">>> handleNumberKeyboardKey: primaryCode=$primaryCode isShiftMode=$isShiftMode keyboardMode=$keyboardMode")
         if (isShiftMode) {
             // Shift模式：直接输入数字
             val digit = mainToSub[primaryCode]
             if (digit != null) {
-                Log.d("CesiaT9", "SHIFT commitText: $digit")
                 currentInputConnection?.commitText(digit.toString(), 1)
             } else {
-                Log.d("CesiaT9", "SHIFT commitText: ${primaryCode.toChar()}")
                 currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
             }
             if (!isShiftLocked) {
@@ -1693,10 +1660,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } else {
             // 主字符模式：T9拼音输入
             val t9Digit = mainToSub[primaryCode]
-            Log.d("CesiaT9", "T9 path: t9Digit=$t9Digit")
             if (t9Digit != null) {
                 t9InputBuffer.append(t9Digit)
-                Log.d("CesiaT9", "t9InputBuffer=$t9InputBuffer")
                 processT9Input()
             } else {
                 when (primaryCode) {
@@ -1709,35 +1674,28 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         }
                     }
                     65292 -> {
-                        Log.d("CesiaT9", "commitText: ，")
                         currentInputConnection?.commitText("，", 1)
                     }
                     12290 -> {
-                        Log.d("CesiaT9", "commitText: 。")
                         currentInputConnection?.commitText("。", 1)
                     }
                     65311 -> {
-                        Log.d("CesiaT9", "commitText: ？")
                         currentInputConnection?.commitText("？", 1)
                     }
                     65281 -> {
-                        Log.d("CesiaT9", "commitText: ！")
                         currentInputConnection?.commitText("！", 1)
                     }
                     else -> {
-                        Log.d("CesiaT9", "commitText else: ${primaryCode.toChar()}")
                         currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
                     }
                 }
             }
         }
-        t9PressSequence++  // 短按已执行，递增序列号使长按Runnable失效
-        Log.d("CesiaT9", "t9PressSequence=$t9PressSequence")
+        // 短按已完成
     }
 
     private fun processT9Input() {
         val digits = t9InputBuffer.toString()
-        Log.d("CesiaT9", "processT9Input: digits='$digits', composing=${rimeEngine.isComposing}, composingText='${rimeEngine.composingText}', candidates=${rimeEngine.candidates.size}, allCands=${rimeEngine.getAllCandidates().size}")
         if (digits.isNotEmpty()) {
             // 重建session，输入完整数字串
             rimeEngine.clear()
@@ -1745,7 +1703,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             for (d in digits) {
                 rimeEngine.processKey(d.toString())
             }
-            Log.d("CesiaT9", "processKey(full) '$digits' after: composing=${rimeEngine.isComposing}, composingText='${rimeEngine.composingText}', candidates=${rimeEngine.candidates}")
         }
         updateCandidateBar()
     }
@@ -1814,7 +1771,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             if (!popup.isNullOrEmpty()) {
                 val symbol = popup[0].toString()
                 currentInputConnection?.commitText(symbol, 1)
-                Log.d("Cesia", "Fn 长按输出: $symbol")
                 keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                 longPressTriggered = true
                 longPressConsumed = false
@@ -1853,10 +1809,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 3. 退格/空格/回车等控制键优先交给 Rime 处理
 
     override fun onKey(primaryCode: Int, keyCodes: IntArray?) {
-        Log.d("Cesia", "onKey: primaryCode=$primaryCode isAsciiMode=$isAsciiMode keyboardMode=$keyboardMode")
         val wasLongPressed = longPressTriggered && !longPressConsumed
         if (wasLongPressed) {
-            Log.d("Cesia", "onKey: 被长按拦截 primaryCode=$primaryCode")
             longPressConsumed = true
             cancelLongPress()
             return
@@ -1868,14 +1822,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val hasCands = rimeEngine.hasCandidates
         val cands = rimeEngine.candidates
 
-        Log.d("Cesia", "onKey: composing=$composing hasCands=$hasCands cands.size=${cands.size}")
 
         when (primaryCode) {
 
             // ======================== 字母键 a-z ========================
             in 97..122 -> {
-                Log.d("CesiaLongPress", "onKey: 字母键 primaryCode=$primaryCode")
-                Log.d("CesiaLongPress", "onKey: 取消长按 primaryCode=$primaryCode")
                 functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
                 functionalLongPressRunnable = null
                 // T9模式：同时取消数字键盘长按检测，防止短按后长按仍触发
@@ -2112,17 +2063,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onPress(primaryCode: Int) {
         shortPressHandled = false
-        Log.d("Cesia", "onPress: primaryCode=$primaryCode")
         // 功能键长按检测（仅 QWERTY 中文模式，且 Rime 不在 composing 状态）
         // 注意：功能键长按(500ms)优先于 popupCharacters 长按(400ms)
         // 功能键长按注册后，跳过 popupCharacters 长按，避免冲突
         var skipPopupLongPress = false
         if (!isAsciiMode && primaryCode in 97..122 && keyboardMode == KeyboardMode.QWERTY && !rimeEngine.isComposing) {
             if (getFunctionalLongAction(primaryCode) != null) {
-                Log.d("CesiaLongPress", "onPress: 注册功能长按 primaryCode=$primaryCode")
                 skipPopupLongPress = true
                 functionalLongPressRunnable = Runnable {
-                    Log.d("CesiaLongPress", "功能长按触发! primaryCode=$primaryCode shortPressHandled=$shortPressHandled")
                     if (!shortPressHandled) {
                         getFunctionalLongAction(primaryCode)?.invoke()
                         keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
@@ -2191,7 +2139,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        Log.d("Cesia", "onStartInputView: restarting=$restarting package=${info?.packageName} fieldId=${info?.fieldId} inputType=${info?.inputType} hintText=${info?.hintText}")
         try {
             if (!isViewInitialized) {
                 Log.w("Cesia", "onStartInputView: isViewInitialized=false, skipping")
