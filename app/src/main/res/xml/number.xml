@@ -11,15 +11,15 @@
     android:horizontalGap="1dp"
     android:verticalGap="4dp">
 
-    <Row>
+    <Row android:keyHeight="52dp">
         <Key android:codes="65292" android:keyLabel="，" android:popupCharacters="," android:keyEdgeFlags="left" />
-        <Key android:codes="49" android:keyLabel="1" android:popupCharacters="1" />
+        <Key android:codes="49" android:keyLabel="1"/>
         <Key android:codes="50" android:keyLabel="" android:popupCharacters="2" />
         <Key android:codes="51" android:keyLabel="" android:popupCharacters="3" />
         <Key android:codes="65311" android:keyLabel="？" android:popupCharacters="?" android:keyEdgeFlags="right" />
     </Row>
 
-    <Row>
+    <Row android:keyHeight="52dp">
         <Key android:codes="12290" android:keyLabel="。" android:popupCharacters="." android:keyEdgeFlags="left" />
         <Key android:codes="52" android:keyLabel="" android:popupCharacters="4" />
         <Key android:codes="53" android:keyLabel="" android:popupCharacters="5" />
@@ -27,7 +27,7 @@
         <Key android:codes="65281" android:keyLabel="！" android:popupCharacters="!" android:keyEdgeFlags="right" />
     </Row>
 
-    <Row>
+    <Row android:keyHeight="52dp">
         <Key android:codes="-104" android:keyLabel="⇧" android:keyEdgeFlags="left" />
         <Key android:codes="55" android:keyLabel="" android:popupCharacters="7" />
         <Key android:codes="56" android:keyLabel="" android:popupCharacters="8" />
@@ -36,10 +36,10 @@
     </Row>
 
     <Row>
-        <Key android:codes="-100" android:keyLabel="符" android:keyEdgeFlags="left" />
+        <Key android:codes="-100" android:keyLabel="符" android:keyWidth="16%p" android:keyEdgeFlags="left" />
         <Key android:codes="-999" android:keyLabel="⇱ 返回" />
-        <Key android:codes="32" android:keyLabel="空格" android:popupCharacters="0" />
-        <Key android:codes="-101" android:keyLabel="🌐" />
+        <Key android:codes="32" android:keyLabel="空格" android:keyWidth="28%p" android:popupCharacters="0" />
+        <Key android:codes="-101" android:keyLabel="🌐" android:keyWidth="16%p" />
         <Key android:codes="10" android:keyLabel="↵" android:keyEdgeFlags="right" />
     </Row>
 

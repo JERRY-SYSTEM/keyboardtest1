@@ -30,6 +30,9 @@ class CesiaKeyboardView @JvmOverloads constructor(
     // T9 模式标志 — 只有 T9 数字键盘才绘制字母主字符
     var isT9Mode = false
 
+    // Shift 锁定状态（用于绘制不同图标）
+    var isShiftLocked = false
+
     // T9 主字符映射（数字码 → 字母标签）
     private val t9MainLabels = mapOf(
         50 to "abc", 51 to "def", 52 to "ghi", 53 to "jkl",
@@ -123,6 +126,18 @@ class CesiaKeyboardView @JvmOverloads constructor(
                     key.y + 10f + popupSpSize
                 }
                 canvas.drawText(symbol, x, y, popupPaint)
+            }
+
+            // ===== 3. Shift 键图标覆盖 =====
+            if (code == -104 && isT9Mode) {
+                val shiftPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    textAlign = Paint.Align.CENTER
+                    textSize = key.height * 0.55f
+                    color = if (isShiftLocked) 0xFF111111.toInt() else 0xFF888888.toInt()
+                }
+                val shiftCx = key.x + key.width / 2f
+                val shiftCy = key.y + key.height / 2f + shiftPaint.textSize * 0.35f
+                canvas.drawText("⇧", shiftCx, shiftCy, shiftPaint)
             }
         }
     }

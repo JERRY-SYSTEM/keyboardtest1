@@ -130,6 +130,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var sendKeyHandler = Handler(Looper.getMainLooper())
     private var sendKeyRunnable: Runnable? = null
 
+    // Shift 键长按检测
+    private var shiftLongPressRunnable: Runnable? = null
+
     // 魔法模式
     private var magicMode = false
     private var magicOriginalText = ""
@@ -1579,41 +1582,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         updateStatus("Cesia 已就绪")
     }
 
-    // ======================== 数字键盘长按逻辑 ========================
-
-    private var numberLongPressRunnable: Runnable? = null
-
-    private fun startNumberKeyboardLongPress(primaryCode: Int, isOneKey: Boolean) {
-        if (!isOneKey) return  // 2-9键：不再使用独立定时器，通过 popupCharacters 走 startLongPressDetection
-        // 1键：保留独立定时器用于弹出符号选择窗
-        numberLongPressRunnable = Runnable {
-            showSymbolPopup()
-            keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-        }
-        Handler(Looper.getMainLooper()).postDelayed(numberLongPressRunnable!!, 400)
-    }
-
-    private fun cancelNumberLongPress() {
-        numberLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
-        numberLongPressRunnable = null
-    }
-
-    /** 长按 1 键弹出符号候选窗 */
-    private fun showSymbolPopup() {
-        val symbols = listOf(
-            ".", ",", "?", "!", ":", ";", "'", "\"", "(", ")",
-            "-", "+", "=", "/", "\\", "@", "#", "$", "%", "^",
-            "&", "*", "_", "~", "`", "|", "{", "}", "[", "]",
-            "<", ">", "。", "，", "？", "！", "：", "；", "、",
-            "…", "—", "·", "《", "》", "「", "」", "【", "】",
-            "（", "）"
-        )
-        // 在状态栏显示提示，用展开面板显示符号网格
-        updateStatus("1键副字符：选择符号后长按1输入")
-        candidateBar.visibility = View.VISIBLE
-        candidateAdapter?.updateData(symbols)
-        btnCandidateExpand.visibility = View.GONE
-    }
+    // 数字键盘长按通过 popupCharacters 走 startLongPressDetection
 
     private fun resetNumberKeyboardState() {
         isShiftMode = false
@@ -1623,25 +1592,32 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun updateShiftIndicator() {
-        // 通过 invalidateAllKeys 刷新按键外观
+        // 同步 shift 锁定状态到 KeyboardView
+        keyboardView.isShiftLocked = isShiftLocked
         keyboardView.invalidateAllKeys()
     }
 
     private fun handleShiftKey() {
-        if (isShiftLocked) {
-            // 锁定状态 → 解除
+        // 短按 shift：无论当前什么状态，都回到无 shift（白色箭头）
+        if (isShiftMode || isShiftLocked) {
             isShiftLocked = false
             isShiftMode = false
             commitT9AndClear()
-        } else if (isShiftMode) {
-            // 临时切换状态 → 锁定
-            isShiftLocked = true
-            // isShiftMode 保持 true
         } else {
-            // 正常状态 → 临时切换
+            // 正常状态 → 临时 shift
             isShiftMode = true
         }
         updateShiftIndicator()
+    }
+
+    private fun handleShiftLongPress() {
+        // 长按 shift：锁定 shift（黑色箭头）
+        isShiftMode = true
+        isShiftLocked = true
+        longPressTriggered = true
+        longPressConsumed = false
+        updateShiftIndicator()
+        keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
     }
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
@@ -1829,10 +1805,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             in 97..122 -> {
                 functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
                 functionalLongPressRunnable = null
-                // T9模式：同时取消数字键盘长按检测，防止短按后长按仍触发
-                if (keyboardMode == KeyboardMode.NUMBER) {
-                    cancelNumberLongPress()
-                }
                 shortPressHandled = true
                 if (isAsciiMode) {
                     ic?.commitText(primaryCode.toChar().toString(), 1)
@@ -2089,12 +2061,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 startLongPressDetection(key)
             }
         }
-        // 数字键盘按键长按检测（T9字母候选 / 符号候选）
-        if (keyboardMode == KeyboardMode.NUMBER && primaryCode != -104 && primaryCode != -100 && primaryCode != -101 && primaryCode != -103 && primaryCode != -5 && primaryCode != 10) {
-            val isT9Key = mainToSub.containsKey(primaryCode)
-            val isOneKey = (primaryCode == 49)
-            if (isT9Key || isOneKey) {
-                startNumberKeyboardLongPress(primaryCode, isOneKey)
+        // 数字键盘按键长按已通过 popupCharacters → startLongPressDetection 统一处理
+        // Shift 键长按检测（锁定 shift）
+        if (primaryCode == KEYCODE_SHIFT && keyboardMode == KeyboardMode.NUMBER) {
+            shiftLongPressRunnable = Runnable {
+                if (!shortPressHandled) {
+                    handleShiftLongPress()
+                }
+            }.also {
+                Handler(Looper.getMainLooper()).postDelayed(it, 400)
             }
         }
         if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
@@ -2117,9 +2092,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     override fun onRelease(primaryCode: Int) {
         cancelLongPress()
-        cancelNumberLongPress()
         functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         functionalLongPressRunnable = null
+        // 取消 shift 长按定时器
+        shiftLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        shiftLongPressRunnable = null
         cancelSendKeyLongPress()
         backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
         backspaceRunnable = null
