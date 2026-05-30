@@ -1596,22 +1596,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 数字键盘长按逻辑 ========================
 
     private var numberLongPressRunnable: Runnable? = null
-    private var numberShortPressHandled = false  // 标志：短按是否已执行，阻止长按误触发
+    private var t9PressSequence = 0  // 每次 onPress 递增，Runnable 检查序列号来判断短按是否已处理
 
     private fun startNumberKeyboardLongPress(primaryCode: Int, isOneKey: Boolean) {
-        numberShortPressHandled = false
+        val mySequence = ++t9PressSequence
+        val capturedCode = primaryCode
+        val capturedIsOneKey = isOneKey
         numberLongPressRunnable = Runnable {
-            Log.d("CesiaT9", "!!! LONG PRESS RUNNABLE: primaryCode=$primaryCode numberShortPressHandled=$numberShortPressHandled")
-            if (numberShortPressHandled) {
+            Log.d("CesiaT9", "!!! LONG PRESS: seq=$mySequence current=$t9PressSequence")
+            if (mySequence != t9PressSequence) {
                 Log.d("CesiaT9", "SKIPPED: short press already handled")
                 return@Runnable
             }
-            if (isOneKey) {
+            if (capturedIsOneKey) {
                 showSymbolPopup()
             } else {
                 // T9 键长按：直接上屏数字
-                val digit = mainToSub[primaryCode]
-                val text = if (digit != null) digit.toString() else primaryCode.toChar().toString()
+                val digit = mainToSub[capturedCode]
+                val text = if (digit != null) digit.toString() else capturedCode.toChar().toString()
                 Log.d("CesiaT9", "LONG commitText: $text")
                 currentInputConnection?.commitText(text, 1)
             }
@@ -1623,7 +1625,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun cancelNumberLongPress() {
         numberLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         numberLongPressRunnable = null
-        numberShortPressHandled = false
+        t9PressSequence++  // 递增序列号，使正在等待的长按Runnable失效
     }
 
     /** 长按 1 键弹出符号候选窗 */
@@ -1729,8 +1731,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
         }
-        numberShortPressHandled = true  // 短按已执行，阻止长按Runnable误触发
-        Log.d("CesiaT9", "numberShortPressHandled=true")
+        t9PressSequence++  // 短按已执行，递增序列号使长按Runnable失效
+        Log.d("CesiaT9", "t9PressSequence=$t9PressSequence")
     }
 
     private fun processT9Input() {
