@@ -1601,13 +1601,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun startNumberKeyboardLongPress(primaryCode: Int, isOneKey: Boolean) {
         numberShortPressHandled = false
         numberLongPressRunnable = Runnable {
-            if (numberShortPressHandled) return@Runnable  // 短按已执行，跳过长按
+            Log.d("CesiaT9", "!!! LONG PRESS RUNNABLE: primaryCode=$primaryCode numberShortPressHandled=$numberShortPressHandled")
+            if (numberShortPressHandled) {
+                Log.d("CesiaT9", "SKIPPED: short press already handled")
+                return@Runnable
+            }
             if (isOneKey) {
                 showSymbolPopup()
             } else {
                 // T9 键长按：直接上屏数字
                 val digit = mainToSub[primaryCode]
                 val text = if (digit != null) digit.toString() else primaryCode.toChar().toString()
+                Log.d("CesiaT9", "LONG commitText: $text")
                 currentInputConnection?.commitText(text, 1)
             }
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
@@ -1668,13 +1673,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
-        Log.d("CesiaT9", "handleNumberKeyboardKey: primaryCode=$primaryCode isShiftMode=$isShiftMode keyboardMode=$keyboardMode")
+        Log.d("CesiaT9", ">>> handleNumberKeyboardKey: primaryCode=$primaryCode isShiftMode=$isShiftMode keyboardMode=$keyboardMode")
         if (isShiftMode) {
             // Shift模式：直接输入数字
             val digit = mainToSub[primaryCode]
             if (digit != null) {
+                Log.d("CesiaT9", "SHIFT commitText: $digit")
                 currentInputConnection?.commitText(digit.toString(), 1)
             } else {
+                Log.d("CesiaT9", "SHIFT commitText: ${primaryCode.toChar()}")
                 currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
             }
             if (!isShiftLocked) {
@@ -1699,15 +1706,31 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                             ic.sendKeyEvent(android.view.KeyEvent(0, 0, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_A, 0, ctrlMeta))
                         }
                     }
-                    65292 -> currentInputConnection?.commitText("，", 1)
-                    12290 -> currentInputConnection?.commitText("。", 1)
-                    65311 -> currentInputConnection?.commitText("？", 1)
-                    65281 -> currentInputConnection?.commitText("！", 1)
-                    else -> currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                    65292 -> {
+                        Log.d("CesiaT9", "commitText: ，")
+                        currentInputConnection?.commitText("，", 1)
+                    }
+                    12290 -> {
+                        Log.d("CesiaT9", "commitText: 。")
+                        currentInputConnection?.commitText("。", 1)
+                    }
+                    65311 -> {
+                        Log.d("CesiaT9", "commitText: ？")
+                        currentInputConnection?.commitText("？", 1)
+                    }
+                    65281 -> {
+                        Log.d("CesiaT9", "commitText: ！")
+                        currentInputConnection?.commitText("！", 1)
+                    }
+                    else -> {
+                        Log.d("CesiaT9", "commitText else: ${primaryCode.toChar()}")
+                        currentInputConnection?.commitText(primaryCode.toChar().toString(), 1)
+                    }
                 }
             }
         }
         numberShortPressHandled = true  // 短按已执行，阻止长按Runnable误触发
+        Log.d("CesiaT9", "numberShortPressHandled=true")
     }
 
     private fun processT9Input() {
