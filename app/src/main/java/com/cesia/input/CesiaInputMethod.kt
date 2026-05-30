@@ -92,6 +92,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 状态 ========================
     private var isRecording = false
     private var keyboardMode = KeyboardMode.NUMBER  // 默认 T9 数字键盘
+    private var prevKeyboardMode = KeyboardMode.NUMBER  // 进入符号键盘前的键盘模式（用于返回）
     private var isCapsLock = false
     private var isProcessingResult = false
     private var isWaitingForChoice = false
@@ -178,16 +179,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 功能键长按映射（参考 Trime preset_keys）
     private fun getFunctionalLongAction(primaryCode: Int): (() -> Unit)? {
         return when (primaryCode) {
-            // QWERTY上排(qwertyuiop)：长按输出数学符号（副字符）
-            113 -> { { currentInputConnection?.commitText("+", 1) } }   // q→+
-            119 -> { { currentInputConnection?.commitText("-", 1) } }   // w→-
-            101 -> { { currentInputConnection?.commitText("×", 1) } }   // e→×
-            114 -> { { currentInputConnection?.commitText("÷", 1) } }   // r→÷
-            116 -> { { currentInputConnection?.commitText("=", 1) } }   // t→=
-            121 -> { { currentInputConnection?.commitText("≠", 1) } }   // y→≠
-            117 -> { { currentInputConnection?.commitText("≈", 1) } }   // u→≈
-            105 -> { { currentInputConnection?.commitText("±", 1) } }   // i→±
-            111 -> { { currentInputConnection?.commitText("√", 1) } }   // o→√
+            // QWERTY上排(qwertyuiop)：无功能长按（popupCharacters显示数学符号，不需要长按输出）
             // ASDF行：恢复编辑功能
             97  -> { { sendCtrlKey(KeyEvent.KEYCODE_A) } }  // a=全选
             115 -> { { sendControlKey(KeyEvent.KEYCODE_MOVE_HOME) } }  // s=Home
@@ -370,16 +362,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // 设置功能键长按副功能提示文字
         keyboardView.setFunctionalLabels(mapOf(
-            // QWERTY上排：数学符号（长按输出）
-            113 to "+",    // q
-            119 to "-",    // w
-            101 to "×",    // e
-            114 to "÷",    // r
-            116 to "=",    // t
-            121 to "≠",    // y
-            117 to "≈",    // u
-            105 to "±",    // i
-            111 to "√",    // o
             // ASDF行：编辑功能
             97 to "全选",  // a
             115 to "Home", // s
@@ -1589,6 +1571,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 键盘切换（Trime 风格）=======================
 
     private fun switchToKeyboard(mode: KeyboardMode) {
+        // 记录进入符号键盘前的模式，用于返回
+        if (mode == KeyboardMode.SYMBOL_CN || mode == KeyboardMode.SYMBOL_EN) {
+            prevKeyboardMode = keyboardMode
+        }
         keyboardMode = mode
         currentKeyboard = when (mode) {
             KeyboardMode.QWERTY -> qwertyKeyboard
@@ -1618,14 +1604,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun toggleNumberKeyboard() {
         if (keyboardMode == KeyboardMode.NUMBER) {
+            // T9 → QWERTY：切换 schema 到 pinyin（需要 reload 使新 schema 生效）
             switchToKeyboard(KeyboardMode.QWERTY)
             rimeEngine.selectSchema("pinyin")
-            // 切换 schema 后重建 session，使新 schema 生效
             rimeEngine.reload()
         } else {
+            // QWERTY → T9：切换 schema 到 t9_pinyin（需要 reload 使新 schema 生效）
             switchToKeyboard(KeyboardMode.NUMBER)
             rimeEngine.selectSchema("t9_pinyin")
-            // 切换 schema 后重建 session，使新 schema 生效
             rimeEngine.reload()
             resetNumberKeyboardState()
         }
@@ -1824,17 +1810,40 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun switchToDefaultKeyboard() {
-        val wasT9 = keyboardMode == KeyboardMode.NUMBER
-        switchToKeyboard(KeyboardMode.QWERTY)
-        isAsciiMode = false
-        rimeEngine.setAsciiMode(false)
-        if (wasT9) {
-            rimeEngine.selectSchema("pinyin")
-            rimeEngine.reload()
+        // 返回进入符号键盘前的键盘模式
+        val targetMode = prevKeyboardMode
+        val wasSymbols = keyboardMode == KeyboardMode.SYMBOL_CN || keyboardMode == KeyboardMode.SYMBOL_EN
+        if (wasSymbols) {
+            // 进入符号键盘时未曾切换 schema，直接切回即可
+            switchToKeyboard(targetMode)
+            isAsciiMode = false
+            rimeEngine.setAsciiMode(false)
+            when (targetMode) {
+                KeyboardMode.NUMBER -> {
+                    // schema 本来就是 t9_pinyin，只需清状态
+                    resetNumberKeyboardState()
+                }
+                KeyboardMode.QWERTY -> {
+                    // schema 本来就是 pinyin，只需清状态
+                    rimeEngine.clear()
+                    updateCandidateBar()
+                }
+                else -> updateCandidateBar()
+            }
         } else {
-            rimeEngine.clear()
+            // 非符号键盘场景：默认回QWERTY
+            val wasT9 = keyboardMode == KeyboardMode.NUMBER
+            switchToKeyboard(KeyboardMode.QWERTY)
+            isAsciiMode = false
+            rimeEngine.setAsciiMode(false)
+            if (wasT9) {
+                rimeEngine.selectSchema("pinyin")
+                rimeEngine.reload()
+            } else {
+                rimeEngine.clear()
+            }
+            updateCandidateBar()
         }
-        updateCandidateBar()
     }
 
     private fun toggleLanguage() {
