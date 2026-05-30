@@ -1,5 +1,6 @@
 package com.cesia.input
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.AnimationDrawable
@@ -90,7 +91,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     // ======================== 状态 ========================
     private var isRecording = false
-    private var keyboardMode = KeyboardMode.QWERTY
+    private var keyboardMode = KeyboardMode.NUMBER  // 默认 T9 数字键盘
     private var isCapsLock = false
     private var isProcessingResult = false
     private var isWaitingForChoice = false
@@ -130,8 +131,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var sendKeyHandler = Handler(Looper.getMainLooper())
     private var sendKeyRunnable: Runnable? = null
 
-    // Shift 键长按检测
-    private var shiftLongPressRunnable: Runnable? = null
+    // 剪贴板键长按
+    private var clipboardPasteRunnable: Runnable? = null
+    private var clipboardCutRunnable: Runnable? = null
 
     // 魔法模式
     private var magicMode = false
@@ -330,9 +332,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             Log.e("Cesia", "加载数字键盘失败", e)
             numberKeyboard = qwertyKeyboard
         }
-        currentKeyboard = qwertyKeyboard
+        currentKeyboard = numberKeyboard
 
         keyboardView.keyboard = currentKeyboard
+        keyboardView.isT9Mode = true
         keyboardView.setOnKeyboardActionListener(this)
 
         // 设置功能键长按副功能提示文字
@@ -352,7 +355,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             98 to "粗体",   // b=粗体
             122 to "撤销",  // z
             110 to "Ins",   // n
-            109 to "Del"    // m
+            109 to "Del",   // m
+            -108 to "粘贴", // 剪贴板键：副字符
+            -109 to "剪切"  // 复制键：副字符
         ))
         // T9Labels 已清空（数字键不再显示灰色副字符）
         keyboardView.setT9Labels(mapOf())
@@ -459,6 +464,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             (rimeErrorMsg?.let { " | 错误: $it" } ?: ""))
         setStatusDot("idle")
         isViewInitialized = true
+
+        // 初始化为 T9 模式
+        rimeEngine.selectSchema("t9_pinyin")
+        rimeEngine.reload()
 
         return view
     }
@@ -1598,26 +1607,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleShiftKey() {
-        // 短按 shift：无论当前什么状态，都回到无 shift（白色箭头）
-        if (isShiftMode || isShiftLocked) {
-            isShiftLocked = false
-            isShiftMode = false
+        // 单击 shift：toggle on/off
+        isShiftMode = !isShiftMode
+        if (!isShiftMode) {
             commitT9AndClear()
-        } else {
-            // 正常状态 → 临时 shift
-            isShiftMode = true
         }
+        isShiftLocked = false
         updateShiftIndicator()
-    }
-
-    private fun handleShiftLongPress() {
-        // 长按 shift：锁定 shift（黑色箭头）
-        isShiftMode = true
-        isShiftLocked = true
-        longPressTriggered = true
-        longPressConsumed = false
-        updateShiftIndicator()
-        keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
     }
 
     private fun handleNumberKeyboardKey(primaryCode: Int) {
@@ -1642,11 +1638,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             } else {
                 when (primaryCode) {
                     49 -> {
-                        // 1键：全选（Ctrl+A）
-                        currentInputConnection?.let { ic ->
-                            val ctrlMeta = android.view.KeyEvent.META_CTRL_ON
-                            ic.sendKeyEvent(android.view.KeyEvent(0, 0, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_A, 0, ctrlMeta))
-                            ic.sendKeyEvent(android.view.KeyEvent(0, 0, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_A, 0, ctrlMeta))
+                        // 1键：短按粘贴剪贴板
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        val clip = clipboard?.primaryClip
+                        if (clip != null && clip.itemCount > 0) {
+                            val text = clip.getItemAt(0).text
+                            if (text != null) {
+                                currentInputConnection?.commitText(text, 1)
+                            }
                         }
                     }
                     65292 -> {
@@ -1721,8 +1720,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         switchToKeyboard(KeyboardMode.QWERTY)
         isAsciiMode = false
         rimeEngine.setAsciiMode(false)
-        if (wasT9) rimeEngine.selectSchema("pinyin")
-        rimeEngine.clear()
+        if (wasT9) {
+            rimeEngine.selectSchema("pinyin")
+            rimeEngine.reload()
+        } else {
+            rimeEngine.clear()
+        }
         updateCandidateBar()
     }
 
@@ -1965,8 +1968,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             KEYCODE_CONTROL -> handleControlKey()
             KEYCODE_SHIFT -> handleShiftKey()
 
-            // ======================== 中英文切换（🌐）=======================
-            KEYCODE_SWITCH_LANG -> toggleLanguage()
+            // ======================== 剪贴板功能键 ========================
+            -108 -> { // 全选（短按）
+                currentInputConnection?.performContextMenuAction(android.R.id.selectAll)
+            }
+            -109 -> { // 复制（短按）
+                currentInputConnection?.performContextMenuAction(android.R.id.copy)
+            }
 
             // ======================== 返回键 ========================
             KEYCODE_BACK_KEY -> switchToDefaultKeyboard()
@@ -2062,15 +2070,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
         // 数字键盘按键长按已通过 popupCharacters → startLongPressDetection 统一处理
-        // Shift 键长按检测（锁定 shift）
-        if (primaryCode == KEYCODE_SHIFT && keyboardMode == KeyboardMode.NUMBER) {
-            shiftLongPressRunnable = Runnable {
+        // Shift 键在 NUMBER 模式下通过 popupCharacters 机制处理（如有需要）
+        // 剪贴板键长按：-108=粘贴，-109=剪切
+        if (primaryCode == -108) {
+            clipboardPasteRunnable = Runnable {
                 if (!shortPressHandled) {
-                    handleShiftLongPress()
+                    currentInputConnection?.performContextMenuAction(android.R.id.paste)
                 }
-            }.also {
-                Handler(Looper.getMainLooper()).postDelayed(it, 400)
             }
+            Handler(Looper.getMainLooper()).postDelayed(clipboardPasteRunnable!!, 400)
+        }
+        if (primaryCode == -109) {
+            clipboardCutRunnable = Runnable {
+                if (!shortPressHandled) {
+                    currentInputConnection?.performContextMenuAction(android.R.id.cut)
+                }
+            }
+            Handler(Looper.getMainLooper()).postDelayed(clipboardCutRunnable!!, 400)
         }
         if (primaryCode == -5 || primaryCode == Keyboard.KEYCODE_DELETE) {
             backspaceRunnable = object : Runnable {
@@ -2094,9 +2110,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         cancelLongPress()
         functionalLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
         functionalLongPressRunnable = null
-        // 取消 shift 长按定时器
-        shiftLongPressRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
-        shiftLongPressRunnable = null
+        clipboardPasteRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        clipboardPasteRunnable = null
+        clipboardCutRunnable?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        clipboardCutRunnable = null
         cancelSendKeyLongPress()
         backspaceRunnable?.let { backspaceHandler.removeCallbacks(it) }
         backspaceRunnable = null

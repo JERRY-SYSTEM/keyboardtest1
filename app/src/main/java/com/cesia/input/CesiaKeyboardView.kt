@@ -139,6 +139,42 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 val shiftCy = key.y + key.height / 2f + shiftPaint.textSize * 0.35f
                 canvas.drawText("⇧", shiftCx, shiftCy, shiftPaint)
             }
+
+            // ===== 4. 1键主字符（绿色"全选"） =====
+            if (code == 49 && isT9Mode) {
+                val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    textAlign = Paint.Align.CENTER
+                    textSize = key.height * 0.35f
+                    color = 0xFF44AA44.toInt()
+                }
+                val cx = key.x + key.width / 2f
+                val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
+                canvas.drawText("全选", cx, cy, greenPaint)
+            }
+
+            // ===== 5. 剪贴板按键主字符 =====
+            if (code == -108 && isT9Mode) {
+                // 粘贴键：主字符"粘"（绿色），副字符"贴"（灰色）通过 functionalLabels
+                val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    textAlign = Paint.Align.CENTER
+                    textSize = key.height * 0.4f
+                    color = 0xFF44AA44.toInt()
+                }
+                val cx = key.x + key.width / 2f
+                val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
+                canvas.drawText("粘", cx, cy, greenPaint)
+            }
+            if (code == -109 && isT9Mode) {
+                // 复制键：主字符"复"（绿色），副字符"剪切"（灰色）通过 functionalLabels
+                val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    textAlign = Paint.Align.CENTER
+                    textSize = key.height * 0.4f
+                    color = 0xFF44AA44.toInt()
+                }
+                val cx = key.x + key.width / 2f
+                val cy = key.y + key.height / 2f + greenPaint.textSize * 0.35f
+                canvas.drawText("复", cx, cy, greenPaint)
+            }
         }
     }
 }
