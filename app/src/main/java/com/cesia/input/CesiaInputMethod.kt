@@ -863,7 +863,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF81D8D0.toInt())
         btnMagic.setTextColor(0xFFFFFFFF.toInt())
         btnMagic.elevation = 6f
-        btnMagic.animate().scaleX(1.15f).scaleY(1.15f).setDuration(200).start()
+        btnMagic.animate().scaleX(1.08f).scaleY(1.08f).setDuration(200).start()
 
         updateStatus("🎤 请说出修改指令...（再次点击✨停止）")
         setStatusDot("recording")
@@ -1079,7 +1079,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         popup.elevation = 4f
         popup.inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
         popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-        popup.setFocusable(false)
+        popup.setFocusable(true)
 
         // ===== 数据列表：置顶项在前，非置顶项按时间倒序，末尾固定一个空槽 =====
         val SLOT_EMPTY_ID = -999L
