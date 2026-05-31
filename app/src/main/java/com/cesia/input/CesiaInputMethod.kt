@@ -1069,12 +1069,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             (resources.displayMetrics.heightPixels * 0.6f).toInt()
         )
 
-        val popup = PopupWindow(popupView, popupWidth, totalHeight, true)
-        popup.isOutsideTouchable = false  // 点击外部不关闭，只有执行魔法或点关闭按钮才关闭
-        popup.elevation = 4f
-        popup.inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
-        popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-        popup.setFocusable(false)
+        // 用 Dialog 替代 PopupWindow，Dialog 有独立窗口，EditText 可获得 IME 焦点
+        val dialog = android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Light_NoActionBar)
+            .setView(popupView)
+            .setCancelable(true)
+            .create()
+
+        // 设置窗口属性：独立窗口类型，支持 IME
+        dialog.window?.let { win ->
+            // 不抢夺输入法焦点，但允许子View（EditText）获取焦点
+            win.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            )
+            win.setLayout(popupWidth, totalHeight)
+            win.setGravity(Gravity.TOP or Gravity.START)
+            // 设置透明背景
+            win.setBackgroundDrawableResource(android.R.color.transparent)
+        }
 
         // ===== 数据列表：置顶项在前，非置顶项按时间倒序，末尾固定一个空槽 =====
         val SLOT_EMPTY_ID = -999L
@@ -1114,11 +1126,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 val isEmptySlot = (record.id == SLOT_EMPTY_ID)
                 val isEditing = (p == editingPosition)
 
-                // 只在编辑状态变化时操作，避免 getView 重复调用导致闪烁
                 if (isEditing) {
                     tv.visibility = View.GONE
                     et.visibility = View.VISIBLE
-                    // 只在文本不同时设置，避免光标跳动
                     val newText = if (isEmptySlot) "" else record.instruction
                     if (et.text.toString() != newText) {
                         et.setText(newText)
@@ -1163,7 +1173,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val record = items[position]
             if (record.id == SLOT_EMPTY_ID) return@setOnItemClickListener
             currentMagicPrompt = record.instruction
-            popup.dismiss()
+            dialog.dismiss()
             executeSelectedMagic(record.instruction)
         }
 
@@ -1173,12 +1183,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 editingPosition = position
                 hasFocusedEdit = false
                 notifyChanged()
-                // 延迟 requestFocus，等.getView执行完后再聚焦并弹出软键盘
+                // 延迟 requestFocus，等.getView执行完后再聚焦
                 gridView.post {
                     val child = gridView.getChildAt(position - gridView.firstVisiblePosition)
                     val et = child?.findViewById<android.widget.EditText>(R.id.et_magic_edit)
                     et?.requestFocus()
-                    // 延迟弹出软键盘（PopupWindow不可聚焦时需通过子View弹出）
+                    // 弹出软键盘
                     et?.postDelayed({
                         val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
                         imm?.showSoftInput(et, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
@@ -1190,7 +1200,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // ===== 关闭按钮 =====
         btnClose.setOnClickListener {
-            popup.dismiss()
+            dialog.dismiss()
         }
 
         // ===== 滚动时退出编辑模式但不保存 =====
@@ -1205,7 +1215,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             override fun onScroll(view: android.widget.AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {}
         })
 
-        popup.setOnDismissListener {
+        dialog.setOnDismissListener {
             if (editingPosition >= 0) {
                 saveEditing(editingPosition, gridView, mgr) { rebuildItems(); notifyChanged() }
                 editingPosition = -1
@@ -1265,10 +1275,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             popupMenu.show()
         }
 
-        // 魔法书菜单：底部紧贴状态栏上方（显示在键盘区域顶部）
         // 显示在键盘View正上方
-        val yOffset = -totalHeight
-        popup.showAtLocation(keyboardView, Gravity.TOP or Gravity.START, 0, yOffset)
+        dialog.window?.attributes?.let { attrs ->
+            attrs.y = -totalHeight
+            dialog.window?.attributes = attrs
+        }
+
+        dialog.show()
     }
 
     /** 保存编辑中的魔法 */
@@ -2167,19 +2180,31 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val popupWidth = if (keyboardWidth > 0) keyboardWidth else resources.displayMetrics.widthPixels
             val totalHeight = (resources.displayMetrics.heightPixels * 0.5f).toInt()
 
-            val popup = PopupWindow(popupView, popupWidth, totalHeight, true)
-            popup.isOutsideTouchable = false
-            popup.inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
-            popup.elevation = 8f
-            popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-            popup.setFocusable(false)
+            // 用 Dialog 替代 PopupWindow，搜索框可获得 IME 焦点
+            val dialog = android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Light_NoActionBar)
+                .setView(popupView)
+                .setCancelable(true)
+                .create()
+
+            dialog.window?.let { win ->
+                win.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_PANEL)
+                win.setFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                )
+                win.setLayout(popupWidth, totalHeight)
+                win.setGravity(android.view.Gravity.TOP or android.view.Gravity.START)
+                win.setBackgroundDrawableResource(android.R.color.transparent)
+            }
 
             // 单击：插入文本（非空条目）
             gvClipboard.setOnItemClickListener { _, _, position, _ ->
                 val item = filteredItems.getOrNull(position) ?: return@setOnItemClickListener
                 if (item.isEmpty) return@setOnItemClickListener
                 currentInputConnection?.commitText(item.text, 1)
-                popup.dismiss()
+                dialog.dismiss()
             }
 
             // 长按：操作菜单（收藏/锁定/删除/编辑/分词）
@@ -2190,9 +2215,21 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 true
             }
 
-            btnClose.setOnClickListener { popup.dismiss() }
+            btnClose.setOnClickListener { dialog.dismiss() }
 
-            popup.showAtLocation(keyboardView, android.view.Gravity.TOP or android.view.Gravity.START, 0, -totalHeight)
+            // 显示在键盘View正上方
+            dialog.window?.attributes?.let { attrs ->
+                attrs.y = -totalHeight
+                dialog.window?.attributes = attrs
+            }
+            dialog.show()
+
+            // 搜索框自动聚焦 + 弹出软键盘
+            etSearch.requestFocus()
+            etSearch.postDelayed({
+                val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                imm?.showSoftInput(etSearch, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }, 200)
 
             // 保存到历史
             if (clipboardMgr?.hasPrimaryClip() == true) {
