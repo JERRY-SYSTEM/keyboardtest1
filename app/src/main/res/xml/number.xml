@@ -8,7 +8,7 @@
 <Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
     android:keyWidth="20%p"
     android:keyHeight="42dp"
-    android:horizontalGap="0dp"
+    android:horizontalGap="6%p"
     android:verticalGap="4dp">
 
     <Row android:keyHeight="52dp">

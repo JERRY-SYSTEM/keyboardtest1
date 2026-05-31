@@ -5,9 +5,9 @@
     41字符键×2=82字符，全部唯一，不与任何其他键盘重复
 -->
 <Keyboard xmlns:android="http://schemas.android.com/apk/res/android"
-    android:keyWidth="9.5%p"
+    android:keyWidth="10%p"
     android:keyHeight="48dp"
-    android:horizontalGap="1dp"
+    android:horizontalGap="0dp"
     android:verticalGap="4dp">
 
     <!-- ===== 第1行：引号/书名号（10键） ===== -->
