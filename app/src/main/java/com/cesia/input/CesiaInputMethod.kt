@@ -1082,19 +1082,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         popup.setFocusable(false)
 
-        // ===== 数据列表：置顶项在前，非置顶项按时间倒序，末尾固定一个空槽 =====
-        val SLOT_EMPTY_ID = -999L
+        // ===== 数据列表：置顶项在前，非置顶项按时间倒序 =====
         val items = mutableListOf<MagicHistoryManager.MagicRecord>()
         fun rebuildItems() {
             val all = mgr.getRecords()
             items.clear()
             items.addAll(all.filter { it.isPinned })
             items.addAll(all.filter { !it.isPinned })
-            // 末尾固定空槽
-            items.add(MagicHistoryManager.MagicRecord(id = SLOT_EMPTY_ID, instruction = "", isPinned = false))
         }
         rebuildItems()
 
+        val btnAdd = popupView.findViewById<TextView>(R.id.btn_add_magic)
         val btnPin = popupView.findViewById<TextView>(R.id.btn_pin_manage)
         val btnDelete = popupView.findViewById<TextView>(R.id.btn_delete_manage)
         val btnClose = popupView.findViewById<TextView>(R.id.btn_close_magic)
@@ -1107,6 +1105,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             (gridView.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
         }
 
+        // ===== 底部按钮：新增魔法 =====
+        btnAdd.setOnClickListener {
+            popup.dismiss()
+            enterMagicEditMode(mgr)
+        }
+
         gridView.adapter = object : android.widget.BaseAdapter() {
             override fun getCount() = items.size
             override fun getItem(p: Int) = items[p]
@@ -1117,18 +1121,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 val record = items[p]
                 val tv = v.findViewById<TextView>(R.id.tv_magic_text)
                 val et = v.findViewById<android.widget.EditText>(R.id.et_magic_edit)
-                val isEmptySlot = (record.id == SLOT_EMPTY_ID)
                 val isEditing = (p == editingPosition)
 
                 if (isEditing) {
                     tv.visibility = View.GONE
                     et.visibility = View.VISIBLE
-                    val newText = if (isEmptySlot) "" else record.instruction
-                    if (et.text.toString() != newText) {
-                        et.setText(newText)
-                        if (!isEmptySlot) et.setSelection(et.text.length)
+                    if (et.text.toString() != record.instruction) {
+                        et.setText(record.instruction)
+                        et.setSelection(et.text.length)
                     }
-                    et.hint = if (isEmptySlot) "✨ 输入新魔法指令..." else "✏️ 修改魔法指令..."
+                    et.hint = "✏️ 修改魔法指令..."
                     et.setOnEditorActionListener { _, actionId, _ ->
                         if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
                             saveEditing(p, gridView, mgr) { rebuildItems(); notifyChanged() }
@@ -1142,35 +1144,21 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     tv.visibility = View.VISIBLE
                     et.setOnEditorActionListener(null)
 
-                    if (isEmptySlot) {
-                        tv.text = "➕ 点击新增魔法"
-                        tv.setTextColor(0xFF999999.toInt())
-                        tv.setTypeface(null, android.graphics.Typeface.ITALIC)
-                        tv.textSize = 12f
-                        tv.maxLines = 1
-                    } else {
-                        val isActive = record.instruction == currentMagicPrompt
-                        val prefix = if (isActive) "✓ " else if (record.isPinned) "📌 " else ""
-                        tv.text = "${prefix}${record.instruction}"
-                        tv.setTextColor(if (isActive) 0xFF1565C0.toInt() else 0xFF333333.toInt())
-                        tv.setTypeface(null, if (isActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-                        tv.textSize = 13f
-                        tv.maxLines = 2
-                    }
+                    val isActive = record.instruction == currentMagicPrompt
+                    val prefix = if (isActive) "✓ " else if (record.isPinned) "📌 " else ""
+                    tv.text = "${prefix}${record.instruction}"
+                    tv.setTextColor(if (isActive) 0xFF1565C0.toInt() else 0xFF333333.toInt())
+                    tv.setTypeface(null, if (isActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                    tv.textSize = 13f
+                    tv.maxLines = 2
                 }
                 return v
             }
         }
 
-        // ===== 单击：非空槽=打钩+装载+执行+关闭；空槽=进入魔法编辑模式 =====
+        // ===== 单击：打钩+装载+执行+关闭 =====
         gridView.setOnItemClickListener { _, _, position, _ ->
             val record = items[position]
-            if (record.id == SLOT_EMPTY_ID) {
-                // 空槽：进入魔法编辑模式
-                popup.dismiss()
-                enterMagicEditMode(mgr)
-                return@setOnItemClickListener
-            }
             currentMagicPrompt = record.instruction
             popup.dismiss()
             executeSelectedMagic(record.instruction)
@@ -1224,7 +1212,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // ===== 置顶按钮 =====
         btnPin.setOnClickListener {
-            val realItems = items.filter { it.id != SLOT_EMPTY_ID }
+            val realItems = items
             if (realItems.isEmpty()) return@setOnClickListener
             val popupMenu = android.widget.PopupMenu(this, btnPin)
             for (r in realItems) {
@@ -1246,7 +1234,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // ===== 删除按钮 =====
         btnDelete.setOnClickListener {
-            val realItems = items.filter { it.id != SLOT_EMPTY_ID }
+            val realItems = items
             if (realItems.isEmpty()) return@setOnClickListener
             val popupMenu = android.widget.PopupMenu(this, btnDelete)
             for (r in realItems) {
@@ -2465,9 +2453,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     updateMagicEditStatus()
                     return
                 }
-                // 数字键 0-9：如果有候选词则选词，否则追加到缓冲区
+                // 数字键 0-9：T9模式走T9拼音引擎，全键盘模式选词或追加
                 in 48..57 -> {
-                    if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
+                    if (keyboardMode == KeyboardMode.NUMBER) {
+                        // T9模式：数字键直接走Rime引擎（字母输入模式），不走T9 buffer
+                        rimeEngine.processKey(primaryCode.toChar())
+                        updateMagicEditStatus()
+                    } else if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
                         val index = if (primaryCode == 48) 9 else (primaryCode - 49)
                         val cands = rimeEngine.candidates
                         if (index < cands.size) {
