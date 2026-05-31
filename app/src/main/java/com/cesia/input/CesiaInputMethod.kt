@@ -763,10 +763,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         deleteLongPressTriggered = false
 
         btnDelete.setOnClickListener {
-            if (deleteLongPressTriggered) {
-                deleteLongPressTriggered = false
-                return@setOnClickListener
-            }
             if (rimeEngine.isComposing) {
                 rimeEngine.processKey("BackSpace")
                 updateCandidateBar()
@@ -777,7 +773,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
         btnDelete.setOnLongClickListener {
-            deleteLongPressTriggered = true
             try {
                 if (rimeEngine.isComposing) {
                     rimeEngine.processKey("BackSpace")
@@ -1081,6 +1076,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         popup.setFocusable(true)
 
+        // 拦截触摸事件：点击PopupWindow外部区域时不关闭、不传递
+        popup.setTouchInterceptor { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                // 外部点击：消费掉，不关闭也不传递
+                true
+            } else {
+                false
+            }
+        }
+
         // ===== 数据列表：置顶项在前，非置顶项按时间倒序，末尾固定一个空槽 =====
         val SLOT_EMPTY_ID = -999L
         val items = mutableListOf<MagicHistoryManager.MagicRecord>()
@@ -1178,10 +1183,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 editingPosition = position
                 hasFocusedEdit = false
                 notifyChanged()
-                // 延迟 requestFocus，等.getView执行完后再聚焦
+                // 延迟 requestFocus + 强制弹出软键盘
                 gridView.post {
                     val child = gridView.getChildAt(position - gridView.firstVisiblePosition)
-                    child?.findViewById<android.widget.EditText>(R.id.et_magic_edit)?.requestFocus()
+                    val et = child?.findViewById<android.widget.EditText>(R.id.et_magic_edit)
+                    et?.requestFocus()
+                    // 强制弹出软键盘
+                    val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                    imm?.showSoftInput(et, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    // 让PopupWindow获取焦点以支持输入
+                    popupView.requestFocus()
                 }
             }
             true
