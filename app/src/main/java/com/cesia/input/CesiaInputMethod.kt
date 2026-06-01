@@ -2404,69 +2404,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         stopMagicBookGlow()
     }
 
-    /** 弹出剪贴板搜索输入框（Dialog + EditText）*/
-    private fun showClipboardSearchDialog() {
-        try {
-            val dialog = android.app.Dialog(this, android.R.style.Theme_Material_Light_Dialog_Alert)
-            val editText = android.widget.EditText(this).apply {
-                setHint("输入搜索关键词...")
-                setSingleLine(true)
-                setMaxLines(1)
-                textSize = 16f
-                setPadding(32, 16, 32, 16)
-            }
-            val searchBtn = android.widget.Button(this).apply {
-                text = "搜索"
-                setOnClickListener {
-                    val text = editText.text.toString().trim()
-                    if (text.isNotEmpty()) {
-                        clipboardSearchFilter = text
-                        applyClipboardFilter()
-                        updateStatus("🔍 搜索：$text")
-                    }
-                    dialog.dismiss()
-                }
-            }
-            val cancelBtn = android.widget.Button(this).apply {
-                text = "取消"
-                setOnClickListener {
-                    clipboardSearchFilter = ""
-                    applyClipboardFilter()
-                    dialog.dismiss()
-                }
-            }
-            val btnLayout = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.END
-                setPadding(0, 0, 16, 8)
-                addView(cancelBtn)
-                addView(searchBtn)
-            }
-            val layout = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.VERTICAL
-                addView(editText)
-                addView(btnLayout)
-            }
-            dialog.setTitle("🔍 搜索剪贴板")
-            dialog.setContentView(layout)
-            dialog.setOnCancelListener {
-                clipboardSearchFilter = ""
-                applyClipboardFilter()
-            }
-            dialog.setOnDismissListener {
-                showClipboardManagerPopup()
-            }
-            dialog.show()
-            editText.requestFocus()
-            editText.postDelayed({
-                val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-                imm?.showSoftInput(editText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-            }, 200)
-        } catch (e: Exception) {
-            updateStatus("❌ 搜索框异常: ${e.message}")
-        }
-    }
-
     // ====== 剪贴板搜索状态 =======
 
     /**
@@ -2478,12 +2415,37 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             clipboardPopupView = inflater2.inflate(R.layout.popup_clipboard_manager, null)
             val popupView = clipboardPopupView!!
             val gvClipboard = popupView.findViewById<GridView>(R.id.gv_clipboard_items)
-            val btnSearch = popupView.findViewById<TextView>(R.id.btn_clipboard_search)
+            val etSearch = popupView.findViewById<android.widget.EditText>(R.id.btn_clipboard_search)
             val tvSearchHint = popupView.findViewById<TextView>(R.id.tv_search_edit_hint)
             val btnDone = popupView.findViewById<TextView>(R.id.btn_clipboard_done)
             val btnPin = popupView.findViewById<TextView>(R.id.btn_clipboard_pin)
             val btnDelete = popupView.findViewById<TextView>(R.id.btn_clipboard_delete)
             val tvEmpty = popupView.findViewById<TextView>(R.id.tv_clipboard_empty)
+
+            // 搜索框：点击获得焦点弹出软键盘，输入内容实时过滤
+            etSearch.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    tvSearchHint.visibility = View.VISIBLE
+                    tvSearchHint.text = "输入搜索关键词..."
+                }
+            }
+            etSearch.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    clipboardSearchFilter = s?.toString()?.trim() ?: ""
+                    applyClipboardFilter()
+                }
+            })
+            etSearch.setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                    // 搜索动作：清除焦点，隐藏软键盘
+                    etSearch.clearFocus()
+                    val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                    imm?.hideSoftInputFromWindow(etSearch.windowToken, 0)
+                    true
+                } else false
+            }
 
             // 加载剪贴板历史（持久化 + 系统剪贴板 + 收藏）
             val clipboardMgr = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
@@ -2506,12 +2468,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             popup.elevation = 8f
             popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
             popup.setFocusable(false)
-
-            // 搜索按钮：弹出搜索输入框（AlertDialog + EditText，独立窗口可正常接收输入法输入）
-            btnSearch.setOnClickListener {
-                popup.dismiss()
-                showClipboardSearchDialog()
-            }
 
             // 单击：插入文本（非空条目）
             gvClipboard.setOnItemClickListener { _, _, position, _ ->
