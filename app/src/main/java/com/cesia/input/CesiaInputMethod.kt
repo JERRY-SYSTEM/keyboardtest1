@@ -2404,31 +2404,46 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         stopMagicBookGlow()
     }
 
+    /** 更新剪贴板搜索状态栏：显示已输入内容 + Rime 当前拼音 + 候选栏 */
+    private fun updateClipboardSearchStatus() {
+        val comp = rimeEngine.composingText
+        val display = clipboardSearchBuffer.toString() + comp
+        if (display.isEmpty()) {
+            updateStatus("✏️ 输入搜索关键词...（按发送键确认搜索）")
+        } else {
+            updateStatus("✏️ $display")
+        }
+        // 同步更新候选栏
+        val allCands = rimeEngine.getAllCandidates()
+        candidateAdapter?.updateData(allCands)
+        candidateBar.visibility = if (rimeEngine.isComposing) View.VISIBLE else View.GONE
+    }
+
+    /** 进入剪贴板搜索编辑模式：关闭弹窗，清空缓冲区，等待键盘输入 */
+    private fun enterClipboardSearchMode() {
+        clipboardSearchEditMode = true
+        clipboardSearchBuffer.clear()
+        updateStatus("✏️ 输入搜索关键词...（按发送键确认搜索）")
+    }
+
+    /** 退出剪贴板搜索编辑模式 */
+    private fun exitClipboardSearchMode(save: Boolean = false) {
+        if (save && clipboardSearchBuffer.isNotEmpty()) {
+            clipboardSearchFilter = clipboardSearchBuffer.toString()
+            applyClipboardFilter()
+            updateStatus("🔍 搜索：$clipboardSearchFilter")
+        } else {
+            clipboardSearchFilter = ""
+            applyClipboardFilter()
+            if (clipboardSearchEditMode) updateStatus("❌ 已取消搜索")
+        }
+        clipboardSearchEditMode = false
+        clipboardSearchBuffer.clear()
+    }
+
+    // ====== 剪贴板搜索状态变量 =======
     private var clipboardSearchEditMode = false
     private var clipboardSearchBuffer = StringBuilder()
-
-    /** 更新搜索 hint 栏：显示已确认文字 + Rime 拼音 + 候选词 */
-    private fun updateSearchHintDisplay() {
-        val hintView = clipboardPopupView?.findViewById<TextView>(R.id.tv_search_edit_hint) ?: return
-        val comp = rimeEngine.composingText
-        val cands = rimeEngine.candidates
-        val buf = clipboardSearchBuffer.toString()
-        val sb = StringBuilder()
-        if (buf.isNotEmpty()) sb.append("已选: $buf")
-        if (comp.isNotEmpty()) {
-            if (sb.isNotEmpty()) sb.append(" | ")
-            sb.append("拼音: $comp")
-        }
-        if (cands.isNotEmpty()) {
-            if (sb.isNotEmpty()) sb.append(" | ")
-            sb.append("候选: ").append(cands.take(4).joinToString(" "))
-        }
-        if (sb.isEmpty()) {
-            hintView.text = "✏️ 输入搜索关键词...（按发送键确认，再点🔍退出）"
-        } else {
-            hintView.text = sb.toString()
-        }
-    }
 
     /**
      * 剪贴板管理器弹窗 — 两列风格，支持置顶/删除/搜索/关闭/长按操作
@@ -2454,27 +2469,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             clipboardSearchFilter = ""
             applyClipboardFilter()
 
-            // 搜索按钮：进入/退出搜索编辑模式
-            btnSearch.setOnClickListener {
-                if (clipboardSearchEditMode) {
-                    // 退出搜索编辑模式
-                    clipboardSearchEditMode = false
-                    clipboardSearchBuffer.clear()
-                    clipboardSearchFilter = ""
-                    tvSearchHint.visibility = View.GONE
-                    updateClipboardSearchBtn(btnSearch)
-                    applyClipboardFilter()
-                } else {
-                    // 进入搜索编辑模式
-                    clipboardSearchEditMode = true
-                    clipboardSearchBuffer.clear()
-                    tvSearchHint.text = "✏️ 输入搜索关键词...（按发送键确认，再点🔍退出）"
-                    tvSearchHint.visibility = View.VISIBLE
-                    btnSearch.text = "🔍 点击搜索..."
-                    btnSearch.setTextColor(0xFF999999.toInt())
-                }
-            }
-
             clipboardAdapter = ClipboardAdapter(inflater2, clipboardFilteredItems, this)
             gvClipboard.adapter = clipboardAdapter
 
@@ -2488,6 +2482,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             popup.elevation = 8f
             popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
             popup.setFocusable(false)
+
+            // 搜索按钮：进入搜索编辑模式（参考魔法书新增魔法方式）
+            btnSearch.setOnClickListener {
+                popup.dismiss()
+                enterClipboardSearchMode()
+            }
 
             // 单击：插入文本（非空条目）
             gvClipboard.setOnItemClickListener { _, _, position, _ ->
@@ -2873,40 +2873,34 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
 
-        // ======================== 剪贴板搜索编辑模式拦截 ========================
+        // ======================== 剪贴板搜索编辑模式拦截（参考魔法编辑模式）=======================
         if (clipboardSearchEditMode) {
             when (primaryCode) {
-                // 发送键/回车键：确认搜索并退出搜索模式
+                // 发送键/回车键：确认搜索并退出
                 -200, 10 -> {
-                    clipboardSearchFilter = clipboardSearchBuffer.toString()
-                    clipboardSearchEditMode = false
-                    clipboardPopupView?.findViewById<TextView>(R.id.tv_search_edit_hint)?.visibility = View.GONE
-                    updateClipboardSearchBtn(clipboardPopupView?.findViewById<TextView>(R.id.btn_clipboard_search) ?: return)
-                    applyClipboardFilter()
+                    exitClipboardSearchMode(save = true)
                     return
                 }
-                // 返回键/关闭：取消搜索模式
+                // 返回键：取消搜索
                 KeyEvent.KEYCODE_BACK -> {
-                    clipboardSearchEditMode = false
-                    clipboardSearchBuffer.clear()
-                    clipboardSearchFilter = ""
-                    applyClipboardFilter()
+                    exitClipboardSearchMode(save = false)
                     return
                 }
-                // 退格：先删 Rime composing，再删缓冲区
+                // 退格键：优先删除 Rime composition，其次删除缓冲区
                 -5, Keyboard.KEYCODE_DELETE -> {
                     if (rimeEngine.isComposing) {
                         rimeEngine.processKey("BackSpace")
+                        updateClipboardSearchStatus()
                     } else if (clipboardSearchBuffer.isNotEmpty()) {
                         clipboardSearchBuffer.deleteCharAt(clipboardSearchBuffer.length - 1)
+                        updateClipboardSearchStatus()
                     }
-                    updateSearchHintDisplay()
                     return
                 }
-                // 字母键 a-z：走 Rime 引擎，候选词显示在 hint 栏
+                // 字母键 a-z：走 Rime 引擎
                 in 97..122 -> {
                     rimeEngine.processKey(primaryCode.toChar())
-                    updateSearchHintDisplay()
+                    updateClipboardSearchStatus()
                     return
                 }
                 // 数字键 0-9：选词或追加
@@ -2924,7 +2918,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     } else {
                         clipboardSearchBuffer.append(primaryCode.toChar())
                     }
-                    updateSearchHintDisplay()
+                    updateClipboardSearchStatus()
                     return
                 }
                 // 空格：选首词或追加空格
@@ -2938,14 +2932,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     } else {
                         clipboardSearchBuffer.append(' ')
                     }
-                    updateSearchHintDisplay()
+                    updateClipboardSearchStatus()
                     return
                 }
-                // 标点追加
+                // 标点追加后退出搜索模式
                 44, 46, 59, 33, 63 -> {
                     rimeEngine.clear()
                     clipboardSearchBuffer.append(primaryCode.toChar())
-                    updateSearchHintDisplay()
+                    updateClipboardSearchStatus()
                     return
                 }
             }
@@ -3338,10 +3332,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     override fun onText(text: CharSequence?) {
         cancelLongPress()
         if (clipboardSearchEditMode && text != null) {
-            // 剪贴板搜索编辑模式：追加选词到搜索缓冲区
+            // 剪贴板搜索编辑模式：追加选词到搜索缓冲区并清空 Rime
             clipboardSearchBuffer.append(text)
             rimeEngine.clear()
-            updateSearchHintDisplay()
+            updateClipboardSearchStatus()
             return
         }
         if (magicEditMode && text != null) {
