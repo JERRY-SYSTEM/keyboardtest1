@@ -1268,9 +1268,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
                     val isActive = record.instruction == currentMagicPrompt
                     val prefix = if (isActive) "✓ " else if (record.isPinned) "⤒ " else ""
-                    tv.text = "${prefix}${record.instruction}"
-                    tv.setTextColor(if (isActive) 0xFF81D8D0.toInt() else 0xFF333333.toInt())
-                    tv.setTypeface(null, if (isActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                    val displayText = "${prefix}${record.instruction}"
+                    if (record.isPinned && !isActive) {
+                        // 置顶但未激活：置顶标志加粗
+                        val spannable = android.text.SpannableString(displayText)
+                        spannable.setSpan(
+                            android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                            0, prefix.length,
+                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        tv.text = spannable
+                        tv.setTextColor(0xFF333333.toInt())
+                        tv.setTypeface(null, android.graphics.Typeface.NORMAL)
+                    } else {
+                        tv.text = displayText
+                        tv.setTextColor(if (isActive) 0xFF81D8D0.toInt() else 0xFF333333.toInt())
+                        tv.setTypeface(null, if (isActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                    }
                     tv.textSize = 13f
                     tv.maxLines = 2
                 }
@@ -1359,17 +1373,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val realItems = items
             if (realItems.isEmpty()) return@setOnClickListener
             val popupMenu = android.widget.PopupMenu(this, btnDelete)
+            // 全部删除置顶（order=0）
+            popupMenu.menu.add(0, -1, 0, "⊗ 删除全部（${realItems.size}条）")
             for (r in realItems) {
-                popupMenu.menu.add(0, r.id.toInt(), 0, "🗑️ ${r.instruction.take(18)}")
+                popupMenu.menu.add(0, r.id.toInt(), 1, "⊗ ${r.instruction.take(18)}")
             }
-            popupMenu.menu.add(0, -1, realItems.size, "⚠️ 删除全部（${realItems.size}条）")
             popupMenu.setOnMenuItemClickListener { item ->
                 if (item.itemId == -1) {
+                    val pinned = realItems.filter { it.isPinned }
                     mgr.clearAll()
+                    // 重新添加置顶项（不改变顺序）
+                    for (r in pinned) {
+                        mgr.addRecord(r.instruction)
+                    }
                     currentMagicPrompt = null
                     rebuildItems()
                     notifyChanged()
-                    updateStatus("🗑️ 已删除全部记录")
+                    updateStatus("⊗ 已删除全部（保留置顶）")
                 } else {
                     mgr.removeRecord(item.itemId.toLong())
                     val updated = mgr.getRecords()
@@ -2518,15 +2538,25 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 val realItems = clipboardItems.filter { !it.isEmpty }
                 if (realItems.isEmpty()) return@setOnClickListener
                 val popupMenu = android.widget.PopupMenu(this, btnDelete)
+                // 全部删除置顶（order=0）
+                popupMenu.menu.add(0, -1, 0, "⊗ 删除全部（${realItems.size}条）")
                 for (r in realItems) {
-                    popupMenu.menu.add(0, r.text.hashCode(), 0, "🗑️ ${r.text.take(18)}")
+                    popupMenu.menu.add(0, r.text.hashCode(), 1, "⊗ ${r.text.take(18)}")
                 }
                 popupMenu.setOnMenuItemClickListener { menuItem ->
-                    val target = realItems.find { it.text.hashCode() == menuItem.itemId }
-                    if (target != null) {
-                        clipboardItems.removeAll { it.text == target.text }
+                    if (menuItem.itemId == -1) {
+                        // 全部删除：保留置顶项
+                        clipboardItems.removeAll { !it.isPinned && !it.isEmpty }
                         saveClipboardHistoryFromClassMembers()
                         applyClipboardFilter()
+                        updateStatus("⊗ 已删除全部（保留置顶）")
+                    } else {
+                        val target = realItems.find { it.text.hashCode() == menuItem.itemId }
+                        if (target != null) {
+                            clipboardItems.removeAll { it.text == target.text }
+                            saveClipboardHistoryFromClassMembers()
+                            applyClipboardFilter()
+                        }
                     }
                     true
                 }
@@ -2743,6 +2773,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 tv.setTextColor(0xFF333333.toInt())
                 tv.textSize = 13f
                 tvPin.visibility = if (item.isPinned) View.VISIBLE else View.GONE
+                tvPin.setTypeface(null, if (item.isPinned) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             }
             return v
         }
