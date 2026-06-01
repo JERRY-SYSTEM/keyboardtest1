@@ -103,7 +103,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var isAsciiMode = false  // 与 Rime ascii_mode 对应
     private var isShiftMode = false  // 数字键盘 Shift 状态（临时切换）
     private var shortPressHandled = false  // 当前按键是否已处理短按（防止长按重复触发）
-    private var isShiftLocked = false  // Shift 锁定状态
+    private var isShiftLocked = false  // QWERTY/符号键盘 Shift 锁定状态
+    private var t9ShiftLocked = false   // T9 键盘 Shift 锁定状态（独立，不影响其他键盘）
     private var qwertyShiftLock = false  // 全键盘shift锁定（跨键盘切换保持）
     private var t9InputBuffer = StringBuilder()  // T9 数字输入缓冲
     private val t9Map = mapOf(
@@ -1909,36 +1910,29 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         keyboardView.isT9Mode = (mode == KeyboardMode.NUMBER)
         // 切换键盘时清除 T9 相关状态（避免 T9 锁定圆点出现在其他键盘上）
         if (mode == KeyboardMode.NUMBER) {
-            // 进入 T9：清除所有非T9输入状态
+            // 进入 T9：清除 QWERTY 的 shift 状态，保留 T9 的
             isAsciiMode = false
             rimeEngine.setAsciiMode(false)
             isShiftMode = false
-            isShiftLocked = false
+            isShiftLocked = false  // 清 QWERTY shift 锁
         } else if (mode == KeyboardMode.QWERTY) {
-            // 进入全键盘：如有持久shift锁，恢复 ascii 模式
+            // 进入全键盘：如有持久 shift 锁，恢复
             if (qwertyShiftLock) {
                 isShiftLocked = true
                 isAsciiMode = true
                 rimeEngine.setAsciiMode(true)
+            } else {
+                isShiftLocked = false
             }
             rimeEngine.clear()
-            // 从T9回到QWERTY：T9的shift状态已在进入NUMBER时清除（switchToKeyboard NUMBER分支）
         } else {
-            // 进入符号键盘：清除所有输入状态，避免卡住
+            // 进入符号键盘：清除所有 shift 状态
+            isShiftLocked = false
             rimeEngine.clear()
             t9InputBuffer.clear()
-            if (mode == KeyboardMode.NUMBER) {
-                // 从T9进入符号：清除T9状态
-                isShiftLocked = false
-                isShiftMode = false
-                isAsciiMode = false
-                rimeEngine.setAsciiMode(false)
-            }
-            if (mode == KeyboardMode.QWERTY) {
-                // 从全键盘进入符号：清除ascii模式
-                isAsciiMode = false
-                rimeEngine.setAsciiMode(false)
-            }
+            isShiftMode = false
+            isAsciiMode = false
+            rimeEngine.setAsciiMode(false)
             // 切换到符号键盘时隐藏候选栏
             candidateBar.visibility = View.GONE
             updateStatus("Cesia 已就绪")
@@ -2009,46 +2003,49 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun updateShiftIndicator() {
-        // 同步 shift 状态到 KeyboardView
-        keyboardView.isShiftLocked = isShiftLocked
+        // 同步 shift 状态到 KeyboardView（T9 和 QWERTY 独立）
+        keyboardView.isShiftLocked = if (keyboardMode == KeyboardMode.NUMBER) t9ShiftLocked else isShiftLocked
         keyboardView.isShiftMode = isShiftMode
         keyboardView.invalidateAllKeys()
     }
 
     private fun handleShiftKey() {
-        if (isShiftLocked) {
-            // 锁定状态 → 单击解除锁定，退回正常
-            isShiftLocked = false
-            if (keyboardMode == KeyboardMode.NUMBER) {
+        if (keyboardMode == KeyboardMode.NUMBER) {
+            // T9 模式：操作 t9ShiftLocked（独立，不影响其他键盘）
+            if (t9ShiftLocked) {
+                // 锁定状态 → 单击解除锁定
+                t9ShiftLocked = false
+                isShiftMode = false
+                commitT9AndClear()
+            } else if (isShiftMode) {
+                // 临时shift → 退回正常
                 isShiftMode = false
                 commitT9AndClear()
             } else {
-                // 全键盘：解除持久锁
+                // 正常 → 单击临时shift
+                isShiftMode = true
+            }
+        } else {
+            // QWERTY/符号模式：操作 isShiftLocked
+            if (isShiftLocked) {
+                // 锁定状态 → 单击解除锁定
+                isShiftLocked = false
                 qwertyShiftLock = false
                 isAsciiMode = false
                 rimeEngine.setAsciiMode(false)
                 rimeEngine.clear()
-            }
-        } else if (isShiftActive()) {
-            // 临时shift状态 → 单击退回正常
-            if (keyboardMode == KeyboardMode.NUMBER) {
-                isShiftMode = false
-                commitT9AndClear()
-            } else {
+            } else if (isAsciiMode) {
+                // 临时shift → 退回正常
                 isAsciiMode = false
                 rimeEngine.setAsciiMode(false)
                 rimeEngine.clear()
-            }
-        } else {
-            // 正常状态 → 单击临时shift（输入一个字符后自动退回）
-            if (keyboardMode == KeyboardMode.NUMBER) {
-                isShiftMode = true
             } else {
+                // 正常 → 单击临时shift
                 isAsciiMode = true
                 rimeEngine.setAsciiMode(true)
                 rimeEngine.clear()
+                isShiftLocked = false
             }
-            isShiftLocked = false
         }
         updateShiftIndicator()
         keyboardView.invalidateAllKeys()
@@ -2056,12 +2053,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun handleShiftLongPress() {
-        // 长按 shift：锁定shift
-        isShiftLocked = true
+        // 长按 shift：锁定shift（T9 和 QWERTY 完全独立）
         if (keyboardMode == KeyboardMode.NUMBER) {
+            t9ShiftLocked = true
             isShiftMode = true
         } else {
             // 全键盘长按锁定 = 持久锁（跨键盘切换保持）
+            isShiftLocked = true
             qwertyShiftLock = true
             isAsciiMode = true
             rimeEngine.setAsciiMode(true)
@@ -2081,13 +2079,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     /** 临时shift输入一个字符后自动退回 */
     private fun autoExitShift() {
-        if (!isShiftLocked && isShiftActive()) {
+        val currentShiftLocked = if (keyboardMode == KeyboardMode.NUMBER) t9ShiftLocked else isShiftLocked
+        if (!currentShiftLocked && isShiftActive()) {
             if (keyboardMode == KeyboardMode.NUMBER) {
                 isShiftMode = false
-            } else {
-                isAsciiMode = false
-                rimeEngine.setAsciiMode(false)
             }
+            isAsciiMode = false
+            rimeEngine.setAsciiMode(false)
             updateShiftIndicator()
             keyboardView.invalidateAllKeys()
         }
@@ -2921,14 +2919,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 shortPressHandled = true
                 if (isAsciiMode) {
                     // Shift模式：短按输出大写字母
-                    val out = if (isShiftMode || isShiftLocked) {
+                    val shiftActive = if (keyboardMode == KeyboardMode.NUMBER) {
+                        isShiftMode || t9ShiftLocked
+                    } else {
+                        isShiftLocked
+                    }
+                    val out = if (shiftActive) {
                         primaryCode.toChar().uppercaseChar().toString()
                     } else {
                         primaryCode.toChar().toString()
                     }
                     ic?.commitText(out, 1)
                     // QWERTY临时shift：输入一个字母后自动退回中文
-                    if (!isShiftLocked && keyboardMode != KeyboardMode.NUMBER) {
+                    val currentShiftLocked = if (keyboardMode == KeyboardMode.NUMBER) t9ShiftLocked else isShiftLocked
+                    if (!currentShiftLocked && keyboardMode != KeyboardMode.NUMBER) {
                         isAsciiMode = false
                         rimeEngine.setAsciiMode(false)
                         updateShiftIndicator()
