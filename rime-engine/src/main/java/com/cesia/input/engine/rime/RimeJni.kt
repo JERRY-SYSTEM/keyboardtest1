@@ -47,15 +47,8 @@ object RimeJni {
             val rimeDirFiles = rimeDir.listFiles()?.map { "${it.name}(${it.length()})" }?.joinToString(", ") ?: "(空)"
             Log.i(TAG, "STEP2: rime 目录内容: $rimeDirFiles")
 
-            // 清除旧 build 目录，强制重新编译
-            val buildDir = File(rimeDir, "build")
-            if (buildDir.exists()) {
-                buildDir.deleteRecursively()
-                Log.i(TAG, "STEP3: 清除旧 build 目录")
-            }
-
             TrimeRime.startupRime(sharedDir, userDir, "1.0.0", true)
-            Log.i(TAG, "STEP4: startupRime 完成")
+            Log.i(TAG, "STEP3: startupRime 完成")
 
             // 确保选中 pinyin schema
             val currentSchema = TrimeRime.getCurrentRimeSchema()

@@ -1865,15 +1865,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         t9InputBuffer.clear()
         candidateBar.visibility = View.GONE
         updateStatus("Cesia 已就绪")
-        // UI 立即切换，schema reload 放后台
+        // UI 立即切换，schema 切换放后台（不再 rebuild，秒开）
         if (keyboardMode == KeyboardMode.NUMBER) {
             switchToKeyboard(KeyboardMode.QWERTY)
-            Thread { rimeEngine.selectSchema("pinyin"); rimeEngine.reload() }.start()
+            Thread {
+                rimeEngine.selectSchema("pinyin")
+                rimeEngine.clearSession()
+            }.start()
         } else {
             switchToKeyboard(KeyboardMode.NUMBER)
             Thread {
                 rimeEngine.selectSchema("t9_pinyin")
-                rimeEngine.reload()
+                rimeEngine.clearSession()
                 Handler(Looper.getMainLooper()).post { resetNumberKeyboardState() }
             }.start()
         }
@@ -1962,21 +1965,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun toggleNumberKeyboard() {
         if (keyboardMode == KeyboardMode.NUMBER) {
-            // T9 → QWERTY：切换 schema 到 pinyin（需要 reload 使新 schema 生效）
+            // T9 → QWERTY：切换 schema 到 pinyin
             switchToKeyboard(KeyboardMode.QWERTY)
             rimeEngine.selectSchema("pinyin")
-            rimeEngine.reload()
-            // reload() 会重置 Rime 内部状态，需重新应用 shift 锁定
+            rimeEngine.clearSession()
             if (qwertyShiftLock) {
                 isAsciiMode = true
                 rimeEngine.setAsciiMode(true)
             }
         } else {
-            // QWERTY → T9：切换 schema 到 t9_pinyin（需要 reload 使新 schema 生效）
+            // QWERTY → T9：切换 schema 到 t9_pinyin
             switchToKeyboard(KeyboardMode.NUMBER)
             rimeEngine.selectSchema("t9_pinyin")
-            rimeEngine.reload()
-            resetNumberKeyboardState()  // 清除 T9 shift 状态（已在 switchToKeyboard NUMBER 分支清除）
+            rimeEngine.clearSession()
+            resetNumberKeyboardState()
         }
     }
 

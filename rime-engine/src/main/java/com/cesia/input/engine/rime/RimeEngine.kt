@@ -205,4 +205,9 @@ class RimeEngine(private val context: Context) : InputEngine {
         return Rime.selectRimeSchemas(arrayOf(schemaId))
     }
 
+    /** 清除当前 session（切换 schema 后调用，下次按键自动用新 schema 创建新 session） */
+    fun clearSession() {
+        session = null
+    }
+
 }
