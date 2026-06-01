@@ -493,6 +493,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 左右滑动循环切换全键盘/T9
         keyboardView.onSwipeLeft = { toggleBySwipe() }
         keyboardView.onSwipeRight = { toggleBySwipe() }
+        // 滑动早期趋势通知：提前取消长按 runnable，防止副字符功能误触发
+        keyboardView.onSwipeEarly = { cancelAllLongPressActions() }
 
         // 设置功能键长按副功能提示文字
         keyboardView.setFunctionalLabels(mapOf(

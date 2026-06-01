@@ -51,6 +51,9 @@ class CesiaKeyboardView @JvmOverloads constructor(
 
     var onSwipeLeft: (() -> Unit)? = null
     var onSwipeRight: (() -> Unit)? = null
+    /** 滑动趋势早期通知（到达阈值前调用，用于提前取消长按 runnable） */
+    var onSwipeEarly: (() -> Unit)? = null
+    private var swipeEarlyNotified = false  // 防止重复通知
 
     override fun onTouchEvent(me: android.view.MotionEvent): Boolean {
         when (me.actionMasked) {
@@ -62,17 +65,23 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 gestureStartX = me.x
                 gestureStartY = me.y
                 isSwipeDetected = false
+                swipeEarlyNotified = false
             }
             android.view.MotionEvent.ACTION_MOVE -> {
                 if (!isSwipeDetected) {
                     val dx = me.x - gestureStartX
                     val dy = kotlin.math.abs(me.y - gestureStartY)
                     val adx = kotlin.math.abs(dx)
+                    // 早期滑动趋势检测：移动超过 20px 且方向水平，提前取消长按
+                    // 此时可能还没到 100px 滑动阈值，但长按 runnable 可能已经注册了
+                    if (!swipeEarlyNotified && adx > 20f && dy < swipeMaxYDrift) {
+                        swipeEarlyNotified = true
+                        clearAllKeysPressed()
+                        onSwipeEarly?.invoke()
+                    }
                     if (adx > swipeThreshold && dy < swipeMaxYDrift) {
                         isSwipeDetected = true
                         swipeLockUntil = System.currentTimeMillis() + swipeLockDuration
-                        // 清除所有按键按下状态，防止滑动起点按键触发副字符/功能
-                        clearAllKeysPressed()
                         if (dx < 0) onSwipeLeft?.invoke() else onSwipeRight?.invoke()
                         return true
                     }
@@ -95,6 +104,8 @@ class CesiaKeyboardView @JvmOverloads constructor(
         for (key in kb.keys) {
             key.pressed = false
         }
+        // 清除长按高亮 key（消除蓝色方形区域）
+        currentPopupKey = null
         // 取消 KeyboardView 内部的长按检测（防止滑动起点按键弹出副字符）
         cancelKeyboardViewLongPress()
         invalidateAllKeys()
