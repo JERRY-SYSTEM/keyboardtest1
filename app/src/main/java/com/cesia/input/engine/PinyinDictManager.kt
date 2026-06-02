@@ -100,21 +100,17 @@ class PinyinDictManager(private val context: Context) {
                 var totalExtracted = 0
 
                 // 下载中文词库
-                    val cnFiles = mutableListOf<String>()
-                    if (bundles.contains(BUNDLE_BASE)) {
-                        cnFiles.add("base.dict.yaml")
-                        cnFiles.add("8105.dict.yaml")
-                    }
-                        cnFiles.add("41448.dict.yaml")
-                        cnFiles.add("ext.dict.yaml")
-                    }
-                    if (bundles.contains(BUNDLE_TENCENT)) {
-                        cnFiles.add("tencent.dict.yaml")
-                    }
-
-                    onProgress("正在下载中文词库...")
-                    totalExtracted += downloadAndExtract(CN_DICTS_URL, rimeDir, cnFiles)
+                val cnFiles = mutableListOf<String>()
+                if (bundles.contains(BUNDLE_BASE)) {
+                    cnFiles.add("base.dict.yaml")
+                    cnFiles.add("8105.dict.yaml")
                 }
+                if (bundles.contains(BUNDLE_TENCENT)) {
+                    cnFiles.add("tencent.dict.yaml")
+                }
+
+                onProgress("正在下载中文词库...")
+                totalExtracted += downloadAndExtract(CN_DICTS_URL, rimeDir, cnFiles)
 
                 // 下载英文词库（随基础包）
                 if (bundles.contains(BUNDLE_BASE)) {
@@ -201,22 +197,7 @@ class PinyinDictManager(private val context: Context) {
             }
         }
 
-        // Step 2: 扩展词库（41448 + ext）
-            val ext41448File = File(rimeDir, "41448.dict.yaml")
-            if (ext41448File.exists()) {
-                val before = entries.size
-                loadDictEntries(ext41448File, entries, isCharTable = false)
-                Log.i(TAG, "加载 41448: +${entries.size - before} 条")
-            }
-            val extFile = File(rimeDir, "ext.dict.yaml")
-            if (extFile.exists()) {
-                val before = entries.size
-                loadDictEntries(extFile, entries, isCharTable = false)
-                Log.i(TAG, "加载 ext: +${entries.size - before} 条")
-            }
-        }
-
-        // Step 3: 腾讯词库（最大，最后加载，优先级最高）
+        // Step 2: 腾讯词库（最大，最后加载，优先级最高）
         if (bundles.contains(BUNDLE_TENCENT)) {
             val tencentFile = File(rimeDir, "tencent.dict.yaml")
             if (tencentFile.exists()) {
@@ -226,7 +207,7 @@ class PinyinDictManager(private val context: Context) {
             }
         }
 
-        // Step 4: 8105 字表（最后加载，确保单字覆盖词组中的同音字）
+        // Step 3: 8105 字表（最后加载，确保单字覆盖词组中的同音字）
         val charTableFile = File(rimeDir, LOCAL_8105_FILE)
         if (charTableFile.exists()) {
             val before = entries.size
@@ -298,7 +279,6 @@ class PinyinDictManager(private val context: Context) {
             editor.putBoolean(PREF_BASE_DOWNLOADED, true)
             editor.putBoolean(PREF_EN_DOWNLOADED, true)
             editor.putBoolean(PREF_OPENCC_DOWNLOADED, true)
-        }
         }
         if (bundles.contains(BUNDLE_TENCENT)) {
             editor.putBoolean(PREF_TENCENT_DOWNLOADED, true)
