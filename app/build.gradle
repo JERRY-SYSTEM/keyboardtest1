@@ -115,11 +115,5 @@ dependencies {
 // WeNet模型将在应用首次运行时自动下载
 
 // === APK 重命名：使用 versionName 命名输出 APK ===
-android.applicationVariants.configureEach { variant ->
-    if (variant.buildType.name == "debug") {
-        variant.outputs.each { output ->
-            def versionName = variant.versionName ?: "1.1.1"
-            outputFileName = "Cesia-${versionName}-debug.apk"
-        }
-    }
-}
+// 注意：AGP 8.x 已移除 variant.outputs[].outputFileName API
+// 暂时保持默认命名，以后再补回新的 androidComponents API 方式
