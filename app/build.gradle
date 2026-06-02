@@ -61,6 +61,12 @@ android {
         buildConfig true
     }
 
+    // 把版本号直接写入 BuildConfig，运行时确保读到固定值
+    def verCode = getVersionCode()
+    def verName = getVersionName()
+    buildConfigField "int", "VERSION_CODE", "${verCode}"
+    buildConfigField "String", "VERSION_NAME", "\"${verName}\""
+
     kotlinOptions {
         jvmTarget = '17'
     }

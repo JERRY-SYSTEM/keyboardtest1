@@ -164,28 +164,20 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showVersion() {
-        // 直接从已安装APK读取版本号；IME context 中 packageName 变量可能不是目标包名，直接硬编码
-        val targetPackage = "com.cesia.input"
         val displayVersion = try {
-            val pInfo = if (Build.VERSION.SDK_INT >= 33) {
-                packageManager.getPackageInfo(targetPackage, PackageManager.PackageInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getPackageInfo(targetPackage, 0)
-            }
-            pInfo.versionName ?: "开发版"
+            BuildConfig.VERSION_NAME
         } catch (e: Exception) {
-            Log.w("SettingsActivity", "读取版本失败: ${e.javaClass.simpleName} ${e.message}", e)
+            Log.w("SettingsActivity", "读取 BuildConfig 版本失败: ${e.javaClass.simpleName} ${e.message}", e)
             "开发版"
         }
 
-        val versionText = if (displayVersion.isNotEmpty() && displayVersion != "null") {
+        val versionText = if (!displayVersion.isNullOrEmpty() && displayVersion != "null") {
             "版本: $displayVersion"
         } else {
             "版本: 开发版"
         }
         tvVersion.text = versionText
-        Log.d("SettingsActivity", "显示版本: $displayVersion, versionCode: ${try { val pInfo2 = if (Build.VERSION.SDK_INT >= 33) packageManager.getPackageInfo(targetPackage, PackageManager.PackageInfoFlags.of(0)) else @Suppress("DEPRECATION") packageManager.getPackageInfo(targetPackage, 0); if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo2.longVersionCode else @Suppress("DEPRECATION") pInfo2.versionCode.toLong() } catch(_:Exception){0L}}")
+        Log.d("SettingsActivity", "显示版本(固定): $displayVersion")
         fetchGitHubVersion()
     }
 
@@ -820,21 +812,9 @@ class SettingsActivity : AppCompatActivity() {
                     } else ""
                 } catch (_: Exception) { "" }
 
-                // 版本比较：用 packageManager 读已安装 APK 的版本（IME context 中 packageName 可能不正确）
-                val targetPackage = "com.cesia.input"
-                val pkgInfo = if (Build.VERSION.SDK_INT >= 33) {
-                    packageManager.getPackageInfo(targetPackage, PackageManager.PackageInfoFlags.of(0))
-                } else {
-                    @Suppress("DEPRECATION")
-                    packageManager.getPackageInfo(targetPackage, 0)
-                }
-                val currentVersionName = pkgInfo.versionName ?: "开发版"
-                val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    pkgInfo.longVersionCode
-                } else {
-                    @Suppress("DEPRECATION")
-                    pkgInfo.versionCode.toLong()
-                }
+                // 版本比较：直接读 BuildConfig，不依赖 packageManager
+                val currentVersionName = BuildConfig.VERSION_NAME
+                val currentVersionCode = BuildConfig.VERSION_CODE
 
                 // 从 tag_name 解析最新版本的 versionCode (格式: 1.1.X -> X)
                 val latestVersionCode = try {
