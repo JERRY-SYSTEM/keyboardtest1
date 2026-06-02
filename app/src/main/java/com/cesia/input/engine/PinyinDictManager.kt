@@ -28,7 +28,6 @@ class PinyinDictManager(private val context: Context) {
         private const val TAG = "RimeDictManager"
         const val PREF_DICT_DOWNLOADED = "dict_downloaded"
         const val PREF_BASE_DOWNLOADED = "base_downloaded"
-        const val PREF_EXT_DOWNLOADED = "ext_downloaded"
         const val PREF_TENCENT_DOWNLOADED = "tencent_downloaded"
         const val PREF_EN_DOWNLOADED = "en_downloaded"
         const val PREF_OPENCC_DOWNLOADED = "opencc_downloaded"
@@ -46,7 +45,6 @@ class PinyinDictManager(private val context: Context) {
 
         // === 词包定义 ===
         const val BUNDLE_BASE = "base"
-        const val BUNDLE_EXT = "ext"
         const val BUNDLE_TENCENT = "tencent"
     }
 
@@ -71,16 +69,6 @@ class PinyinDictManager(private val context: Context) {
             recommended = true,
             url = CN_DICTS_URL,
             files = listOf("base.dict.yaml")
-        ),
-        BundleInfo(
-            id = BUNDLE_EXT,
-            name = "扩展词库",
-            description = "41448扩展词库 + ext扩展词库（~40万词条）",
-            estimatedSize = "~15MB",
-            required = false,
-            recommended = false,
-            url = CN_DICTS_URL,
-            files = listOf("41448.dict.yaml", "ext.dict.yaml")
         ),
         BundleInfo(
             id = BUNDLE_TENCENT,
@@ -112,13 +100,11 @@ class PinyinDictManager(private val context: Context) {
                 var totalExtracted = 0
 
                 // 下载中文词库
-                if (bundles.contains(BUNDLE_BASE) || bundles.contains(BUNDLE_EXT) || bundles.contains(BUNDLE_TENCENT)) {
                     val cnFiles = mutableListOf<String>()
                     if (bundles.contains(BUNDLE_BASE)) {
                         cnFiles.add("base.dict.yaml")
                         cnFiles.add("8105.dict.yaml")
                     }
-                    if (bundles.contains(BUNDLE_EXT)) {
                         cnFiles.add("41448.dict.yaml")
                         cnFiles.add("ext.dict.yaml")
                     }
@@ -205,14 +191,7 @@ class PinyinDictManager(private val context: Context) {
     private fun mergeSelectedDicts(rimeDir: File, bundles: List<String>): Int {
         val entries = LinkedHashMap<String, Pair<String, Long>>()
 
-        // Step 1: 8105 字表（优先级最低，只填充缺失的字）
-        val charTableFile = File(rimeDir, LOCAL_8105_FILE)
-        if (charTableFile.exists()) {
-            loadDictEntries(charTableFile, entries, isCharTable = true)
-            Log.i(TAG, "加载字表: ${charTableFile.name}, 当前总条目: ${entries.size}")
-        }
-
-        // Step 2: 基础词库（base）
+        // Step 1: 基础词库（base）- 词组优先
         if (bundles.contains(BUNDLE_BASE)) {
             val baseFile = File(rimeDir, "base.dict.yaml")
             if (baseFile.exists()) {
@@ -222,8 +201,7 @@ class PinyinDictManager(private val context: Context) {
             }
         }
 
-        // Step 3: 扩展词库（41448 + ext）
-        if (bundles.contains(BUNDLE_EXT)) {
+        // Step 2: 扩展词库（41448 + ext）
             val ext41448File = File(rimeDir, "41448.dict.yaml")
             if (ext41448File.exists()) {
                 val before = entries.size
@@ -238,7 +216,7 @@ class PinyinDictManager(private val context: Context) {
             }
         }
 
-        // Step 4: 腾讯词库（最大，最后加载，优先级最高）
+        // Step 3: 腾讯词库（最大，最后加载，优先级最高）
         if (bundles.contains(BUNDLE_TENCENT)) {
             val tencentFile = File(rimeDir, "tencent.dict.yaml")
             if (tencentFile.exists()) {
@@ -246,6 +224,15 @@ class PinyinDictManager(private val context: Context) {
                 loadDictEntries(tencentFile, entries, isCharTable = false)
                 Log.i(TAG, "加载 tencent: +${entries.size - before} 条")
             }
+        }
+
+        // Step 4: 8105 字表（最后加载，确保单字覆盖词组中的同音字）
+        val charTableFile = File(rimeDir, LOCAL_8105_FILE)
+        if (charTableFile.exists()) {
+            val before = entries.size
+            // 字表直接覆盖，不检查 isCharTable
+            loadDictEntries(charTableFile, entries, isCharTable = false)
+            Log.i(TAG, "加载字表: ${charTableFile.name}, +${entries.size - before} 条, 当前总条目: ${entries.size}")
         }
 
         // 写入合并后的 pinyin.dict.yaml
@@ -312,8 +299,6 @@ class PinyinDictManager(private val context: Context) {
             editor.putBoolean(PREF_EN_DOWNLOADED, true)
             editor.putBoolean(PREF_OPENCC_DOWNLOADED, true)
         }
-        if (bundles.contains(BUNDLE_EXT)) {
-            editor.putBoolean(PREF_EXT_DOWNLOADED, true)
         }
         if (bundles.contains(BUNDLE_TENCENT)) {
             editor.putBoolean(PREF_TENCENT_DOWNLOADED, true)
@@ -348,7 +333,6 @@ class PinyinDictManager(private val context: Context) {
 
         val bundleNames = mutableListOf<String>()
         if (prefs.getBoolean(PREF_BASE_DOWNLOADED, false)) bundleNames.add("基础")
-        if (prefs.getBoolean(PREF_EXT_DOWNLOADED, false)) bundleNames.add("扩展")
         if (prefs.getBoolean(PREF_TENCENT_DOWNLOADED, false)) bundleNames.add("腾讯")
 
         return DictInfo(
