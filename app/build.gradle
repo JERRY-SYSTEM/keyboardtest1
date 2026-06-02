@@ -4,9 +4,22 @@ plugins {
     id 'org.jetbrains.kotlin.android' version '1.9.0'
 }
 
-// 从 gradle.properties 读版本号（由 CI workflow 写入 apkVersion=1.1.N）
+// ===== 版本号计算（配置期执行，-PapkVersion 由 CI 传入）=====
 def apkVerRaw = project.findProperty("apkVersion") ?: System.getenv("APK_VERSION")
 def apkVer = apkVerRaw?.trim()
+
+def verCode
+def verName
+if (apkVer && apkVer.matches("\\d+\\.\\d+\\.\\d+")) {
+    verCode = apkVer.split("\\.")[2].toInteger()
+    verName = apkVer
+} else {
+    def count = "git rev-list --count HEAD".execute([], project.rootDir).text.trim()
+    verCode = (count.isInteger() ? count.toInteger() : 1)
+    verName = "1.1.${verCode}"
+    println "⚠ 版本号未配置 (apkVer=${apkVer})，使用 git count: ${verName}"
+}
+println "✅ 版本号: versionCode=${verCode}, versionName=${verName}"
 
 android {
     namespace 'com.cesia.input'
@@ -16,18 +29,8 @@ android {
         applicationId "com.cesia.input"
         minSdk 24
         targetSdk 34
-
-        // 版本号解析（配置期执行，gradle.properties 已在进程启动时加载）
-        if (apkVer && apkVer.matches("\\d+\\.\\d+\\.\\d+")) {
-            def parts = apkVer.split("\\.")
-            versionCode parts[2].toInteger()
-            versionName apkVer
-        } else {
-            versionCode 1
-            versionName "1.1.1"
-            println "⚠ 版本号未配置 (apkVer=${apkVer})，使用默认 1.1.1"
-        }
-
+        versionCode verCode
+        versionName verName
         ndk {
             abiFilters "arm64-v8a"
         }
@@ -54,8 +57,8 @@ android {
     }
 
     // BuildConfig 写版本号，运行时直接读，不依赖 PackageManager
-    buildConfigField "int", "VERSION_CODE", "${android.defaultConfig.versionCode}"
-    buildConfigField "String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\""
+    buildConfigField "int", "VERSION_CODE", "${verCode}"
+    buildConfigField "String", "VERSION_NAME", "\"${verName}\""
 
     kotlinOptions {
         jvmTarget = '17'
@@ -80,7 +83,6 @@ dependencies {
 }
 
 // APK 重命名
-def verName = android.defaultConfig.versionName
 def cesiaApkName = "Cesia-${verName}-debug.apk"
 tasks.register("renameDebugApk") {
     def debugApkDir = file("$buildDir/outputs/apk/debug")
