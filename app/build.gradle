@@ -4,10 +4,13 @@ plugins {
     id 'org.jetbrains.kotlin.android' version '1.9.0'
 }
 
-// === 动态读取版本号 ===
-// versionName: 1.0.{commit_count}，给用户看的版本号
-// versionCode: commit_count，内部单调递增整数
+// === 版本号：优先从 APK_VERSION 环境变量读取（CI构建时由 workflow 传入），本地开发时从 git 计算 ===
 def getVersionCode() {
+    def envVer = System.getenv("APK_VERSION")
+    if (envVer != null && !envVer.isEmpty()) {
+        def parts = envVer.split("\\.")
+        return parts.length >= 3 ? (parts[2].toInteger()) : 1
+    }
     try {
         def stdout = new ByteArrayOutputStream()
         exec {
@@ -16,7 +19,6 @@ def getVersionCode() {
             workingDir = rootDir
         }
         def count = Integer.parseInt(stdout.toString().trim())
-        // 确保至少为1，避免版本号显示为0
         return count > 0 ? count : 1
     } catch (Exception e) {
         return 1
@@ -24,8 +26,11 @@ def getVersionCode() {
 }
 
 def getVersionName() {
-    def count = getVersionCode()
-    return "1.1." + count
+    def envVer = System.getenv("APK_VERSION")
+    if (envVer != null && !envVer.isEmpty()) {
+        return envVer
+    }
+    return "1.1." + getVersionCode()
 }
 
 android {

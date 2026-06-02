@@ -203,10 +203,8 @@ class SettingsActivity : AppCompatActivity() {
                     val tagName = json.optString("tag_name", "").removePrefix("v")
                     if (tagName.isNotEmpty()) {
                         prefs.edit().putString("github_version_name", tagName).apply()
-                        runOnUiThread {
-                            tvVersion.text = "版本: $tagName"
-                            Log.d("SettingsActivity", "从GitHub获取版本号: $tagName")
-                        }
+                        // 只更新远端版本缓存，不覆盖本地版本显示
+                        Log.d("SettingsActivity", "远端版本已缓存: $tagName")
                     }
                 }
             } catch (_: Exception) {}
@@ -818,23 +816,15 @@ class SettingsActivity : AppCompatActivity() {
                     } else ""
                 } catch (_: Exception) { "" }
 
-                // 版本比较：用 versionCode 数值比较
-                val currentVersionCode = try {
-                    val pInfo = packageManager.getPackageInfo(packageName, 0)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pInfo.longVersionCode
-                    else @Suppress("DEPRECATION") pInfo.versionCode.toLong()
-                } catch (_: Exception) { 0L }
+                // 版本比较：用编译时写入的 BuildConfig（永远和 APK 内一致）
+                val currentVersionCode = com.cesia.input.BuildConfig.VERSION_CODE.toLong()
+                val currentVersionName = com.cesia.input.BuildConfig.VERSION_NAME
 
                 // 从 tag_name 解析最新版本的 versionCode (格式: 1.1.X -> X)
                 val latestVersionCode = try {
                     val parts = latestVersionName.split(".")
                     if (parts.size >= 3) parts[2].toLong() else 0L
                 } catch (_: Exception) { 0L }
-
-                val currentVersionName = try {
-                    val pInfo = packageManager.getPackageInfo(packageName, 0)
-                    pInfo.versionName ?: "开发版"
-                } catch (_: Exception) { "开发版" }
 
                 // 本地versionCode >= 最新版本versionCode 表示已是最新
                 val isUpToDate = currentVersionCode > 0 && currentVersionCode >= latestVersionCode
