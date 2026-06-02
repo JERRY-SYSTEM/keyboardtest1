@@ -109,4 +109,8 @@ tasks.register("renameDebugApk") {
         }
     }
 }
-tasks.named("assembleDebug").configure { finalizedBy "renameDebugApk" }
+afterEvaluate {
+    tasks.matching { it.name == 'assembleDebug' }.configureEach {
+        finalizedBy 'renameDebugApk'
+    }
+}
