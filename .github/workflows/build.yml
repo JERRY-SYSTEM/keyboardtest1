@@ -54,9 +54,12 @@ jobs:
 
       - name: Build APK with Gradle
         env:
-          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
           APK_VERSION: ${{ steps.version.outputs.version }}
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v5

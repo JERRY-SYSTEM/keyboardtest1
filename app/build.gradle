@@ -26,6 +26,10 @@ def getVersionName() {
     return envVer
 }
 
+// 统一版本变量，避免解析多次导致空值
+def verCode = getVersionCode()
+def verName = getVersionName()
+
 android {
     namespace 'com.cesia.input'
     compileSdk 34
@@ -34,8 +38,8 @@ android {
         applicationId "com.cesia.input"
         minSdk 24
         targetSdk 34
-        versionCode getVersionCode()
-        versionName getVersionName()
+        versionCode verCode
+        versionName verName
         ndk {
             abiFilters "arm64-v8a"
         }
@@ -61,9 +65,7 @@ android {
         buildConfig true
     }
 
-    // 把版本号直接写入 BuildConfig，运行时确保读到固定值
-    def verCode = getVersionCode()
-    def verName = getVersionName()
+    // BuildConfig 直接写版本号，运行期绝不依赖 PackageManager
     buildConfigField "int", "VERSION_CODE", "${verCode}"
     buildConfigField "String", "VERSION_NAME", "\"${verName}\""
 
@@ -96,11 +98,10 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
 }
 
-// === APK 重命名：assembleDebug 后重命名为 Cesia-{versionName}-debug.apk ===
-def cesiaApkName = "Cesia-${versionName}-debug.apk"
+// APK 重命名：assembleDebug 后重命名为 Cesia-{versionName}-debug.apk
+def cesiaApkName = "Cesia-${verName}-debug.apk"
 tasks.register("renameDebugApk") {
     def debugApkDir = file("$buildDir/outputs/apk/debug")
-    // 配置阶段先声明安全的目录/文件集合，不查找具体文件名（此时 APK 尚未产出）
     def sourceGlob = fileTree(dir: debugApkDir, include: "*.apk")
     inputs.files(sourceGlob)
     outputs.file("$debugApkDir/$cesiaApkName")
@@ -112,11 +113,10 @@ tasks.register("renameDebugApk") {
             throw new GradleException("Debug APK not found in $debugApkDir for rename")
         }
         def targetFile = file("$debugApkDir/$cesiaApkName")
-        if (apkFile.renameTo(targetFile)) {
-            println "Renamed APK -> ${targetFile.name}"
-        } else {
+        if (!apkFile.renameTo(targetFile)) {
             throw new GradleException("Failed to rename ${apkFile.name} -> $cesiaApkName")
         }
+        println "Renamed APK -> ${targetFile.name}"
     }
 }
 afterEvaluate {
