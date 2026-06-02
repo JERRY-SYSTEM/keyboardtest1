@@ -94,18 +94,22 @@ dependencies {
 def cesiaApkName = "Cesia-${versionName}-debug.apk"
 tasks.register("renameDebugApk") {
     def debugApkDir = file("$buildDir/outputs/apk/debug")
-    def apkFile = debugApkDir.listFiles().find { f ->
-        f.name.endsWith(".apk") && f.name.contains("debug") && !f.name.startsWith("Cesia-")
-    }
-    onlyIf { apkFile != null }
-    def targetFile = file("$debugApkDir/$cesiaApkName")
-    inputs.file(apkFile)
-    outputs.file(targetFile)
+    // 配置阶段先声明安全的目录/文件集合，不查找具体文件名（此时 APK 尚未产出）
+    def sourceGlob = fileTree(dir: debugApkDir, include: "*.apk")
+    inputs.files(sourceGlob)
+    outputs.file("$debugApkDir/$cesiaApkName")
     doLast {
+        def apkFile = debugApkDir.listFiles().find { f ->
+            f.name.endsWith(".apk") && f.name.contains("debug") && !f.name.startsWith("Cesia-")
+        }
+        if (apkFile == null) {
+            throw new GradleException("Debug APK not found in $debugApkDir for rename")
+        }
+        def targetFile = file("$debugApkDir/$cesiaApkName")
         if (apkFile.renameTo(targetFile)) {
             println "Renamed APK -> ${targetFile.name}"
         } else {
-            throw new GradleException("Failed to rename APK to $cesiaApkName")
+            throw new GradleException("Failed to rename ${apkFile.name} -> $cesiaApkName")
         }
     }
 }
