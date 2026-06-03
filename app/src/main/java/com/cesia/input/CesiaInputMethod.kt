@@ -1845,7 +1845,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      */
     private fun showVoicePolishSelector() {
         try {
-        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_voice_polish_selector, null)
+            // 关键：获取键盘视图的 window token，否则 InputMethodService 无法创建 dialog
+            val windowToken = micButton?.windowToken
+            if (windowToken == null) {
+                updateStatus("⚠️ 输入法视图未就绪，请重试")
+                Log.e("Cesia", "showVoicePolishSelector: windowToken is null")
+                return
+            }
+
+            val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_voice_polish_selector, null)
 
         // 识别选项
         val btnGroq = dialogView.findViewById<TextView>(R.id.btn_voice_groq)
@@ -1961,16 +1969,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             .setView(dialogView)
             .setCancelable(true)
             .create()
-        try {
-            dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
-        } catch (_: Exception) {}
+        dialog.window?.let { window ->
+            window.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+            // 关键：使用键盘视图的 window token
+            window.attributes = window.attributes?.apply {
+                token = windowToken
+            }
+        }
         dialog.setOnDismissListener {
-            // 如果用户按返回键关闭面板，重置 longPressActive
             longPressActive = false
         }
 
         btnConfirm.setOnClickListener {
-            // 必须有选中的识别方式才能开始
             if (currentVoiceChoice == null) {
                 updateStatus("请先选择一种识别方式")
                 return@setOnClickListener
@@ -2010,6 +2020,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     /** 显示 API Key 设置引导 */
     private fun showApiKeyPrompt(name: String, url: String) {
+        val windowToken = micButton?.windowToken ?: return
+        try {
         AlertDialog.Builder(this)
             .setTitle("需要 $name API Key")
             .setMessage("请先在设置中配置 $name API Key，或前往 $url 获取。")
@@ -2022,12 +2034,22 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             .setNegativeButton("取消", null)
             .create()
-            .also { it.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG) }
+            .also { d ->
+                d.window?.let { w ->
+                    w.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+                    w.attributes = w.attributes?.apply { token = windowToken }
+                }
+            }
             .show()
+        } catch (e: Exception) {
+            Log.e("Cesia", "showApiKeyPrompt 异常", e)
+        }
     }
 
     /** 显示模型下载引导 */
     private fun showModelDownloadPrompt(type: String, modelId: String) {
+        val windowToken = micButton?.windowToken ?: return
+        try {
         AlertDialog.Builder(this)
             .setTitle("需要下载 $type 模型")
             .setMessage("本地 $type 模型未安装。是否前往设置下载？")
@@ -2041,8 +2063,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             .setNegativeButton("取消", null)
             .create()
-            .also { it.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG) }
+            .also { d ->
+                d.window?.let { w ->
+                    w.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+                    w.attributes = w.attributes?.apply { token = windowToken }
+                }
+            }
             .show()
+        } catch (e: Exception) {
+            Log.e("Cesia", "showModelDownloadPrompt 异常", e)
+        }
     }
 
     // ======================== 录音（根据选择的后端） ========================
