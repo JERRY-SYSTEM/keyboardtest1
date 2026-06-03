@@ -867,7 +867,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
-    /** 检测 Google：框架存在 + 能创建识别实例即算可用 */
+    /** 检测 Google：框架存在 + 有权限 + 网络能连通 Google 语音服务 */
     private fun checkGoogleAsync(callback: (Boolean, String?) -> Unit) {
         if (!android.speech.SpeechRecognizer.isRecognitionAvailable(this)) {
             callback(false, "Google 语音框架不可用")
@@ -879,18 +879,35 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             callback(false, "未授予录音权限，请在系统设置中开启")
             return
         }
-        try {
-            // 尝试创建 SpeechRecognizer 实例
-            val testRecognizer = android.speech.SpeechRecognizer.createSpeechRecognizer(this)
-            if (testRecognizer != null) {
-                // 实例创建成功，说明框架可用
-                try { testRecognizer.destroy() } catch (_: Exception) {}
-                callback(true, "Google 框架可用")
-            } else {
-                callback(false, "Google 识别器创建失败")
+        // 框架存在后，再发 HTTP 探测 Google 语音服务网络连通性
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .build()
+                // 探测 Google Speech API 端点
+                val request = okhttp3.Request.Builder()
+                    .url("https://speech.googleapis.com")
+                    .head()
+                    .build()
+                val response = client.newCall(request).execute()
+                withContext(Dispatchers.Main) {
+                    when {
+                        response.code == 404 || response.code == 403 || response.code == 200 -> {
+                            // 404/403/200 都说明服务器可达（只是没带合法请求）
+                            callback(true, "Google 连通")
+                        }
+                        else -> callback(false, "Google 返回 ${response.code}")
+                    }
+                }
+            } catch (e: java.net.UnknownHostException) {
+                withContext(Dispatchers.Main) { callback(false, "无法连接 Google（网络问题）") }
+            } catch (e: java.net.SocketTimeoutException) {
+                withContext(Dispatchers.Main) { callback(false, "Google 连接超时") }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { callback(false, "Google 检测失败: ${e.message}") }
             }
-        } catch (e: Exception) {
-            callback(false, "Google 检测异常: ${e.message}")
         }
     }
 
