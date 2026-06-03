@@ -974,6 +974,49 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+    /** 检测 OpenRouter：发轻量 HTTP 请求测试连通性 */
+    private fun checkOpenRouterAsync(callback: (Boolean, String?) -> Unit) {
+        val key = getOpenRouterApiKey()
+        if (key.isEmpty()) {
+            callback(false, "未配置 API Key")
+            return
+        }
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .build()
+                val request = okhttp3.Request.Builder()
+                    .url("https://openrouter.ai/api/v1/models")
+                    .addHeader("Authorization", "Bearer $key")
+                    .get()
+                    .build()
+                val response = client.newCall(request).execute()
+                withContext(Dispatchers.Main) {
+                    when (response.code) {
+                        200 -> {
+                            val body = response.body?.string() ?: ""
+                            if (body.contains("\"data\"")) {
+                                callback(true, "OpenRouter 连通")
+                            } else {
+                                callback(false, "OpenRouter API 返回异常")
+                            }
+                        }
+                        401 -> callback(false, "API Key 无效")
+                        else -> callback(false, "OpenRouter 返回 ${response.code}")
+                    }
+                }
+            } catch (e: java.net.UnknownHostException) {
+                withContext(Dispatchers.Main) { callback(false, "无法连接 OpenRouter（网络问题）") }
+            } catch (e: java.net.SocketTimeoutException) {
+                withContext(Dispatchers.Main) { callback(false, "OpenRouter 连接超时") }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { callback(false, "OpenRouter 检测失败: ${e.message}") }
+            }
+        }
+    }
+
     /**
      * 综合检测并返回可用后端列表（按优先级：Whisper > Google > Groq）
      * 用于单击时的快速判断
@@ -2158,6 +2201,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             var whisperRealOk = hasWhisperModel
             var googleRealOk = googleFrameworkOk
             var groqRealOk = hasGroqKey
+            var orRealOk = hasOrKey
 
             fun onCheckComplete() {
                 pendingChecks--
@@ -2176,6 +2220,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 if (googleFrameworkOk && !googleRealOk) {
                     setOptionState(btnGoogle, false, "🌍 Google", "🌍 Google (连接失败)")
                 }
+                if (hasOrKey && !orRealOk) {
+                    setOptionState(btnPolishCloud, false, "☁️ 云端润色", "☁️ 云端 (连接失败)")
+                }
 
                 // 如果当前选中的后端实际不可用，提示用户
                 when (currentVoiceChoice) {
@@ -2183,6 +2230,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     VoiceChoice.LOCAL_WHISPER -> if (!whisperRealOk) updateStatus("⚠️ Whisper 加载失败，请选择其他识别方式")
                     VoiceChoice.GOOGLE -> if (!googleRealOk) updateStatus("⚠️ Google 连接失败，请选择其他识别方式")
                     null -> {}
+                }
+                if (currentPolishChoice == PolishChoice.CLOUD_OPENROUTER && !orRealOk) {
+                    updateStatus("⚠️ OpenRouter 连接失败，请选择其他润色方式")
                 }
             }
 
@@ -2232,6 +2282,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     Handler(Looper.getMainLooper()).post {
                         if (!ok) {
                             setOptionState(btnGroq, false, "☁️ Groq 云端", "☁️ Groq ($err)")
+                        }
+                        onCheckComplete()
+                    }
+                }
+            }
+
+            // 4. 检测 OpenRouter（异步 HTTP）
+            if (hasOrKey) {
+                pendingChecks++
+                loadingContainer.visibility = View.VISIBLE
+                tvLoadingText.text = "正在检测 OpenRouter 连通性..."
+                checkOpenRouterAsync { ok, err ->
+                    orRealOk = ok
+                    Handler(Looper.getMainLooper()).post {
+                        if (ok) {
+                            setOptionState(btnPolishCloud, true, "☁️ 云端润色", "☁️ 云端 (需设置 API Key)")
+                        } else {
+                            setOptionState(btnPolishCloud, false, "☁️ 云端润色", "☁️ 云端 ($err)")
                         }
                         onCheckComplete()
                     }
