@@ -39,7 +39,9 @@ import com.cesia.input.engine.rime.RimeEngine
 import com.cesia.input.model.ModelManager
 import com.cesia.input.stats.PolishStatsManager
 import com.cesia.input.stats.MagicHistoryManager
+import com.cesia.input.voice.VoiceEngine
 import com.google.android.material.button.MaterialButton
+import kotlinx.coroutines.*
 
 /**
  * Cesia 输入法 — Rime 内核版
@@ -91,6 +93,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var typelessEngine: TypelessEngine? = null
     private lateinit var statsManager: PolishStatsManager
     private lateinit var rimeEngine: RimeEngine
+    private lateinit var voiceEngine: VoiceEngine
+    private lateinit var modelManager: ModelManager
 
     // ======================== 状态 ========================
     private var isRecording = false
@@ -105,6 +109,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var recognizedText: String = ""
     private var isAsciiMode = false  // 与 Rime ascii_mode 对应
     private var shortPressHandled = false  // 当前按键是否已处理短按（防止长按重复触发）
+
+    // 语音引擎协程作用域
+    private val voiceEngineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     // === 三个键盘的 shift 状态完全独立 ===
     private var qwertyShiftLocked = false   // 全键盘 shift 锁定
     private var qwertyShiftTemp = false     // 全键盘临时 shift（单字符后自动退出）
@@ -548,6 +556,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val rimeOk = rimeEngine.initialize()
         Log.i("Cesia", "Rime 引擎初始化: ok=$rimeOk")
         val rimeErrorMsg = if (!rimeOk) rimeEngine.lastError() ?: "未知" else null
+
+        // 初始化语音引擎和模型管理器
+        modelManager = ModelManager(this)
+        voiceEngine = VoiceEngine(this)
+        // 根据模式和模型可用性设置默认语音后端
+        updateVoiceBackend()
 
         typelessEngine = TypelessEngine(this, this).also { engine ->
             engine.onLogMessage = { msg ->
@@ -1720,6 +1734,77 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+    // ======================== 语音后端自动切换 ========================
+
+    /**
+     * 根据 LocalModeManager 模式和模型可用性自动选择语音后端
+     *
+     * 规则：
+     * - 云端模式（CLOUD_FREE / CLOUD_PAID）→ Groq API（需要 Groq Key）
+     * - 本地模式 + 已下载 Whisper 模型 → 本地 Whisper
+     * - 本地模式 + 未下载模型 → 回退到 Google 语音识别（系统自带）
+     */
+    private fun updateVoiceBackend() {
+        val modePrefs = getSharedPreferences("cesia_local_mode", Context.MODE_PRIVATE)
+        val modeName = modePrefs.getString("run_mode", LocalModeManager.RunMode.LOCAL.name)
+            ?: LocalModeManager.RunMode.LOCAL.name
+        val mode = try { LocalModeManager.RunMode.valueOf(modeName) }
+            catch (_: Exception) { LocalModeManager.RunMode.LOCAL }
+        val hasGroqKey = getGroqApiKey().isNotEmpty()
+        val hasLocalModel = modelManager.hasVoiceModel()
+
+        when (mode) {
+            LocalModeManager.RunMode.CLOUD_FREE, LocalModeManager.RunMode.CLOUD_PAID -> {
+                if (hasGroqKey) {
+                    voiceEngine.setBackend(VoiceEngine.Backend.CLOUD_GROQ)
+                    Log.i("Cesia", "语音后端: Groq 云端")
+                } else {
+                    // 云端模式但没有 Groq Key，回退到 Google
+                    voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
+                    Log.i("Cesia", "语音后端: Google (Groq Key 未设置，回退)")
+                }
+            }
+            LocalModeManager.RunMode.LOCAL -> {
+                if (hasLocalModel) {
+                    voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
+                    Log.i("Cesia", "语音后端: 本地 Whisper")
+                } else {
+                    // 本地模式但没有模型，回退到 Google
+                    voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
+                    Log.i("Cesia", "语音后端: Google (本地模型未下载，回退)")
+                }
+            }
+        }
+    }
+
+    /** 读取 Groq API Key */
+    private fun getGroqApiKey(): String {
+        val prefs = getSharedPreferences("cesia_settings", Context.MODE_PRIVATE)
+        return prefs.getString("groq_api_key", "") ?: ""
+    }
+
+    /**
+     * 获取当前语音后端的显示名称
+     */
+    fun getVoiceBackendName(): String {
+        val modePrefs = getSharedPreferences("cesia_local_mode", Context.MODE_PRIVATE)
+        val modeName = modePrefs.getString("run_mode", LocalModeManager.RunMode.LOCAL.name)
+            ?: LocalModeManager.RunMode.LOCAL.name
+        val mode = try { LocalModeManager.RunMode.valueOf(modeName) }
+            catch (_: Exception) { LocalModeManager.RunMode.LOCAL }
+        val hasGroqKey = getGroqApiKey().isNotEmpty()
+        val hasLocalModel = modelManager.hasVoiceModel()
+
+        return when (mode) {
+            LocalModeManager.RunMode.CLOUD_FREE, LocalModeManager.RunMode.CLOUD_PAID -> {
+                if (hasGroqKey) "Groq 云端" else "Google (回退)"
+            }
+            LocalModeManager.RunMode.LOCAL -> {
+                if (hasLocalModel) "本地 Whisper" else "Google (回退)"
+            }
+        }
+    }
+
     private fun getOpenRouterApiKey(): String {
         val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
         return prefs.getString(PREF_OPENROUTER_KEY, "") ?: ""
@@ -1737,9 +1822,114 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         keyboardView.visibility = View.GONE
         candidateBar.visibility = View.GONE
         voiceStartTime = System.currentTimeMillis()
-        updateStatus("🎤 正在收听，请说话...")
-        typelessEngine?.startListening(continuous = true)
+
+        // 每次录音前更新语音后端（模式可能已切换）
+        updateVoiceBackend()
+
+        when (voiceEngine.getBackend()) {
+            VoiceEngine.Backend.CLOUD_GROQ -> {
+                // 云端 Groq：使用 VoiceEngine 录音并识别
+                updateStatus("🎤 正在收听 (Groq 云端)...")
+                startGroqRecording()
+            }
+            VoiceEngine.Backend.LOCAL_WHISPER -> {
+                if (modelManager.hasVoiceModel()) {
+                    // 本地 Whisper：使用 VoiceEngine
+                    updateStatus("🎤 正在收听 (本地 Whisper)...")
+                    startWhisperRecording()
+                } else {
+                    // 回退到 Google 语音识别（通过 TypelessEngine/FallbackRecognizer）
+                    updateStatus("🎤 正在收听 (Google)...")
+                    typelessEngine?.startListening(continuous = true)
+                }
+            }
+        }
         showAiChoiceButtons()
+    }
+
+    /** 使用 Groq 云端 API 录音并识别 */
+    private fun startGroqRecording() {
+        // Groq 模式：启动 VoiceEngine 录音
+        // VoiceEngine 需要录音权限，使用 VoiceRecorder 录制后上传
+        voiceEngineScope.launch {
+            try {
+                val text = voiceEngine.recordAndTranscribe(30000) // 最多 30 秒
+                withContext(Dispatchers.Main) {
+                    handleVoiceResult(text)
+                }
+            } catch (e: Exception) {
+                Log.e("Cesia", "Groq 录音失败", e)
+                withContext(Dispatchers.Main) {
+                    updateStatus("❌ 语音识别失败: ${e.message}")
+                    resetToIdle()
+                }
+            }
+        }
+    }
+
+    /** 使用本地 Whisper 录音并识别 */
+    private fun startWhisperRecording() {
+        voiceEngineScope.launch {
+            try {
+                // 确保模型已加载
+                if (!voiceEngine.hasLocalModel()) {
+                    withContext(Dispatchers.Main) {
+                        updateStatus("⚠️ 本地模型未加载，正在加载...")
+                    }
+                    voiceEngine.loadLocalModel()
+                }
+                val text = voiceEngine.recordAndTranscribe(30000)
+                withContext(Dispatchers.Main) {
+                    handleVoiceResult(text)
+                }
+            } catch (e: Exception) {
+                Log.e("Cesia", "Whisper 录音失败", e)
+                withContext(Dispatchers.Main) {
+                    updateStatus("❌ 语音识别失败: ${e.message}")
+                    resetToIdle()
+                }
+            }
+        }
+    }
+
+    /**
+     * 统一处理语音识别结果（来自 Groq / Whisper / Google）
+     */
+    private fun handleVoiceResult(text: String) {
+        // 如果已经被停止（用户点击了停止按钮），忽略结果
+        if (!isRecording && recognizedText.isEmpty()) {
+            Log.d("Cesia", "handleVoiceResult: 已停止，忽略结果")
+            return
+        }
+        isRecording = false
+        stopVoiceWave()
+        recognizedText = text
+
+        if (text.isEmpty()) {
+            updateStatus("⚠️ 未识别到文字，请重试")
+            resetToIdle()
+            return
+        }
+
+        if (pendingAiMode == true) {
+            isWaitingForChoice = false
+            hideAiChoiceButtons()
+            updateStatus("✨ 正在施展魔法...")
+            setStatusDot("processing")
+            isProcessingResult = true
+            polishRecognizedText(text)
+        } else if (pendingAiMode == false) {
+            isWaitingForChoice = false
+            hideAiChoiceButtons()
+            currentInputConnection?.commitText(text, 1)
+            resetToIdle()
+        } else {
+            isWaitingForChoice = true
+            updateStatus("📝 「$text」→ 选择 AI+ 润色 或 AI× 直接上屏")
+            micButton.visibility = View.GONE
+            btnMicAi.visibility = View.VISIBLE
+            btnMicNoAi.visibility = View.VISIBLE
+        }
     }
 
     private fun showAiChoiceButtons() {
@@ -1784,7 +1974,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun stopRecordingAndWait() {
         isRecording = false
         stopVoiceWave()
+        // 停止所有语音后端
         typelessEngine?.stopListening()
+        voiceEngineScope.coroutineContext.cancelChildren()
         setStatusDot("processing")
     }
 
@@ -1806,6 +1998,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         recognizedText = ""
         pendingAiMode = null
         stopVoiceWave()
+        // 取消所有语音识别协程
+        voiceEngineScope.coroutineContext.cancelChildren()
         resetMagicHighlight()
         setStatusDot("idle")
         hideAiChoiceButtons()
@@ -3443,6 +3637,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         typelessEngine?.destroy()
         typelessEngine = null
         rimeEngine?.shutdown()
+        voiceEngine.release()
+        voiceEngineScope.cancel()
         super.onDestroy()
     }
 

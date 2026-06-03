@@ -123,7 +123,7 @@ class SettingsActivity : AppCompatActivity() {
         const val IMPORT_DICT_REQUEST = 2001
         const val IMPORT_PHRASES_REQUEST = 2002
         const val PREF_GROQ_KEY = "groq_api_key"
-        const val PREF_OPENROUTER_KEY = "open_router_api_key"
+        const val PREF_OPENROUTER_KEY = "openrouter_api_key"
         const val PREF_MODE = "run_mode"
     }
 
@@ -301,7 +301,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun loadSettings() {
         etApiUrl.setText(prefs.getString(PREF_API_URL, DEFAULT_API_URL))
-        etApiKey.setText(prefs.getString("openrouter_api_key", ""))
+        etApiKey.setText(prefs.getString(PREF_OPENROUTER_KEY, ""))
         etModelId.setText(prefs.getString(PREF_MODEL_ID, DEFAULT_MODEL_ID))
         appendLog("已加载设置")
     }
@@ -317,7 +317,7 @@ class SettingsActivity : AppCompatActivity() {
             val modelId = etModelId.text?.toString()?.trim() ?: DEFAULT_MODEL_ID
             prefs.edit()
                 .putString(PREF_API_URL, url)
-                .putString("openrouter_api_key", apiKey)
+                .putString(PREF_OPENROUTER_KEY, apiKey)
                 .putString(PREF_MODEL_ID, modelId)
                 .apply()
             aiSettingsHelper.saveSettings()
