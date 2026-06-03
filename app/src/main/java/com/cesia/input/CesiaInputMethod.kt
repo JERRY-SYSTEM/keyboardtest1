@@ -1844,6 +1844,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      * 用户分别选择识别后端和润色后端
      */
     private fun showVoicePolishSelector() {
+        try {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_voice_polish_selector, null)
 
         // 识别选项
@@ -1880,7 +1881,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         setOptionState(btnPolishLocal, hasAiModel, "📱 本地润色", "📱 本地 (需下载模型)")
         setOptionState(btnPolishOff, true, "❌ 关闭润色", null)
 
-        // 当前选中高选
+        // 当前选中高亮
         highlightSelected(btnGroq, currentVoiceChoice == VoiceChoice.CLOUD_GROQ)
         highlightSelected(btnWhisper, currentVoiceChoice == VoiceChoice.LOCAL_WHISPER)
         highlightSelected(btnGoogle, currentVoiceChoice == VoiceChoice.GOOGLE)
@@ -1958,8 +1959,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         val dialog = AlertDialog.Builder(this)
             .setView(dialogView)
+            .setCancelable(true)
             .create()
-        dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+        try {
+            dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+        } catch (_: Exception) {}
+        dialog.setOnDismissListener {
+            // 如果用户按返回键关闭面板，重置 longPressActive
+            longPressActive = false
+        }
 
         btnConfirm.setOnClickListener {
             // 必须有选中的识别方式才能开始
@@ -1975,6 +1983,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
 
         dialog.show()
+        } catch (e: Exception) {
+            Log.e("Cesia", "选择面板异常", e)
+            updateStatus("⚠️ 选择面板异常: ${e.message}")
+        }
     }
 
     /** 设置选项可用/不可用状态 */
