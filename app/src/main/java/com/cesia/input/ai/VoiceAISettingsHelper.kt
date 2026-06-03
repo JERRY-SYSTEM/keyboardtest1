@@ -43,10 +43,8 @@ class VoiceAISettingsHelper(
     var tvHardwareInfo: TextView? = null
     var tvVoiceModelStatus: TextView? = null
     var tvAiModelStatus: TextView? = null
-    var btnDownloadWhisperSmall: Button? = null
-    var btnDownloadWhisperLarge: Button? = null
-    var btnDownloadQwen08b: Button? = null
-    var btnDownloadQwen2b: Button? = null
+    var btnDownloadAuto: Button? = null
+    var btnUninstall: Button? = null
     var tvDownloadProgress: TextView? = null
     var pbDownload: ProgressBar? = null
     var switchGpu: SwitchCompat? = null
@@ -61,10 +59,8 @@ class VoiceAISettingsHelper(
         tvHardwareInfo: TextView?,
         tvVoiceModelStatus: TextView?,
         tvAiModelStatus: TextView?,
-        btnDownloadWhisperSmall: Button?,
-        btnDownloadWhisperLarge: Button?,
-        btnDownloadQwen08b: Button?,
-        btnDownloadQwen2b: Button?,
+        btnDownloadAuto: Button?,
+        btnUninstall: Button?,
         tvDownloadProgress: TextView?,
         pbDownload: ProgressBar?,
         switchGpu: SwitchCompat?
@@ -75,10 +71,8 @@ class VoiceAISettingsHelper(
         this.tvHardwareInfo = tvHardwareInfo
         this.tvVoiceModelStatus = tvVoiceModelStatus
         this.tvAiModelStatus = tvAiModelStatus
-        this.btnDownloadWhisperSmall = btnDownloadWhisperSmall
-        this.btnDownloadWhisperLarge = btnDownloadWhisperLarge
-        this.btnDownloadQwen08b = btnDownloadQwen08b
-        this.btnDownloadQwen2b = btnDownloadQwen2b
+        this.btnDownloadAuto = btnDownloadAuto
+        this.btnUninstall = btnUninstall
         this.tvDownloadProgress = tvDownloadProgress
         this.pbDownload = pbDownload
         this.switchGpu = switchGpu
@@ -117,21 +111,29 @@ class VoiceAISettingsHelper(
             modelManager.useGpu = checked
         }
 
-        // Whisper Small
-        btnDownloadWhisperSmall?.setOnClickListener {
-            downloadModel(ModelRegistry.getById("whisper-small")!!)
+        // 自动下载（根据 RAM 选 tier）
+        btnDownloadAuto?.setOnClickListener {
+            val ram = getTotalRamGB()
+            val tier = if (ram >= 6) ModelInfo.Tier.PREMIUM else ModelInfo.Tier.BASIC
+            val tierName = if (tier == ModelInfo.Tier.PREMIUM) "Large" else "Small"
+            val models = ModelRegistry.ALL_MODELS.filter { it.tier == tier }
+            val totalSize = models.sumOf { it.sizeBytes }
+            Toast.makeText(activity,
+                "将下载 $tierName 版本（${ModelDownloadManager.Formatter.formatSize(totalSize)}）",
+                Toast.LENGTH_SHORT).show()
+            downloadTier(tier)
         }
-        // Whisper Large
-        btnDownloadWhisperLarge?.setOnClickListener {
-            downloadModel(ModelRegistry.getById("whisper-large-turbo")!!)
-        }
-        // Qwen 0.8B
-        btnDownloadQwen08b?.setOnClickListener {
-            downloadModel(ModelRegistry.getById("qwen-0.8b")!!)
-        }
-        // Qwen 2B
-        btnDownloadQwen2b?.setOnClickListener {
-            downloadModel(ModelRegistry.getById("qwen-2b")!!)
+
+        // 卸载本地模型
+        btnUninstall?.setOnClickListener {
+            val installedTier = downloadManager.getInstalledTier()
+            if (installedTier == null) {
+                Toast.makeText(activity, "没有已安装的本地模型", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val count = downloadManager.deleteTier(installedTier)
+            refreshModelStatus()
+            Toast.makeText(activity, "已卸载 $count 个模型文件", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -158,42 +160,43 @@ class VoiceAISettingsHelper(
         // 语音模型
         val voiceInstalled = modelManager.getInstalledVoiceModelFile()
         tvVoiceModelStatus?.text = if (voiceInstalled != null) {
-            "\u2705 已安装: ${voiceInstalled.name} (${ModelDownloadManager.Formatter.formatSize(voiceInstalled.length())})"
+            "✅ 已安装: ${voiceInstalled.name} (${ModelDownloadManager.Formatter.formatSize(voiceInstalled.length())})"
         } else {
-            "\u274C 未安装"
+            "❌ 未安装"
         }
 
         // AI 模型
         val aiInstalled = modelManager.getInstalledAiModelFile()
         tvAiModelStatus?.text = if (aiInstalled != null) {
-            "\u2705 已安装: ${aiInstalled.name} (${ModelDownloadManager.Formatter.formatSize(aiInstalled.length())})"
+            "✅ 已安装: ${aiInstalled.name} (${ModelDownloadManager.Formatter.formatSize(aiInstalled.length())})"
         } else {
-            "\u274C 未安装"
+            "❌ 未安装"
         }
 
-        // 更新按钮文字
-        updateDownloadButton(btnDownloadWhisperSmall, "whisper-small")
-        updateDownloadButton(btnDownloadWhisperLarge, "whisper-large-turbo")
-        updateDownloadButton(btnDownloadQwen08b, "qwen-0.8b")
-        updateDownloadButton(btnDownloadQwen2b, "qwen-2b")
-    }
-
-    private fun updateDownloadButton(btn: Button?, modelId: String) {
-        val installed = modelManager.isModelInstalled(modelId)
-        btn?.text = if (installed) "\u2611\uFE0F 已安装" else "\uD83D\uDCE5 下载"
-        btn?.isEnabled = !installed && !isDownloading
+        // 更新下载/卸载按钮状态
+        val installedTier = downloadManager.getInstalledTier()
+        if (installedTier != null) {
+            btnDownloadAuto?.text = "✅ 已安装 (${if (installedTier == ModelInfo.Tier.PREMIUM) "Large" else "Small"})"
+            btnDownloadAuto?.isEnabled = false
+            btnUninstall?.isEnabled = true
+        } else {
+            val ram = getTotalRamGB()
+            val recommended = if (ram >= 6) "Large" else "Small"
+            btnDownloadAuto?.text = "⬇ 下载 $recommended 版本"
+            btnDownloadAuto?.isEnabled = !isDownloading
+            btnUninstall?.isEnabled = false
+        }
     }
 
     /** 硬件检测 + 推荐 */
     private fun detectHardware() {
         val ram = getTotalRamGB()
-        val soc = Build.HARDWARE ?: "unknown"
         val recommendation = when {
-            ram >= 8 -> "高端旗舰（${ram}GB RAM）— 推荐高级安装：Whisper Large Turbo + Qwen 2B"
-            ram >= 5 -> "中端机型（${ram}GB RAM）— 推荐简单安装：Whisper Small + Qwen 0.8B"
-            else -> "入门机型（${ram}GB RAM）— 建议使用云端模式"
+            ram >= 6 -> "RAM ${ram}GB — 推荐下载 Large 版本"
+            ram >= 3 -> "RAM ${ram}GB — 推荐下载 Small 版本"
+            else -> "RAM ${ram}GB — 建议使用云端模式"
         }
-        tvHardwareInfo?.text = "\uD83D\uDCBB $soc | RAM: ${ram}GB | $recommendation"
+        tvHardwareInfo?.text = "📱 $recommendation"
     }
 
     private fun getTotalRamGB(): Long {
@@ -208,28 +211,23 @@ class VoiceAISettingsHelper(
         }
     }
 
-    /** 下载模型 */
-    private fun downloadModel(model: ModelInfo) {
+    /** 下载某个 tier 的所有模型 */
+    private fun downloadTier(tier: ModelInfo.Tier) {
         if (isDownloading) {
-            Toast.makeText(activity, "正在下载其他模型，请稍候", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "正在下载中，请稍候", Toast.LENGTH_SHORT).show()
             return
         }
-
         isDownloading = true
         tvDownloadProgress?.visibility = View.VISIBLE
         pbDownload?.visibility = View.VISIBLE
-        tvDownloadProgress?.text = "正在下载 ${model.name}..."
+        tvDownloadProgress?.text = "正在下载 ${tier.name} 版本..."
 
-        // 在 lifecycleScope 中执行下载
         val appCompat = activity as? androidx.appcompat.app.AppCompatActivity ?: return
         appCompat.lifecycleScope.launch {
-            val result = downloadManager.download(model) { progress ->
+            val result = downloadManager.downloadTier(tier) { modelName, progress ->
                 activity.runOnUiThread {
                     pbDownload?.progress = progress
-                    val downloadedMB = (model.sizeBytes * progress / 100) / (1024 * 1024)
-                    val totalMB = model.sizeBytes / (1024 * 1024)
-                    tvDownloadProgress?.text =
-                        "下载 ${model.name}: ${progress}% (${downloadedMB}MB / ${totalMB}MB)"
+                    tvDownloadProgress?.text = "下载 $modelName: $progress%"
                 }
             }
 
@@ -238,18 +236,15 @@ class VoiceAISettingsHelper(
             activity.runOnUiThread {
                 pbDownload?.visibility = View.GONE
                 if (result.isSuccess) {
-                    tvDownloadProgress?.text = "✅ ${model.name} 下载完成"
-                    modelManager.markInstalled(model.id, model.type)
+                    tvDownloadProgress?.text = "✅ ${tier.name} 版本下载完成"
                     refreshModelStatus()
-                    Toast.makeText(activity, "${model.name} 安装成功", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "安装成功", Toast.LENGTH_SHORT).show()
                 } else {
                     tvDownloadProgress?.text =
-                        "❌ ${model.name} 下载失败: ${result.exceptionOrNull()?.message ?: "未知错误"}"
-                    Toast.makeText(
-                        activity,
+                        "❌ 下载失败: ${result.exceptionOrNull()?.message ?: "请检查网络"}"
+                    Toast.makeText(activity,
                         "下载失败: ${result.exceptionOrNull()?.message ?: "请检查网络"}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                        Toast.LENGTH_LONG).show()
                 }
             }
         }

@@ -149,10 +149,50 @@ class ModelDownloadManager(private val context: Context) {
     }
 
     /**
-     * 获取所有已下载模型
+     * 下载某个 tier 的所有模型（识别 + 润色）
+     * 返回最后一个下载结果
      */
-    fun getDownloadedModels(): List<ModelInfo> {
-        return ModelRegistry.ALL_MODELS.filter { isDownloaded(it.id) }
+    suspend fun downloadTier(
+        tier: ModelInfo.Tier,
+        onProgress: ((modelName: String, percent: Int) -> Unit)? = null
+    ): Result<File> {
+        val models = ModelRegistry.ALL_MODELS.filter { it.tier == tier }
+        if (models.isEmpty()) {
+            return Result.failure(Exception("No models for tier $tier"))
+        }
+        var lastResult: Result<File>? = null
+        for (model in models) {
+            if (isDownloaded(model.id)) continue  // 已安装跳过
+            lastResult = download(model) { p ->
+                onProgress?.invoke(model.name, p)
+            }
+            if (lastResult.isFailure) break
+        }
+        return lastResult ?: Result.success(models.firstNotNullOfOrNull {
+            File(modelsDir, it.fileName).takeIf { f -> f.exists() }
+        } ?: modelsDir)
+    }
+
+    /**
+     * 卸载某个 tier 的所有模型
+     */
+    fun deleteTier(tier: ModelInfo.Tier): Int {
+        val models = ModelRegistry.ALL_MODELS.filter { it.tier == tier }
+        var count = 0
+        for (model in models) {
+            if (deleteModel(model.id)) count++
+        }
+        return count
+    }
+
+    /**
+     * 获取当前已安装的 tier（如果有）
+     */
+    fun getInstalledTier(): ModelInfo.Tier? {
+        return ModelInfo.Tier.entries.firstOrNull { tier ->
+            ModelRegistry.ALL_MODELS.filter { it.tier == tier }
+                .any { isDownloaded(it.id) }
+        }
     }
 
     /**

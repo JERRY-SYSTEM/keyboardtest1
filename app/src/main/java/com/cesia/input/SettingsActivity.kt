@@ -78,12 +78,10 @@ class SettingsActivity : AppCompatActivity() {
     private var tvHardwareInfo: TextView? = null
     private var tvVoiceModelStatus: TextView? = null
     private var tvAiModelStatus: TextView? = null
-    private var btnDownloadWhisperSmall: Button? = null
-    private var btnDownloadWhisperLarge: Button? = null
-    private var btnDownloadQwen08b: Button? = null
-    private var btnDownloadQwen2b: Button? = null
     private var tvDownloadProgress: TextView? = null
     private var pbDownload: android.widget.ProgressBar? = null
+    private var btnDownloadAuto: Button? = null
+    private var btnUninstall: Button? = null
     private var switchGpu: androidx.appcompat.widget.SwitchCompat? = null
     private var isDownloading = false
 
@@ -142,8 +140,7 @@ class SettingsActivity : AppCompatActivity() {
         aiSettingsHelper.bindViews(
             etGroqKey, tvModeLabel, btnToggleMode, tvHardwareInfo,
             tvVoiceModelStatus, tvAiModelStatus,
-            btnDownloadWhisperSmall, btnDownloadWhisperLarge,
-            btnDownloadQwen08b, btnDownloadQwen2b,
+            btnDownloadAuto, btnUninstall,
             tvDownloadProgress, pbDownload, switchGpu
         )
 
@@ -223,12 +220,10 @@ class SettingsActivity : AppCompatActivity() {
             tvHardwareInfo = findViewById(R.id.tv_hardware_info)
             tvVoiceModelStatus = findViewById(R.id.tv_voice_model_status)
             tvAiModelStatus = findViewById(R.id.tv_ai_model_status)
-            btnDownloadWhisperSmall = findViewById(R.id.btn_download_whisper_small)
-            btnDownloadWhisperLarge = findViewById(R.id.btn_download_whisper_large)
-            btnDownloadQwen08b = findViewById(R.id.btn_download_qwen_08b)
-            btnDownloadQwen2b = findViewById(R.id.btn_download_qwen_2b)
             tvDownloadProgress = findViewById(R.id.tv_download_progress)
             pbDownload = findViewById(R.id.pb_download)
+            btnDownloadAuto = findViewById(R.id.btn_download_auto)
+            btnUninstall = findViewById(R.id.btn_uninstall)
             switchGpu = findViewById(R.id.switch_gpu)
         } catch (_: Exception) {}
     }

@@ -387,16 +387,7 @@
             android:padding="10dp"
             android:layout_marginBottom="8dp" />
 
-        <!-- 语音模型下载 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="语音识别模型"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="4dp" />
-
+        <!-- 语音模型状态 -->
         <TextView
             android:id="@+id/tv_voice_model_status"
             android:layout_width="match_parent"
@@ -406,34 +397,7 @@
             android:textColor="#999999"
             android:layout_marginBottom="4dp" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
-
-            <Button
-                android:id="@+id/btn_download_whisper_small"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="📥Small(~400MB)"
-                android:textSize="10sp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_marginEnd="2dp" />
-
-            <Button
-                android:id="@+id/btn_download_whisper_large"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="📥Large(~800MB)"
-                android:textSize="10sp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_marginStart="2dp" />
-        </LinearLayout>
-
-        <!-- AI 模型下载 -->
+        <!-- AI 模型状态 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -450,33 +414,34 @@
             android:text="未安装"
             android:textSize="12sp"
             android:textColor="#999999"
-            android:layout_marginBottom="4dp" />
+            android:layout_marginBottom="8dp" />
 
+        <!-- 下载/卸载按钮 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="8dp">
 
             <Button
-                android:id="@+id/btn_download_qwen_08b"
+                android:id="@+id/btn_download_auto"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="2"
+                android:text="⬇ 下载适合手机的模型"
+                android:textSize="12sp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btn_uninstall"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="📥Qwen 0.8B(~560MB)"
-                android:textSize="10sp"
+                android:text="🗑 卸载"
+                android:textSize="12sp"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_marginEnd="2dp" />
-
-            <Button
-                android:id="@+id/btn_download_qwen_2b"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="📥Qwen 2B(~1.4GB)"
-                android:textSize="10sp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_marginStart="2dp" />
+                android:layout_marginStart="4dp" />
         </LinearLayout>
 
         <!-- 下载进度 -->

@@ -3,181 +3,245 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="20dp"
-    android:background="@android:color/white">
+    android:padding="12dp"
+    android:background="#FAFAFA">
 
-    <!-- 标题 -->
+    <!-- RAM 建议 -->
     <TextView
+        android:id="@+id/tv_ram_hint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="🎤 语音识别 + 润色"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
+        android:textSize="12sp"
+        android:textColor="#888888"
         android:gravity="center"
-        android:paddingBottom="16dp" />
-
-    <!-- Loading 动画（检测中显示） -->
-    <LinearLayout
-        android:id="@+id/loading_container"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:padding="16dp"
-        android:visibility="gone">
-
-        <ProgressBar
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:indeterminate="true" />
-
-        <TextView
-            android:id="@+id/tv_loading_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="正在检测后端可用性..."
-            android:textSize="13sp"
-            android:textColor="#888888"
-            android:layout_marginTop="8dp" />
-    </LinearLayout>
+        android:paddingBottom="8dp" />
 
     <!-- ====== 识别方式 ====== -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="识别方式"
-        android:textSize="13sp"
-        android:textColor="#888888"
-        android:paddingBottom="6dp" />
+        android:textSize="11sp"
+        android:textColor="#AAAAAA"
+        android:paddingBottom="4dp" />
 
-    <TextView
-        android:id="@+id/btn_voice_groq"
+    <!-- 第一行：本地识别 -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="4dp"
-        android:background="#F0F0F0"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="☁️ Groq 云端"
-        android:textSize="15sp"
-        android:textColor="#333333" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="4dp">
 
-    <TextView
-        android:id="@+id/btn_voice_whisper"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="4dp"
-        android:background="#F0F0F0"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="📱 本地 Whisper"
-        android:textSize="15sp"
-        android:textColor="#333333" />
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="本地模式"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:background="#EEEEEE" />
 
-    <TextView
-        android:id="@+id/btn_voice_google"
+        <TextView
+            android:id="@+id/btn_whisper_small"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="Whisper small"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
+
+        <TextView
+            android:id="@+id/btn_whisper_large"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="Whisper large"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
+    </LinearLayout>
+
+    <!-- 第二行：云端识别 -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="12dp"
-        android:background="#F0F0F0"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="🌍 Google"
-        android:textSize="15sp"
-        android:textColor="#333333" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="云端模式"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:background="#EEEEEE" />
+
+        <TextView
+            android:id="@+id/btn_google"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="Google"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
+
+        <TextView
+            android:id="@+id/btn_groq_asr"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="Groq"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
+    </LinearLayout>
 
     <!-- ====== 润色方式 ====== -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="润色方式"
-        android:textSize="13sp"
-        android:textColor="#888888"
-        android:paddingBottom="6dp" />
+        android:textSize="11sp"
+        android:textColor="#AAAAAA"
+        android:paddingBottom="4dp" />
 
-    <TextView
-        android:id="@+id/btn_polish_cloud"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="4dp"
-        android:background="#F0F0F0"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="☁️ 云端润色"
-        android:textSize="15sp"
-        android:textColor="#333333" />
-
-    <TextView
-        android:id="@+id/btn_polish_local"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="4dp"
-        android:background="#F0F0F0"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="📱 本地润色"
-        android:textSize="15sp"
-        android:textColor="#333333" />
-
-    <TextView
-        android:id="@+id/btn_polish_off"
-        android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="8dp"
-        android:background="#F0F0F0"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:text="❌ 关闭润色"
-        android:textSize="15sp"
-        android:textColor="#333333" />
-
-    <!-- 延迟提示 -->
-    <TextView
-        android:id="@+id/tv_voice_hint"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="13sp"
-        android:textColor="#FF8800"
-        android:gravity="center"
-        android:paddingBottom="12dp" />
-
-    <!-- 按钮行 -->
+    <!-- 第三行：本地润色 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center">
+        android:layout_marginBottom="4dp">
 
         <TextView
-            android:id="@+id/btn_voice_cancel"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:background="#E0E0E0"
             android:gravity="center"
-            android:text="取消"
-            android:textSize="15sp"
-            android:textColor="#666666" />
+            android:text="本地模式"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:background="#EEEEEE" />
 
         <TextView
-            android:id="@+id/btn_voice_confirm"
+            android:id="@+id/btn_qwen_small"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
-            android:background="#81D8D8"
+            android:layout_marginStart="4dp"
             android:gravity="center"
-            android:text="🎤 开始录音"
-            android:textSize="15sp"
-            android:textColor="#FFFFFF" />
+            android:text="Qwen3.5 small"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
+
+        <TextView
+            android:id="@+id/btn_qwen_large"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="Qwen3.5 large"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
     </LinearLayout>
+
+    <!-- 第四行：云端润色 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="云端模式"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:background="#EEEEEE" />
+
+        <TextView
+            android:id="@+id/btn_openrouter"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="OpenRouter"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
+
+        <TextView
+            android:id="@+id/btn_groq_polish"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="Groq"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#F0F0F0" />
+    </LinearLayout>
+
+    <!-- 下载按钮行 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:id="@+id/btn_download_whisper"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="⬇ 下载语音模型"
+            android:textSize="11sp"
+            android:textColor="#666666"
+            android:background="#EEEEEE" />
+
+        <TextView
+            android:id="@+id/btn_download_qwen"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:gravity="center"
+            android:text="⬇ 下载润色模型"
+            android:textSize="11sp"
+            android:textColor="#666666"
+            android:background="#EEEEEE" />
+    </LinearLayout>
+
+    <!-- 确定按钮 -->
+    <TextView
+        android:id="@+id/btn_confirm"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:gravity="center"
+        android:text="✓ 确定"
+        android:textSize="14sp"
+        android:textColor="#FFFFFF"
+        android:background="#81D8D8" />
 
 </LinearLayout>
