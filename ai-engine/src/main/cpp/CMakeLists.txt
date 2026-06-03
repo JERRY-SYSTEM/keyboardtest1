@@ -6,12 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ============================================================
 # whisper.cpp + llama.cpp 作为 CMake 子项目引入
 #
-# 使用前需要:
-#   git submodule add https://github.com/ggerganov/whisper.cpp whisper.cpp
-#   git submodule add https://github.com/ggerganov/llama.cpp    llama.cpp
-#   git submodule update --init --recursive
-#
-# CI 构建时由 build script clone 到对应位置
+# CI 没有 NDK / 没有 whisper.cpp 源码时，编译 stub .so
+# （编译通过，JNI 调用返回空结果）
 # ============================================================
 
 set(WHISPER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/whisper.cpp")
@@ -27,7 +23,7 @@ if (EXISTS "${WHISPER_SRC}/CMakeLists.txt")
     set(WHISPER_EXISTS TRUE)
     message(STATUS "whisper.cpp: enabled")
 else()
-    message(WARNING "whisper.cpp not found at ${WHISPER_SRC} — stub only")
+    message(STATUS "whisper.cpp: not found — stub mode")
 endif()
 
 # ----- llama.cpp -----
@@ -43,16 +39,18 @@ if (EXISTS "${LLAMA_SRC}/CMakeLists.txt")
     set(LLAMA_EXISTS TRUE)
     message(STATUS "llama.cpp: enabled (Vulkan ON)")
 else()
-    message(WARNING "llama.cpp not found at ${LLAMA_SRC} — stub only")
+    message(STATUS "llama.cpp: not found — stub mode")
 endif()
 
 # ----- JNI Bridge -----
+# stub 模式下编译空的 JNI 实现（返回 null/空字符串）
+# 有源码时编译完整实现
 add_library(native-bridge SHARED
     whisper-jni.cpp
     llama-jni.cpp
 )
 
-# 条件编译宏 — 让 C++ 知道子模块是否存在
+# 条件编译宏
 if (WHISPER_EXISTS)
     target_compile_definitions(native-bridge PRIVATE HAS_WHISPER=1)
 endif()
@@ -61,9 +59,7 @@ if (LLAMA_EXISTS)
 endif()
 
 # 头文件路径
-target_include_directories(native-bridge PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
+target_include_directories(native-bridge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if (WHISPER_EXISTS)
     target_include_directories(native-bridge PRIVATE
         ${WHISPER_SRC}/include
@@ -77,7 +73,7 @@ if (LLAMA_EXISTS)
     )
 endif()
 
-# 链接库
+# 链接库 — stub 模式无 whisper/llama 库
 set(BRIDGE_LIBS android log)
 if (WHISPER_EXISTS)
     list(APPEND BRIDGE_LIBS whisper)

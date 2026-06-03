@@ -2,11 +2,10 @@ package com.cesia.input.ai
 
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
-import com.cesia.input.R
+import com.cesia.input.model.ModelManager
 
 /**
  * 本地化切换按钮逻辑

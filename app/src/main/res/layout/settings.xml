@@ -280,7 +280,7 @@
             android:hint="Groq API Key (云端语音识别, gsk_...)"
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
-            <com.google.android.material.textInputEditText
+            <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/et_groq_key"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

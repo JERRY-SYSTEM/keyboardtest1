@@ -34,12 +34,17 @@ android {
         jvmTarget = "17"
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
+    // NOTE: externalNativeBuild removed — native-bridge.so is built by CI
+    // and checked into src/main/jniLibs/arm64-v8a/
+    // When adding whisper.cpp/llama.cpp sources and NDK,
+    // uncomment the externalNativeBuild block below:
+    //
+    // externalNativeBuild {
+    //     cmake {
+    //         path = file("src/main/cpp/CMakeLists.txt")
+    //         version = "3.22.1"
+    //     }
+    // }
 }
 
 dependencies {

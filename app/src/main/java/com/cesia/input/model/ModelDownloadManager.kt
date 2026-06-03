@@ -18,9 +18,18 @@ import java.util.concurrent.TimeUnit
  */
 class ModelDownloadManager(private val context: Context) {
 
-    companion object {
+    companion object Formatter {
         private const val TAG = "ModelDownload"
         private const val BUFFER_SIZE = 8192
+
+        fun formatSize(bytes: Long): String {
+            return when {
+                bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
+                bytes >= 1024L * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
+                bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0)
+                else -> "$bytes B"
+            }
+        }
     }
 
     sealed class DownloadState {
@@ -151,17 +160,5 @@ class ModelDownloadManager(private val context: Context) {
      */
     fun getTotalModelSize(): Long {
         return modelsDir.listFiles()?.sumOf { it.length() } ?: 0L
-    }
-
-    /** 格式化字节为可读格式 */
-    companion object Formatter {
-        fun formatSize(bytes: Long): String {
-            return when {
-                bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
-                bytes >= 1024L * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024))
-                bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0)
-                else -> "$bytes B"
-            }
-        }
     }
 }

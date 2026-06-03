@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import android.view.View
+import android.widget.EditText
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -36,7 +37,7 @@ class VoiceAISettingsHelper(
     val downloadManager = ModelDownloadManager(activity)
 
     // 视图引用
-    var etGroqKey: TextInputEditText? = null
+    var etGroqKey: EditText? = null
     var tvModeLabel: TextView? = null
     var btnToggleMode: Button? = null
     var tvHardwareInfo: TextView? = null
@@ -54,7 +55,7 @@ class VoiceAISettingsHelper(
 
     /** 初始化所有视图引用 */
     fun bindViews(
-        etGroqKey: TextInputEditText?,
+        etGroqKey: EditText?,
         tvModeLabel: TextView?,
         btnToggleMode: Button?,
         tvHardwareInfo: TextView?,
@@ -219,9 +220,9 @@ class VoiceAISettingsHelper(
         pbDownload?.visibility = View.VISIBLE
         tvDownloadProgress?.text = "正在下载 ${model.name}..."
 
-        val modelFile = File(modelManager.modelsDir, model.fileName)
-
-        activity.lifecycleScope.launch {
+        // 在 lifecycleScope 中执行下载
+        val appCompat = activity as? androidx.appcompat.app.AppCompatActivity ?: return
+        appCompat.lifecycleScope.launch {
             val result = downloadManager.download(model) { progress ->
                 activity.runOnUiThread {
                     pbDownload?.progress = progress
@@ -237,14 +238,13 @@ class VoiceAISettingsHelper(
             activity.runOnUiThread {
                 pbDownload?.visibility = View.GONE
                 if (result.isSuccess) {
-                    tvDownloadProgress?.text = "\u2705 ${model.name} 下载完成"
-                    // 标记安装
+                    tvDownloadProgress?.text = "✅ ${model.name} 下载完成"
                     modelManager.markInstalled(model.id, model.type)
                     refreshModelStatus()
                     Toast.makeText(activity, "${model.name} 安装成功", Toast.LENGTH_SHORT).show()
                 } else {
                     tvDownloadProgress?.text =
-                        "\u274C ${model.name} 下载失败: ${result.exceptionOrNull()?.message ?: "未知错误"}"
+                        "❌ ${model.name} 下载失败: ${result.exceptionOrNull()?.message ?: "未知错误"}"
                     Toast.makeText(
                         activity,
                         "下载失败: ${result.exceptionOrNull()?.message ?: "请检查网络"}",

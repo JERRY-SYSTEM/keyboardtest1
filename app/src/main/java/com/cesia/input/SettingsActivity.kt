@@ -17,6 +17,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.cesia.input.stats.PolishStatsManager
 import com.cesia.input.engine.PinyinDictManager
 import okhttp3.*
@@ -29,9 +30,14 @@ import java.util.*
 import androidx.lifecycle.lifecycleScope
 import com.cesia.input.ai.AIEngine
 import com.cesia.input.ai.LocalModeManager
+import com.cesia.input.ai.LocalModeToggleHelper
+import com.cesia.input.ai.VoiceAISettingsHelper
+import com.cesia.input.engine.ai.LlamaEngine
+import com.cesia.input.engine.ai.WhisperEngine
 import com.cesia.input.model.ModelDownloadManager
 import com.cesia.input.model.ModelInfo
 import com.cesia.input.model.ModelManager
+import com.cesia.input.model.ModelRegistry
 import com.cesia.input.voice.VoiceEngine
 import kotlinx.coroutines.launch
 import java.io.File
@@ -66,7 +72,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var localModeManager: LocalModeManager
     private lateinit var modelManager: ModelManager
     private lateinit var downloadManager: ModelDownloadManager
-    private var etGroqKey: android.widget.EditText? = null
+    private var etGroqKey: EditText? = null
     private var tvModeLabel: TextView? = null
     private var btnToggleMode: Button? = null
     private var tvHardwareInfo: TextView? = null
