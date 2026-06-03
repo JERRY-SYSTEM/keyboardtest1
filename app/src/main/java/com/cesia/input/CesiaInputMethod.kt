@@ -1982,6 +1982,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     typelessEngine?.startListening(continuous = true)
                 }
             }
+            VoiceEngine.Backend.CLOUD_GROQ -> {
+                // Groq 已移除，回退到 Google
+                updateStatus("🎤 正在收听 (Google)...")
+                typelessEngine?.startListening(continuous = true)
+            }
         }
 
         // 立即显示 AI+ / AI× 按钮（原逻辑）
