@@ -32,6 +32,7 @@ import android.graphics.Typeface
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.cesia.input.ai.AIEngine
 import com.cesia.input.ai.LocalModeManager
 import com.cesia.input.ai.LocalModeToggleHelper
 import com.cesia.input.engine.TypelessEngine
@@ -95,6 +96,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var rimeEngine: RimeEngine
     private lateinit var voiceEngine: VoiceEngine
     private lateinit var modelManager: ModelManager
+    private lateinit var aiEngine: AIEngine
+
+    // ======================== 语音/润色用户选择 ========================
+    // 识别后端（用户选择或自动默认）
+    enum class VoiceChoice { CLOUD_GROQ, LOCAL_WHISPER, GOOGLE }
+    enum class PolishChoice { CLOUD_OPENROUTER, LOCAL_AI, OFF }
+
+    private var currentVoiceChoice: VoiceChoice = VoiceChoice.GOOGLE
+    private var currentPolishChoice: PolishChoice = PolishChoice.OFF
+    private var longPressActive = false  // 标记长按已触发，防止短按重复
 
     // ======================== 状态 ========================
     private var isRecording = false
@@ -560,6 +571,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 初始化语音引擎和模型管理器
         modelManager = ModelManager(this)
         voiceEngine = VoiceEngine(this)
+        aiEngine = AIEngine(this)
         // 根据模式和模型可用性设置默认语音后端
         updateVoiceBackend()
 
@@ -604,35 +616,25 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     stopVoiceWave()
                     setStatusDot("idle")
 
-                    if (pendingAiMode == true) {
-                        isWaitingForChoice = false
-                        hideAiChoiceButtons()
-                        if (text.isEmpty()) {
-                            updateStatus("⚠️ 未识别到文字")
+                    if (text.isEmpty()) {
+                        updateStatus("⚠️ 未识别到文字，请重试")
+                        resetToIdle()
+                        return@post
+                    }
+
+                    // 根据用户选择的润色后端处理
+                    when (pendingPolishChoice) {
+                        PolishChoice.OFF -> {
+                            // AI× 直接上屏
+                            currentInputConnection?.commitText(text, 1)
                             resetToIdle()
-                        } else {
-                            updateStatus("✨ 正在施展魔法...")
+                        }
+                        PolishChoice.CLOUD_OPENROUTER, PolishChoice.LOCAL_AI -> {
+                            // AI+ 润色
+                            updateStatus("✨ 正在润色...")
                             setStatusDot("processing")
                             isProcessingResult = true
-                            polishRecognizedText(text)
-                        }
-                    } else if (pendingAiMode == false) {
-                        isWaitingForChoice = false
-                        hideAiChoiceButtons()
-                        if (text.isNotEmpty()) {
-                            currentInputConnection?.commitText(text, 1)
-                        }
-                        resetToIdle()
-                    } else {
-                        if (text.isEmpty()) {
-                            updateStatus("⚠️ 未识别到文字，请重试")
-                            resetToIdle()
-                        } else {
-                            isWaitingForChoice = true
-                            updateStatus("📝 「$text」→ 选择 AI+ 润色 或 AI× 直接上屏")
-                            micButton.visibility = View.GONE
-                            btnMicAi.visibility = View.VISIBLE
-                            btnMicNoAi.visibility = View.VISIBLE
+                            polishTextAsync(text, pendingPolishChoice)
                         }
                     }
                 }
@@ -832,9 +834,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 按钮监听 ========================
 
     private fun setupButtonListeners() {
+        // 语音按钮：短按开始录音，长按弹出选择面板
+        longPressActive = false
         micButton.setOnClickListener {
+            if (longPressActive) {
+                // 长按已触发，忽略短按
+                longPressActive = false
+                return@setOnClickListener
+            }
             if (!isRecording && !isWaitingForChoice) {
-                startRecordingImmediately()
+                startRecordingWithChoice(currentVoiceChoice, currentPolishChoice)
             } else if (isWaitingForChoice) {
                 updateStatus("请点击 AI+ 或 AI× 选择处理方式")
             } else if (isRecording) {
@@ -851,7 +860,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             if (isRecording || isWaitingForChoice) {
                 resetToIdle()
                 true
-            } else false
+            } else {
+                longPressActive = true
+                showVoicePolishSelector()
+                true
+            }
         }
 
         btnMicAi.setOnClickListener { onAiPlusSelected() }
@@ -1805,7 +1818,361 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
-    private fun getOpenRouterApiKey(): String {
+    // ======================== 长按选择面板 ========================
+
+    /**
+     * 长按语音键弹出的选择面板
+     * 用户分别选择识别后端和润色后端
+     */
+    private fun showVoicePolishSelector() {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_voice_polish_selector, null)
+
+        // 识别选项
+        val btnGroq = dialogView.findViewById<TextView>(R.id.btn_voice_groq)
+        val btnWhisper = dialogView.findViewById<TextView>(R.id.btn_voice_whisper)
+        val btnGoogle = dialogView.findViewById<TextView>(R.id.btn_voice_google)
+
+        // 润色选项
+        val btnPolishCloud = dialogView.findViewById<TextView>(R.id.btn_polish_cloud)
+        val btnPolishLocal = dialogView.findViewById<TextView>(R.id.btn_polish_local)
+        val btnPolishOff = dialogView.findViewById<TextView>(R.id.btn_polish_off)
+
+        // 提示文字
+        val tvHint = dialogView.findViewById<TextView>(R.id.tv_voice_hint)
+
+        // 检测可用性并设置状态
+        val groqKey = getGroqApiKey()
+        val hasGroq = groqKey.isNotEmpty()
+        val hasWhisper = modelManager.hasVoiceModel()
+        val googleAvailable = try {
+            android.speech.SpeechRecognizer.isRecognitionAvailable(this)
+        } catch (_: Exception) { false }
+        val orKey = getOpenRouterApiKey()
+        val hasOpenRouter = orKey.isNotEmpty()
+        val hasAiModel = modelManager.hasAiModel()
+
+        // 识别选项状态
+        setOptionState(btnGroq, hasGroq, "☁️ Groq 云端", "☁️ Groq (需设置 API Key)")
+        setOptionState(btnWhisper, hasWhisper, "📱 本地 Whisper", "📱 Whisper (需下载模型)")
+        setOptionState(btnGoogle, googleAvailable, "🌍 Google", "🌍 Google (不可用)")
+
+        // 润色选项状态
+        setOptionState(btnPolishCloud, hasOpenRouter, "☁️ 云端润色", "☁️ 云端 (需设置 API Key)")
+        setOptionState(btnPolishLocal, hasAiModel, "📱 本地润色", "📱 本地 (需下载模型)")
+        setOptionState(btnPolishOff, true, "❌ 关闭润色", null)
+
+        // 当前选中高选
+        highlightSelected(btnGroq, currentVoiceChoice == VoiceChoice.CLOUD_GROQ)
+        highlightSelected(btnWhisper, currentVoiceChoice == VoiceChoice.LOCAL_WHISPER)
+        highlightSelected(btnGoogle, currentVoiceChoice == VoiceChoice.GOOGLE)
+        highlightSelected(btnPolishCloud, currentPolishChoice == PolishChoice.CLOUD_OPENROUTER)
+        highlightSelected(btnPolishLocal, currentPolishChoice == PolishChoice.LOCAL_AI)
+        highlightSelected(btnPolishOff, currentPolishChoice == PolishChoice.OFF)
+
+        // 延迟提示（云端识别+云端润色）
+        fun updateHint() {
+            if (currentVoiceChoice == VoiceChoice.CLOUD_GROQ &&
+                (currentPolishChoice == PolishChoice.CLOUD_OPENROUTER || currentPolishChoice == PolishChoice.LOCAL_AI)) {
+                tvHint.text = "⚠️ 云端识别+润色预计 4~7 秒"
+                tvHint.setTextColor(0xFFFF8800.toInt())
+            } else {
+                tvHint.text = ""
+            }
+        }
+        updateHint()
+
+        // 识别点击
+        btnGroq.setOnClickListener {
+            if (hasGroq) {
+                currentVoiceChoice = VoiceChoice.CLOUD_GROQ
+                highlightSelected(btnGroq, true); highlightSelected(btnWhisper, false); highlightSelected(btnGoogle, false)
+                updateHint()
+            } else {
+                showApiKeyPrompt("Groq", "https://console.groq.com")
+            }
+        }
+        btnWhisper.setOnClickListener {
+            if (hasWhisper) {
+                currentVoiceChoice = VoiceChoice.LOCAL_WHISPER
+                highlightSelected(btnGroq, false); highlightSelected(btnWhisper, true); highlightSelected(btnGoogle, false)
+                updateHint()
+            } else {
+                showModelDownloadPrompt("语音", "whisper-small")
+            }
+        }
+        btnGoogle.setOnClickListener {
+            if (googleAvailable) {
+                currentVoiceChoice = VoiceChoice.GOOGLE
+                highlightSelected(btnGroq, false); highlightSelected(btnWhisper, false); highlightSelected(btnGoogle, true)
+                updateHint()
+            }
+        }
+
+        // 润色点击
+        btnPolishCloud.setOnClickListener {
+            if (hasOpenRouter) {
+                currentPolishChoice = PolishChoice.CLOUD_OPENROUTER
+                highlightSelected(btnPolishCloud, true); highlightSelected(btnPolishLocal, false); highlightSelected(btnPolishOff, false)
+                updateHint()
+            } else {
+                showApiKeyPrompt("OpenRouter", "https://openrouter.ai/keys")
+            }
+        }
+        btnPolishLocal.setOnClickListener {
+            if (hasAiModel) {
+                currentPolishChoice = PolishChoice.LOCAL_AI
+                highlightSelected(btnPolishCloud, false); highlightSelected(btnPolishLocal, true); highlightSelected(btnPolishOff, false)
+                updateHint()
+            } else {
+                showModelDownloadPrompt("AI 润色", "qwen-0.8b")
+            }
+        }
+        btnPolishOff.setOnClickListener {
+            currentPolishChoice = PolishChoice.OFF
+            highlightSelected(btnPolishCloud, false); highlightSelected(btnPolishLocal, false); highlightSelected(btnPolishOff, true)
+            updateHint()
+        }
+
+        // 确认按钮
+        val btnConfirm = dialogView.findViewById<TextView>(R.id.btn_voice_confirm)
+        val btnCancel = dialogView.findViewById<TextView>(R.id.btn_voice_cancel)
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+        dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG)
+
+        btnConfirm.setOnClickListener {
+            dialog.dismiss()
+            startRecordingWithChoice(currentVoiceChoice, currentPolishChoice)
+        }
+        btnCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    /** 设置选项可用/不可用状态 */
+    private fun setOptionState(btn: TextView, available: Boolean, enabledText: String, disabledText: String?) {
+        btn.isEnabled = available
+        btn.text = if (available) enabledText else (disabledText ?: enabledText)
+        btn.alpha = if (available) 1.0f else 0.4f
+    }
+
+    /** 高亮当前选中 */
+    private fun highlightSelected(btn: TextView, selected: Boolean) {
+        if (!btn.isEnabled) return
+        if (selected) {
+            btn.setBackgroundColor(0xFF81D8D8.toInt())
+            btn.setTextColor(0xFFFFFFFF.toInt())
+        } else {
+            btn.setBackgroundColor(0xFFF0F0F0.toInt())
+            btn.setTextColor(0xFF333333.toInt())
+        }
+    }
+
+    /** 显示 API Key 设置引导 */
+    private fun showApiKeyPrompt(name: String, url: String) {
+        AlertDialog.Builder(this)
+            .setTitle("需要 $name API Key")
+            .setMessage("请先在设置中配置 $name API Key，或前往 $url 获取。")
+            .setPositiveButton("前往设置") { _, _ ->
+                try {
+                    val intent = Intent(this, com.cesia.input.SettingsActivity::class.java)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+            .setNegativeButton("取消", null)
+            .create()
+            .also { it.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG) }
+            .show()
+    }
+
+    /** 显示模型下载引导 */
+    private fun showModelDownloadPrompt(type: String, modelId: String) {
+        AlertDialog.Builder(this)
+            .setTitle("需要下载 $type 模型")
+            .setMessage("本地 $type 模型未安装。是否前往设置下载？")
+            .setPositiveButton("前往下载") { _, _ ->
+                try {
+                    val intent = Intent(this, com.cesia.input.SettingsActivity::class.java)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    intent.putExtra("scroll_to_models", true)
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+            .setNegativeButton("取消", null)
+            .create()
+            .also { it.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG) }
+            .show()
+    }
+
+    // ======================== 录音（根据选择的后端） ========================
+
+    /**
+     * 根据用户选择的识别和润色后端开始录音
+     */
+    private fun startRecordingWithChoice(voiceChoice: VoiceChoice, polishChoice: PolishChoice) {
+        isRecording = true
+        isWaitingForChoice = false
+        recognizedText = ""
+        pendingAiMode = null
+        setStatusDot("recording")
+        startVoiceWave()
+        keyboardView.visibility = View.GONE
+        candidateBar.visibility = View.GONE
+        voiceStartTime = System.currentTimeMillis()
+
+        when (voiceChoice) {
+            VoiceChoice.CLOUD_GROQ -> {
+                updateStatus("🎤 正在收听 (Groq 云端)...")
+                startGroqRecordingAsync(polishChoice)
+            }
+            VoiceChoice.LOCAL_WHISPER -> {
+                updateStatus("🎤 正在收听 (本地 Whisper)...")
+                startWhisperRecordingAsync(polishChoice)
+            }
+            VoiceChoice.GOOGLE -> {
+                updateStatus("🎤 正在收听 (Google)...")
+                startGoogleRecording(polishChoice)
+            }
+        }
+        // 用户已通过长按面板做出选择，直接执行，不再显示 AI 选择按钮
+        // 短按时 currentPolishChoice 为上次用户选择（默认 OFF = 直接上屏）
+    }
+
+    /** Google 语音识别（流式，通过 FallbackRecognizer） */
+    private fun startGoogleRecording(polishChoice: PolishChoice) {
+        // 保存润色选择供 onRecognitionComplete 使用
+        pendingPolishChoice = polishChoice
+        typelessEngine?.startListening(continuous = true)
+    }
+
+    /** Groq 云端录音+识别 */
+    private fun startGroqRecordingAsync(polishChoice: PolishChoice) {
+        pendingPolishChoice = polishChoice
+        voiceEngineScope.launch {
+            try {
+                val text = voiceEngine.recordAndTranscribe(30000)
+                withContext(Dispatchers.Main) {
+                    handleVoiceResultWithPolish(text, polishChoice)
+                }
+            } catch (e: Exception) {
+                Log.e("Cesia", "Groq 录音失败", e)
+                withContext(Dispatchers.Main) {
+                    updateStatus("❌ 语音识别失败: ${e.message}")
+                    resetToIdle()
+                }
+            }
+        }
+    }
+
+    /** 本地 Whisper 录音+识别 */
+    private fun startWhisperRecordingAsync(polishChoice: PolishChoice) {
+        pendingPolishChoice = polishChoice
+        voiceEngineScope.launch {
+            try {
+                if (!voiceEngine.hasLocalModel()) {
+                    voiceEngine.loadLocalModel()
+                }
+                val text = voiceEngine.recordAndTranscribe(30000)
+                withContext(Dispatchers.Main) {
+                    handleVoiceResultWithPolish(text, polishChoice)
+                }
+            } catch (e: Exception) {
+                Log.e("Cesia", "Whisper 录音失败", e)
+                withContext(Dispatchers.Main) {
+                    updateStatus("❌ 语音识别失败: ${e.message}")
+                    resetToIdle()
+                }
+            }
+        }
+    }
+
+    /** 统一处理语音识别结果，根据润色选择决定是否润色 */
+    private fun handleVoiceResultWithPolish(text: String, polishChoice: PolishChoice) {
+        if (!isRecording && recognizedText.isEmpty()) return // 已停止
+        isRecording = false
+        stopVoiceWave()
+        recognizedText = text
+
+        if (text.isEmpty()) {
+            updateStatus("⚠️ 未识别到文字，请重试")
+            resetToIdle()
+            return
+        }
+
+        // 根据润色选择处理
+        when (polishChoice) {
+            PolishChoice.OFF -> {
+                // 直接上屏
+                currentInputConnection?.commitText(text, 1)
+                resetToIdle()
+            }
+            PolishChoice.CLOUD_OPENROUTER, PolishChoice.LOCAL_AI -> {
+                // 先显示识别结果，再润色
+                updateStatus("✨ 正在润色...")
+                setStatusDot("processing")
+                isProcessingResult = true
+                polishTextAsync(text, polishChoice)
+            }
+        }
+    }
+
+    /** 异步润色（云端或本地） */
+    private fun polishTextAsync(text: String, polishChoice: PolishChoice) {
+        when (polishChoice) {
+            PolishChoice.CLOUD_OPENROUTER -> {
+                typelessEngine?.polishTextAsync(text) { finalText ->
+                    isProcessingResult = false
+                    currentInputConnection?.commitText(finalText, 1)
+                    val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0
+                    statsManager.addRecord(text, finalText, duration)
+                    resetToIdle()
+                }
+            }
+            PolishChoice.LOCAL_AI -> {
+                voiceEngineScope.launch {
+                    try {
+                        val modelFile = modelManager.getInstalledAiModelFile()
+                        if (modelFile == null) {
+                            withContext(Dispatchers.Main) {
+                                updateStatus("⚠️ AI 模型未安装，使用原文")
+                                currentInputConnection?.commitText(text, 1)
+                                resetToIdle()
+                            }
+                            return@launch
+                        }
+                        if (!aiEngine.isModelLoaded()) {
+                            aiEngine.loadLocalModel(modelFile.absolutePath, if (modelManager.useGpu) 99 else 0)
+                        }
+                        val result = aiEngine.polish(text, "润色")
+                        withContext(Dispatchers.Main) {
+                            isProcessingResult = false
+                            val finalText = result ?: text
+                            currentInputConnection?.commitText(finalText, 1)
+                            val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0
+                            statsManager.addRecord(text, finalText, duration)
+                            resetToIdle()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("Cesia", "本地润色失败", e)
+                        withContext(Dispatchers.Main) {
+                            isProcessingResult = false
+                            currentInputConnection?.commitText(text, 1)
+                            resetToIdle()
+                        }
+                    }
+                }
+            }
+            PolishChoice.OFF -> { /* 不会走到这里 */ }
+        }
+    }
+
+    // 保存润色选择（供 Google 回退路径使用）
+    private var pendingPolishChoice: PolishChoice = PolishChoice.OFF
         val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
         return prefs.getString(PREF_OPENROUTER_KEY, "") ?: ""
     }
@@ -3638,6 +4005,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         typelessEngine = null
         rimeEngine?.shutdown()
         voiceEngine.release()
+        aiEngine.release()
         voiceEngineScope.cancel()
         super.onDestroy()
     }
