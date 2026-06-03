@@ -32,8 +32,11 @@ import android.graphics.Typeface
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.cesia.input.ai.LocalModeManager
+import com.cesia.input.ai.LocalModeToggleHelper
 import com.cesia.input.engine.TypelessEngine
 import com.cesia.input.engine.rime.RimeEngine
+import com.cesia.input.model.ModelManager
 import com.cesia.input.stats.PolishStatsManager
 import com.cesia.input.stats.MagicHistoryManager
 import com.google.android.material.button.MaterialButton
@@ -206,6 +209,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     // 初始化标志
     private var isViewInitialized = false
+
+    // 本地化切换按钮
+    private lateinit var localModeToggleHelper: LocalModeToggleHelper
 
     // 清屏键长按标志
     private var deleteLongPressTriggered = false
@@ -440,6 +446,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         statusDot = view.findViewById(R.id.v_status_dot)
         statusText = view.findViewById(R.id.tv_status)
         voiceWave = view.findViewById(R.id.v_voice_wave)
+
+        // 本地化切换按钮
+        val btnLocalModeView = view.findViewById<TextView>(R.id.btn_local_mode)
+        localModeToggleHelper = LocalModeToggleHelper(
+            this, LocalModeManager(this), ModelManager(this)
+        )
+        localModeToggleHelper.bind(btnLocalModeView)
 
         // 候选词栏
         candidateBar = view.findViewById(R.id.candidate_bar)
@@ -830,6 +843,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnMicAi.setOnClickListener { onAiPlusSelected() }
         btnMicNoAi.setOnClickListener { onAiCrossSelected() }
         btnSettings.setOnClickListener { showSettings() }
+        localModeToggleHelper.setupListener()
         btnTraditional.setOnClickListener { toggleTraditionalSimplified() }
 
         deleteLongPressTriggered = false
