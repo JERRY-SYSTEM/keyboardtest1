@@ -89,14 +89,14 @@ class VoiceEngine(private val context: Context) {
         }
 
         try {
-            Log.i(TAG, "Loading whisper model: ${modelFile.absolutePath} (${modelFile.length()} bytes)")
+            Log.i(TAG, "Loading whisper model: ${modelFile.absolutePath} (${modelFile.length()} bytes), useGpu=${modelManager.useGpu}")
             whisperLoaded = whisperEngine.nativeInit(modelFile.absolutePath, modelManager.useGpu)
             if (whisperLoaded) {
                 lastErrorMessage = null
                 Log.i(TAG, "Whisper model loaded successfully: ${modelFile.name}")
             } else {
                 lastErrorMessage = "nativeInit 返回 false（模型文件可能损坏、格式不支持或缺少依赖库）"
-                Log.e(TAG, lastErrorMessage!!)
+                Log.e(TAG, "nativeInit returned false for: ${modelFile.absolutePath}")
             }
             whisperLoaded
         } catch (e: Throwable) {

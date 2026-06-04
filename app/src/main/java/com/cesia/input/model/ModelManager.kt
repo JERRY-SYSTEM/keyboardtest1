@@ -71,9 +71,9 @@ class ModelManager(private val context: Context) {
         get() = prefs.getString(KEY_INSTALLED_AI_MODEL, null)
         set(value) = prefs.edit().putString(KEY_INSTALLED_AI_MODEL, value).apply()
 
-    /** 是否使用 GPU 加速 */
+    /** 是否使用 GPU 加速（默认 false，大多数 Android 设备不支持 Vulkan） */
     var useGpu: Boolean
-        get() = prefs.getBoolean(KEY_USE_GPU, true)
+        get() = prefs.getBoolean(KEY_USE_GPU, false)
         set(value) = prefs.edit().putBoolean(KEY_USE_GPU, value).apply()
 
     // ==================== 模型状态查询 ====================
