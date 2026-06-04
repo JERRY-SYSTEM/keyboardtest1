@@ -41,7 +41,7 @@ object ModelRegistry {
             id = "whisper-small",
             name = "Whisper Small",
             description = "语音识别基础模型（~400MB），准确率高，适合日常使用",
-            downloadUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_0.bin",
+            downloadUrl = "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_0.bin",
             fileName = "ggml-small-q5_0.bin",
             sizeBytes = 466L * MB,
             type = ModelInfo.ModelType.VOICE
@@ -50,7 +50,7 @@ object ModelRegistry {
             id = "whisper-large-turbo",
             name = "Whisper Large V3 Turbo",
             description = "语音识别旗舰模型（~800MB），最高精度，适合专业场景",
-            downloadUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
+            downloadUrl = "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
             fileName = "ggml-large-v3-turbo-q5_0.bin",
             sizeBytes = 809L * MB,
             type = ModelInfo.ModelType.VOICE
@@ -61,7 +61,7 @@ object ModelRegistry {
             id = "qwen-0.8b",
             name = "Qwen 3.5 0.8B",
             description = "AI 润色轻量模型（~560MB），极速响应，省资源",
-            downloadUrl = "https://huggingface.co/bartowski/Qwen3.5-0.8B-Instruct-GGUF/resolve/main/Qwen3.5-0.8B-Instruct-Q4_K_M.gguf",
+            downloadUrl = "https://hf-mirror.com/bartowski/Qwen3.5-0.8B-Instruct-GGUF/resolve/main/Qwen3.5-0.8B-Instruct-Q4_K_M.gguf",
             fileName = "Qwen3.5-0.8B-Instruct-Q4_K_M.gguf",
             sizeBytes = 560L * MB,
             type = ModelInfo.ModelType.AI
@@ -70,7 +70,7 @@ object ModelRegistry {
             id = "qwen-2b",
             name = "Qwen 3.5 2B",
             description = "AI 润色标准模型（~1.4GB），更好的润色质量",
-            downloadUrl = "https://huggingface.co/bartowski/Qwen3.5-2B-Instruct-GGUF/resolve/main/Qwen3.5-2B-Instruct-Q4_K_M.gguf",
+            downloadUrl = "https://hf-mirror.com/bartowski/Qwen3.5-2B-Instruct-GGUF/resolve/main/Qwen3.5-2B-Instruct-Q4_K_M.gguf",
             fileName = "Qwen3.5-2B-Instruct-Q4_K_M.gguf",
             sizeBytes = 1400L * MB,
             type = ModelInfo.ModelType.AI

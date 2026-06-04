@@ -114,7 +114,7 @@ class VoiceAISettingsHelper(
         // 自动下载（根据 RAM 选 tier）
         btnDownloadAuto?.setOnClickListener {
             val ram = getTotalRamGB()
-            val tier = if (ram >= 6) ModelInfo.Tier.PREMIUM else ModelInfo.Tier.BASIC
+            val tier = if (ram >= 6.0) ModelInfo.Tier.PREMIUM else ModelInfo.Tier.BASIC
             val tierName = if (tier == ModelInfo.Tier.PREMIUM) "Large" else "Small"
             val models = ModelRegistry.ALL_MODELS.filter { it.tier == tier }
             val totalSize = models.sumOf { it.sizeBytes }
@@ -199,16 +199,16 @@ class VoiceAISettingsHelper(
         tvHardwareInfo?.text = "📱 $recommendation"
     }
 
-    private fun getTotalRamGB(): Long {
+    private fun getTotalRamGB(): Double {
         return try {
             val reader = File("/proc/meminfo").bufferedReader()
-            val firstLine = reader.readLine() ?: return 0L
+            val firstLine = reader.readLine() ?: return 0.0
             reader.close()
-            val kb = firstLine.trim().split("\\s+".toRegex())[1].toLongOrNull() ?: 0L
-            // 厂商按 1000 进制标称 GB，所以这里也用 1000 而不是 1024
-            kb / (1000 * 1000)
+            val kb = firstLine.trim().split("\\s+".toRegex())[1].toDoubleOrNull() ?: 0.0
+            // 厂商按 1000 进制标称 GB，保留 1 位小数
+            Math.round(kb / 1000.0 / 1000.0 * 10.0) / 10.0
         } catch (_: Exception) {
-            0L
+            0.0
         }
     }
 
