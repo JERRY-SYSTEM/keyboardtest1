@@ -86,11 +86,11 @@ traditional:
 
 # 翻译器
 translator:
-  dictionary: pinyin
+  dictionary: rime_ice
   spelling_hints: 5
   always_show_comment: false
-  enable_completion: true
-  enable_sentence: true
+  enable_completion: false
+  enable_sentence: false
   enable_user_dict: true
   comment_format:
     - xform/.*//

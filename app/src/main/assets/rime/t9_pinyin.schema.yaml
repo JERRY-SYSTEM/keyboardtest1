@@ -66,12 +66,12 @@ speller:
     - derive/[tuv]/8/
     - derive/[wxyz]/9/
 
-# 翻译器 — script_translator 支持拼音切分、词组、语言模型
+# 翻译器 — script_translator 支持拼音切分、词组
 translator:
-  dictionary: pinyin
+  dictionary: rime_ice
   spelling_hints: 5
-  enable_completion: true
-  enable_sentence: true
+  enable_completion: false
+  enable_sentence: false
   enable_user_dict: true
   comment_format:
     - xform/.*//
