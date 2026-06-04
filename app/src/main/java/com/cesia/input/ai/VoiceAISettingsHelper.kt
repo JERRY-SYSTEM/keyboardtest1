@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.util.Log
 import android.view.View
 import android.widget.EditText
 import android.widget.Button
@@ -92,6 +93,11 @@ class VoiceAISettingsHelper(
 
     /** 加载已保存的设置 */
     fun loadSettings() {
+        // 扫描已有的模型文件（兼容手动放置）
+        val found = modelManager.scanExistingModels()
+        if (found.isNotEmpty()) {
+            Log.i("VoiceAISettings", "扫描发现已有模型: $found")
+        }
         // Groq Key
         etGroqKey?.setText(prefs.getString("groq_api_key", "") ?: "")
         // GPU 开关
@@ -244,11 +250,13 @@ class VoiceAISettingsHelper(
             tvBridgeStatus?.setTextColor(0xFFE65100.toInt())
             tvBridgeStatus?.setBackgroundColor(0xFFFFF3E0.toInt())
         } else if (voiceModel == null) {
-            tvBridgeStatus?.text = "⚠️ native-bridge.so 已加载，但 Whisper 模型未安装（请下载模型）"
+            tvBridgeStatus?.text = "⚠️ native-bridge.so 已加载，但 Whisper 模型未安装（请下载或放入模型文件）"
             tvBridgeStatus?.setTextColor(0xFFE65100.toInt())
             tvBridgeStatus?.setBackgroundColor(0xFFFFF3E0.toInt())
         } else {
-            tvBridgeStatus?.text = "✅ native-bridge.so 已加载，Whisper 模型已就绪（${voiceModel.name}）"
+            val aiModel = modelManager.getInstalledAiModelFile()
+            val aiText = if (aiModel != null) "，Qwen: ${aiModel.name}" else "，Qwen: 未安装"
+            tvBridgeStatus?.text = "✅ native-bridge.so 已加载，Whisper: ${voiceModel.name}$aiText"
             tvBridgeStatus?.setTextColor(0xFF2E7D32.toInt())
             tvBridgeStatus?.setBackgroundColor(0xFFE8F5E9.toInt())
         }

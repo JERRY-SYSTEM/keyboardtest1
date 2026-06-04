@@ -481,6 +481,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         isDarkTheme = themeMode == THEME_DARK
         setTheme(if (isDarkTheme) R.style.Theme_Cesia_Dark else R.style.Theme_Cesia)
         super.onCreate()
+        // 扫描已有的模型文件（兼容手动放置）
+        val found = modelManager.scanExistingModels()
+        if (found.isNotEmpty()) {
+            Log.i("Cesia", "扫描发现已有模型: $found")
+        }
     }
 
     override fun onCreateInputView(): View {
@@ -1827,20 +1832,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 语音后端自动切换 ========================
 
     /**
-     * 根据 LocalModeManager 模式和模型可用性自动选择语音后端
-     *
+     * 根据本地模式开关和模型安装情况确定语音后端
      * 规则：
-     * - 云端模式（CLOUD_FREE）→ Google 语音识别 + OpenRouter 润色
-     * - 本地模式 + 已下载 Whisper 模型 → 本地 Whisper
-     * - 本地模式 + 未下载模型 → 回退到 Google 语音识别（系统自带）
-     */
-    /**
-     * 根据模型安装情况确定语音后端
-     * 规则：
-     * 1. 桥梁（native-bridge.so）必须已加载
-     * 2. Whisper 模型文件必须存在
-     * 3. 两个条件都满足 → LOCAL_WHISPER，否则 → Google
-     * 同时在状态栏显示当前后端信息
+     * 1. 云端模式（localModeEnabled=false）→ 始终使用 Google
+     * 2. 本地模式（localModeEnabled=true）+ bridge + 模型 → 本地 Whisper
+     * 3. 本地模式但 bridge 或模型缺失 → 回退 Google + 状态栏提示
      */
     private fun updateVoiceBackend() {
         val bridgeLoaded = WhisperEngine.isBridgeLoaded()
@@ -1850,24 +1846,31 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // 诊断信息
         val bridgeError = WhisperEngine.getBridgeLoadError()
-        Log.i("Cesia", "updateVoiceBackend: bridgeLoaded=$bridgeLoaded, bridgeError=$bridgeError, hasLocalModel=$hasLocalModel, modelName=$modelName")
+        Log.i("Cesia", "updateVoiceBackend: localMode=$localModeEnabled, bridgeLoaded=$bridgeLoaded, bridgeError=$bridgeError, hasLocalModel=$hasLocalModel, modelName=$modelName")
 
-        if (!bridgeLoaded) {
-            // 桥梁未加载，无法使用 Whisper
-            val reason = bridgeError ?: "未知错误"
-            Log.w("Cesia", "语音后端: Google（桥梁未加载: $reason）")
-            updateStatus("🎤 语音: Google（⚠️ 桥梁未加载）")
+        // 云端模式：始终使用 Google
+        if (!localModeEnabled) {
+            voiceEngine.setBackend(VoiceEngine.Backend.CLOUD_GROQ)  // CLOUD_GROQ 分支会回退到 Google
+            Log.i("Cesia", "语音后端: Google（云端模式）")
             return
         }
 
+        // 本地模式：检查 bridge
+        if (!bridgeLoaded) {
+            val reason = bridgeError ?: "未知错误"
+            Log.w("Cesia", "语音后端: Google（本地模式但桥梁未加载: $reason）")
+            updateStatus("🎤 语音: Google（⚠️ 桥梁未加载: $reason）")
+            return
+        }
+
+        // 本地模式：检查模型
         if (!hasLocalModel) {
-            // 桥梁已加载但模型未下载
-            Log.w("Cesia", "语音后端: Google（Whisper 模型未安装）")
+            Log.w("Cesia", "语音后端: Google（本地模式但 Whisper 模型未安装）")
             updateStatus("🎤 语音: Google（⚠️ Whisper 模型未安装）")
             return
         }
 
-        // 桥梁和模型都可用
+        // 本地模式 + bridge + 模型都可用
         voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
         Log.i("Cesia", "语音后端: 本地 Whisper ($modelName)")
         updateStatus("🎤 语音: 本地 Whisper ✅")
@@ -3807,6 +3810,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
             // 每次输入法激活时更新语音后端并预加载模型
+            modelManager.scanExistingModels()
             updateVoiceBackend()
             preloadWhisperModel()
         } catch (e: Throwable) {

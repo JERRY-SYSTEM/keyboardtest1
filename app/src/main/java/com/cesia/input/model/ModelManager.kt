@@ -2,6 +2,7 @@ package com.cesia.input.model
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import java.io.File
 
 /**
@@ -11,6 +12,7 @@ import java.io.File
 class ModelManager(private val context: Context) {
 
     companion object {
+        private const val TAG = "ModelManager"
         private const val PREFS_NAME = "cesia_models"
         private const val KEY_INSTALLED_VOICE_MODEL = "installed_voice_model"
         private const val KEY_INSTALLED_AI_MODEL = "installed_ai_model"
@@ -26,6 +28,36 @@ class ModelManager(private val context: Context) {
     /** 模型存储根目录 */
     val modelsDir: File
         get() = File(context.filesDir, MODELS_DIR).also { it.mkdirs() }
+
+    /**
+     * 扫描 modelsDir 中已存在的模型文件，自动注册到 SharedPreferences
+     * 用于兼容手动放入模型文件的情况
+     * @return 新发现的模型 ID 列表
+     */
+    fun scanExistingModels(): List<String> {
+        val found = mutableListOf<String>()
+        if (!modelsDir.exists()) return found
+        val files = modelsDir.listFiles() ?: return found
+        for (file in files) {
+            if (!file.isFile) continue
+            // 跳过临时文件
+            if (file.name.endsWith(".tmp")) continue
+            // 在 ModelRegistry 中查找匹配的文件名
+            val matched = ModelRegistry.ALL_MODELS.find { it.fileName == file.name }
+            if (matched != null) {
+                val alreadyRegistered = when (matched.type) {
+                    ModelInfo.ModelType.VOICE -> installedVoiceModelId == matched.id
+                    ModelInfo.ModelType.AI -> installedAiModelId == matched.id
+                }
+                if (!alreadyRegistered) {
+                    markInstalled(matched.id, matched.type)
+                    found.add(matched.id)
+                    Log.i(TAG, "扫描发现模型: ${matched.id} (${file.name}, ${file.length()} bytes)")
+                }
+            }
+        }
+        return found
+    }
 
     // ==================== 已安装模型 ====================
 
