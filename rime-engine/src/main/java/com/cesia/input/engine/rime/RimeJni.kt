@@ -37,8 +37,9 @@ object RimeJni {
             System.loadLibrary("rime_jni")
             Log.i(TAG, "STEP1: librime_jni.so 加载成功")
 
-            // 使用 filesDir/rime/，与 PinyinDictManager 下载词库路径一致
-            val rimeDir = File(context.filesDir, "rime")
+            // 使用外部存储目录：/sdcard/Android/data/com.cesia.input/files/rime/
+            // 与 RimeEngine.copyRimeAssetsIfNeeded() 保持一致
+            val rimeDir = File(context.getExternalFilesDir(null), "rime")
             if (!rimeDir.exists()) rimeDir.mkdirs()
             val sharedDir = rimeDir.absolutePath
             val userDir = rimeDir.absolutePath

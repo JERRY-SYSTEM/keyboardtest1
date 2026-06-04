@@ -393,51 +393,35 @@ class SettingsActivity : AppCompatActivity() {
             info.dictSize < 1024 * 1024 -> "${info.dictSize / 1024}KB"
             else -> "${info.dictSize / 1024 / 1024}MB"
         }
-        val bundleStr = if (info.bundles.isNotEmpty()) info.bundles.joinToString(" + ") else "无"
         val statusText = if (info.downloaded) {
-            "词库: $sizeStr | 词条: ${info.dictCount} 条\n已下载: $bundleStr\n同步: $syncTime"
+            "词库: $sizeStr | 词条: ${info.dictCount} 条 | 文件: ${info.fileCount} 个\n同步: $syncTime\n来源: rime-ice (iDvel/rime-ice)"
         } else {
-            "词库: 使用内置精简版 (~1000字)\n提示: 点击下载词库按钮获取完整词库\n来源: 内置"
+            "词库: 使用内置精简版\n提示: 点击下载词库按钮获取完整词库（~50MB）\n来源: 内置"
         }
         tvDictInfo?.text = statusText
         btnDownloadDict?.text = if (info.downloaded) "🔄 更新词库" else "📥 下载词库"
     }
 
     private fun downloadDict() {
-        val bundles = dictManager.getAvailableBundles()
-        val items = bundles.map { "${it.name} (${it.estimatedSize})" }.toTypedArray()
-        val checked = bundles.map { it.recommended }.toBooleanArray()
-        val selected = mutableListOf<String>()
-
         AlertDialog.Builder(this)
-            .setTitle("选择要下载的词库包")
-            .setMultiChoiceItems(items, checked) { _, which, isChecked ->
-                checked[which] = isChecked
-            }
+            .setTitle("下载完整词库")
+            .setMessage("将下载 rime-ice 完整词库（full.zip，约 16MB 压缩包，解压后约 50MB）。\n\n词库包含：\n• 基础词库（~55万词条）\n• 扩展词库（41448字表）\n• 腾讯词库（~100万词条）\n• 英文词库\n• OpenCC 转换表\n• Lua 脚本\n\n下载完成后需重启输入法生效。\n\n来源：iDvel/rime-ice，GPL-3.0")
             .setPositiveButton("下载") { _, _ ->
-                for (i in bundles.indices) {
-                    if (checked[i]) selected.add(bundles[i].id)
-                }
-                if (selected.isEmpty()) {
-                    Toast.makeText(this, "请至少选择一个词库包", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                startDictDownload(selected)
+                startFullDictDownload()
             }
             .setNegativeButton("取消", null)
             .show()
     }
 
-    private fun startDictDownload(selected: List<String>) {
+    private fun startFullDictDownload() {
         btnDownloadDict?.isEnabled = false
         btnDownloadDict?.text = "下载中..."
         tvStatus.text = "⏳ 正在下载词库..."
-        appendLog("📥 开始下载词库包: ${selected.joinToString(" + ")}")
+        appendLog("📥 开始下载完整词库（rime-ice full.zip）")
         appendLog("📋 词库来源：rime-ice (iDvel/rime-ice)")
         appendLog("⚖️  许可证：GPL-3.0（词库数据，不影响本应用）")
 
-        dictManager.downloadBundles(
-            bundles = selected,
+        dictManager.downloadFullDict(
             onProgress = { msg ->
                 runOnUiThread {
                     tvStatus.text = msg
@@ -456,7 +440,7 @@ class SettingsActivity : AppCompatActivity() {
                         try {
                             val rimeEngine = com.cesia.input.engine.rime.RimeEngine(this)
                             rimeEngine.redeploy()
-                            Toast.makeText(this, "词库已自动部署，切换一下输入法即可使用", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this, "词库已部署！请重启输入法（切换一下输入法）后生效", Toast.LENGTH_LONG).show()
                         } catch (e: Exception) {
                             Toast.makeText(this, "词库下载完成！重启输入法后生效", Toast.LENGTH_LONG).show()
                         }
@@ -538,18 +522,16 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun cloudUpload() {
-        // 使用 GitHub Gist 作为简易云端备份
-        val dictFile = java.io.File(filesDir, "rime/${PinyinDictManager.LOCAL_DICT_FILE}")
-
-        if (!dictFile.exists()) {
+        // 云端备份：打包整个 rime 目录为 zip 上传
+        val rimeDir = java.io.File(getExternalFilesDir(null), "rime")
+        if (!rimeDir.exists() || rimeDir.listFiles()?.isEmpty() != false) {
             Toast.makeText(this, "没有可备份的词库", Toast.LENGTH_SHORT).show()
             return
         }
 
-        tvStatus.text = "⏳ 正在上传到云端..."
+        tvStatus.text = "⏳ 正在打包词库..."
         appendLog("开始云端备份...")
 
-        // 提示用户需要配置 GitHub Token
         val editText = EditText(this).apply {
             hint = "请输入 GitHub Personal Access Token"
             setText(prefs.getString("github_token", ""))
@@ -557,7 +539,7 @@ class SettingsActivity : AppCompatActivity() {
 
         AlertDialog.Builder(this)
             .setTitle("云端备份到 GitHub Gist")
-            .setMessage("需要 GitHub Token 才能上传。Token 只会保存在本地。")
+            .setMessage("将打包整个词库目录（~50MB）上传。\n需要 GitHub Token。Token 只保存在本地。")
             .setView(editText)
             .setPositiveButton("上传") { _, _ ->
                 val token = editText.text.toString().trim()
@@ -566,29 +548,40 @@ class SettingsActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 prefs.edit().putString("github_token", token).apply()
-                performCloudUpload(token, dictFile)
+                performCloudUpload(token, rimeDir)
             }
             .setNegativeButton("取消", null)
             .show()
     }
 
-    private fun performCloudUpload(token: String, dictFile: java.io.File) {
+    private fun performCloudUpload(token: String, rimeDir: java.io.File) {
         Thread {
             try {
-                val json = JSONObject()
-                val files = JSONObject()
-
-                if (dictFile.exists()) {
-                    val content = JSONObject()
-                    content.put("content", dictFile.readText())
-                    files.put("pinyin_dict.json", content)
+                // 打包 rime 目录为 zip
+                val zipFile = java.io.File(cacheDir, "rime_backup.zip")
+                java.util.zip.ZipOutputStream(zipFile.outputStream()).use { zos ->
+                    rimeDir.walkTopDown().forEach { file ->
+                        if (file.isFile) {
+                            val entryName = file.relativeTo(rimeDir).path
+                            zos.putNextEntry(java.util.zip.ZipEntry(entryName))
+                            file.inputStream().use { it.copyTo(zos) }
+                            zos.closeEntry()
+                        }
+                    }
                 }
 
+                // 上传到 GitHub Gist
+                val json = JSONObject()
+                val files = JSONObject()
+                val content = JSONObject()
+                content.put("content", zipFile.readText())
+                files.put("rime_backup.zip", content)
                 json.put("files", files)
                 json.put("description", "Cesia 输入法词库备份 ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())}")
 
                 val client = OkHttpClient.Builder()
-                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
 
                 val request = Request.Builder()
@@ -647,7 +640,6 @@ class SettingsActivity : AppCompatActivity() {
 
         Thread {
             try {
-                // 提取 Gist ID
                 val gistId = if (gistInput.contains("gist.github.com")) {
                     gistInput.split("/").last()
                 } else {
@@ -656,6 +648,7 @@ class SettingsActivity : AppCompatActivity() {
 
                 val client = OkHttpClient.Builder()
                     .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
 
                 val request = Request.Builder()
@@ -677,23 +670,36 @@ class SettingsActivity : AppCompatActivity() {
                 val json = JSONObject(body)
                 val files = json.getJSONObject("files")
 
-                var imported = false
+                // 查找 rime_backup.zip 或旧版 pinyin_dict.json
+                if (files.has("rime_backup.zip")) {
+                    val zipContent = files.getJSONObject("rime_backup.zip").getString("content")
+                    val zipFile = java.io.File(cacheDir, "rime_restore.zip")
+                    zipFile.writeText(zipContent)
 
-                if (files.has("pinyin_dict.json")) {
-                    val content = files.getJSONObject("pinyin_dict.json").getString("content")
-                    java.io.File(filesDir, "rime/${PinyinDictManager.LOCAL_DICT_FILE}").writeText(content)
-                    imported = true
-                }
+                    // 解压到外部存储 rime 目录
+                    val rimeDir = java.io.File(getExternalFilesDir(null), "rime")
+                    rimeDir.mkdirs()
+                    java.util.zip.ZipInputStream(zipFile.inputStream()).use { zis ->
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            if (!entry.isDirectory) {
+                                val outFile = java.io.File(rimeDir, entry.name)
+                                outFile.parentFile?.mkdirs()
+                                outFile.outputStream().use { zis.copyTo(it) }
+                            }
+                            zis.closeEntry()
+                            entry = zis.nextEntry
+                        }
+                    }
 
-                // 兼容旧版 pinyin_phrases.json（忽略）
-
-                runOnUiThread {
-                    if (imported) {
+                    runOnUiThread {
                         tvStatus.text = "✅ 恢复成功！"
                         appendLog("云端恢复成功")
                         refreshDictInfo()
                         Toast.makeText(this, "恢复成功！重启输入法后生效", Toast.LENGTH_LONG).show()
-                    } else {
+                    }
+                } else {
+                    runOnUiThread {
                         tvStatus.text = "❌ Gist 中未找到词库文件"
                         appendLog("Gist 中未找到词库文件")
                     }

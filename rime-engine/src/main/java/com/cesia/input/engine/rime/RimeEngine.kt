@@ -55,21 +55,22 @@ class RimeEngine(private val context: Context) : InputEngine {
     fun lastError(): String? = RimeJni.unavailableMessage()
 
     private fun copyRimeAssetsIfNeeded() {
-        // 统一使用 filesDir/rime/，与 PinyinDictManager 下载词库的路径一致
-        val rimeDir = File(context.filesDir, "rime")
+        // 使用外部存储目录：/sdcard/Android/data/com.cesia.input/files/rime/
+        // 词库下载到此目录，schema 配置从 APK assets 复制（仅首次）
+        val rimeDir = File(context.getExternalFilesDir(null), "rime")
         if (!rimeDir.exists()) rimeDir.mkdirs()
 
         try {
             val assetFiles = context.assets.list("rime") ?: emptyArray()
             Log.i(TAG, "assets/rime 文件列表: ${assetFiles.joinToString()}")
             for (fileName in assetFiles) {
-                // 跳过 .dict.yaml —— 词库由用户从设置页下载，不覆盖
+                val outFile = File(rimeDir, fileName)
+
+                // .dict.yaml 词库：如果外部目录已有（用户下载过），跳过；否则复制内置精简版作为 fallback
                 if (fileName.endsWith(".dict.yaml")) {
-                    val outFile = File(rimeDir, fileName)
                     if (outFile.exists()) {
                         Log.i(TAG, "跳过词库(已存在): $fileName (${outFile.length()} bytes)")
                     } else {
-                        // 首次安装也没有下载词库时，复制内置精简版作为 fallback
                         context.assets.open("rime/$fileName").use { input ->
                             outFile.outputStream().use { output -> input.copyTo(output) }
                         }
@@ -78,8 +79,15 @@ class RimeEngine(private val context: Context) : InputEngine {
                     continue
                 }
 
-                // schema 和 default 配置总是覆盖（APK 更新时同步）
-                val outFile = File(rimeDir, fileName)
+                // schema 配置（.yaml）：总是从 APK 复制（APK 更新时同步最新配置）
+                // 但保留用户可能修改过的 schema 文件（如 default.yaml、installation.yaml）
+                if (fileName == "default.yaml" || fileName == "installation.yaml") {
+                    if (outFile.exists()) {
+                        Log.i(TAG, "保留用户配置: $fileName")
+                        continue
+                    }
+                }
+
                 context.assets.open("rime/$fileName").use { input ->
                     outFile.outputStream().use { output -> input.copyTo(output) }
                 }
