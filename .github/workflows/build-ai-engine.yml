@@ -1,5 +1,5 @@
 # Build ai-engine (native-bridge.so) for Android
-# Clones whisper.cpp and llama.cpp, compiles with Vulkan GPU support
+# Compiles llama.cpp with CMake for local AI polish (Qwen GGUF)
 
 name: Build native-bridge.so
 
@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
 
 env:
-  WHISPER_VERSION: "1.7.4"
   LLAMA_BRANCH: "master"
 
 jobs:
@@ -30,14 +29,6 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ninja-build cmake
-
-      - name: Clone whisper.cpp
-        run: |
-          cd ai-engine/src/main/cpp
-          git clone --depth=1 --branch v${{ env.WHISPER_VERSION }} \
-            https://github.com/ggerganov/whisper.cpp.git
-          cd whisper.cpp
-          git submodule update --init --recursive
 
       - name: Clone llama.cpp
         run: |
