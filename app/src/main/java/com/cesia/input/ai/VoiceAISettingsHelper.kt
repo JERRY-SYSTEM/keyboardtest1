@@ -43,7 +43,8 @@ class VoiceAISettingsHelper(
     var tvHardwareInfo: TextView? = null
     var tvVoiceModelStatus: TextView? = null
     var tvAiModelStatus: TextView? = null
-    var btnDownloadAuto: Button? = null
+    var btnDownloadVoice: Button? = null
+    var btnDownloadAi: Button? = null
     var btnUninstall: Button? = null
     var tvDownloadProgress: TextView? = null
     var pbDownload: ProgressBar? = null
@@ -59,7 +60,8 @@ class VoiceAISettingsHelper(
         tvHardwareInfo: TextView?,
         tvVoiceModelStatus: TextView?,
         tvAiModelStatus: TextView?,
-        btnDownloadAuto: Button?,
+        btnDownloadVoice: Button?,
+        btnDownloadAi: Button?,
         btnUninstall: Button?,
         tvDownloadProgress: TextView?,
         pbDownload: ProgressBar?,
@@ -71,7 +73,8 @@ class VoiceAISettingsHelper(
         this.tvHardwareInfo = tvHardwareInfo
         this.tvVoiceModelStatus = tvVoiceModelStatus
         this.tvAiModelStatus = tvAiModelStatus
-        this.btnDownloadAuto = btnDownloadAuto
+        this.btnDownloadVoice = btnDownloadVoice
+        this.btnDownloadAi = btnDownloadAi
         this.btnUninstall = btnUninstall
         this.tvDownloadProgress = tvDownloadProgress
         this.pbDownload = pbDownload
@@ -111,27 +114,47 @@ class VoiceAISettingsHelper(
             modelManager.useGpu = checked
         }
 
-        // 自动下载（根据 RAM 选 tier）
-        btnDownloadAuto?.setOnClickListener {
+        // 下载语音识别模型（Whisper）
+        btnDownloadVoice?.setOnClickListener {
             val ram = getTotalRamGB()
             val tier = if (ram >= 6.0) ModelInfo.Tier.PREMIUM else ModelInfo.Tier.BASIC
-            val tierName = if (tier == ModelInfo.Tier.PREMIUM) "Large" else "Small"
-            val models = ModelRegistry.ALL_MODELS.filter { it.tier == tier }
-            val totalSize = models.sumOf { it.sizeBytes }
+            val model = ModelRegistry.ALL_MODELS.find {
+                it.type == ModelInfo.ModelType.VOICE && it.tier == tier
+            }
+            val sizeStr = model?.let { ModelDownloadManager.Formatter.formatSize(it.sizeBytes) } ?: ""
             Toast.makeText(activity,
-                "将下载 $tierName 版本（${ModelDownloadManager.Formatter.formatSize(totalSize)}）",
+                "将下载语音识别模型（$sizeStr）",
                 Toast.LENGTH_SHORT).show()
-            downloadTier(tier)
+            downloadVoiceModel(tier)
+        }
+
+        // 下载 AI 润色模型（Qwen）
+        btnDownloadAi?.setOnClickListener {
+            val ram = getTotalRamGB()
+            val tier = if (ram >= 6.0) ModelInfo.Tier.PREMIUM else ModelInfo.Tier.BASIC
+            val model = ModelRegistry.ALL_MODELS.find {
+                it.type == ModelInfo.ModelType.AI && it.tier == tier
+            }
+            val sizeStr = model?.let { ModelDownloadManager.Formatter.formatSize(it.sizeBytes) } ?: ""
+            Toast.makeText(activity,
+                "将下载 AI 润色模型（$sizeStr）",
+                Toast.LENGTH_SHORT).show()
+            downloadAiModel(tier)
         }
 
         // 卸载本地模型
         btnUninstall?.setOnClickListener {
-            val installedTier = downloadManager.getInstalledTier()
-            if (installedTier == null) {
+            val voiceInstalled = modelManager.getInstalledVoiceModelFile()
+            val aiInstalled = modelManager.getInstalledAiModelFile()
+            if (voiceInstalled == null && aiInstalled == null) {
                 Toast.makeText(activity, "没有已安装的本地模型", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val count = downloadManager.deleteTier(installedTier)
+            var count = 0
+            val installedTier = downloadManager.getInstalledTier()
+            if (installedTier != null) {
+                count = downloadManager.deleteTier(installedTier)
+            }
             refreshModelStatus()
             Toast.makeText(activity, "已卸载 $count 个模型文件", Toast.LENGTH_SHORT).show()
         }
@@ -162,7 +185,7 @@ class VoiceAISettingsHelper(
         tvVoiceModelStatus?.text = if (voiceInstalled != null) {
             "✅ 已安装: ${voiceInstalled.name} (${ModelDownloadManager.Formatter.formatSize(voiceInstalled.length())})"
         } else {
-            "❌ 未安装"
+            "❌ 未安装（将使用 Google 语音识别）"
         }
 
         // AI 模型
@@ -170,30 +193,41 @@ class VoiceAISettingsHelper(
         tvAiModelStatus?.text = if (aiInstalled != null) {
             "✅ 已安装: ${aiInstalled.name} (${ModelDownloadManager.Formatter.formatSize(aiInstalled.length())})"
         } else {
-            "❌ 未安装"
+            "❌ 未安装（将使用 OpenRouter 云端润色）"
         }
 
-        // 更新下载/卸载按钮状态
-        val installedTier = downloadManager.getInstalledTier()
-        if (installedTier != null) {
-            btnDownloadAuto?.text = "✅ 已安装 (${if (installedTier == ModelInfo.Tier.PREMIUM) "Large" else "Small"})"
-            btnDownloadAuto?.isEnabled = false
-            btnUninstall?.isEnabled = true
+        // 更新语音识别下载按钮
+        if (voiceInstalled != null) {
+            btnDownloadVoice?.text = "✅ 语音识别已安装"
+            btnDownloadVoice?.isEnabled = false
         } else {
             val ram = getTotalRamGB()
             val recommended = if (ram >= 6) "Large" else "Small"
-            btnDownloadAuto?.text = "⬇ 下载 $recommended 版本"
-            btnDownloadAuto?.isEnabled = !isDownloading
-            btnUninstall?.isEnabled = false
+            btnDownloadVoice?.text = "⬇ 下载语音识别 ($recommended)"
+            btnDownloadVoice?.isEnabled = !isDownloading
         }
+
+        // 更新 AI 润色下载按钮
+        if (aiInstalled != null) {
+            btnDownloadAi?.text = "✅ 语音润色已安装"
+            btnDownloadAi?.isEnabled = false
+        } else {
+            val ram = getTotalRamGB()
+            val recommended = if (ram >= 6) "2B" else "0.8B"
+            btnDownloadAi?.text = "⬇ 下载语音润色 ($recommended)"
+            btnDownloadAi?.isEnabled = !isDownloading
+        }
+
+        // 卸载按钮：任一已安装则可卸载
+        btnUninstall?.isEnabled = voiceInstalled != null || aiInstalled != null
     }
 
     /** 硬件检测 + 推荐 */
     private fun detectHardware() {
         val ram = getTotalRamGB()
         val recommendation = when {
-            ram >= 6 -> "RAM ${ram}GB — 推荐下载 Large 版本"
-            ram >= 3 -> "RAM ${ram}GB — 推荐下载 Small 版本"
+            ram >= 6 -> "RAM ${ram}GB — 推荐下载 Large / 2B 版本"
+            ram >= 3 -> "RAM ${ram}GB — 推荐下载 Small / 0.8B 版本"
             else -> "RAM ${ram}GB — 建议使用云端模式"
         }
         tvHardwareInfo?.text = "📱 $recommendation"
@@ -212,8 +246,8 @@ class VoiceAISettingsHelper(
         }
     }
 
-    /** 下载某个 tier 的所有模型 */
-    private fun downloadTier(tier: ModelInfo.Tier) {
+    /** 下载语音识别模型 */
+    private fun downloadVoiceModel(tier: ModelInfo.Tier) {
         if (isDownloading) {
             Toast.makeText(activity, "正在下载中，请稍候", Toast.LENGTH_SHORT).show()
             return
@@ -221,11 +255,13 @@ class VoiceAISettingsHelper(
         isDownloading = true
         tvDownloadProgress?.visibility = View.VISIBLE
         pbDownload?.visibility = View.VISIBLE
-        tvDownloadProgress?.text = "正在下载 ${tier.name} 版本..."
+        tvDownloadProgress?.text = "正在下载语音识别模型..."
 
         val appCompat = activity as? androidx.appcompat.app.AppCompatActivity ?: return
         appCompat.lifecycleScope.launch {
-            val result = downloadManager.downloadTier(tier) { modelName, progress ->
+            val result = downloadManager.downloadByType(
+                ModelInfo.ModelType.VOICE, tier
+            ) { modelName, progress ->
                 activity.runOnUiThread {
                     pbDownload?.progress = progress
                     tvDownloadProgress?.text = "下载 $modelName: $progress%"
@@ -237,9 +273,57 @@ class VoiceAISettingsHelper(
             activity.runOnUiThread {
                 pbDownload?.visibility = View.GONE
                 if (result.isSuccess) {
-                    tvDownloadProgress?.text = "✅ ${tier.name} 版本下载完成"
+                    tvDownloadProgress?.text = "✅ 语音识别模型下载完成"
+                    // 智能切换：语音识别安装成功后，自动切换到本地模式
+                    if (localModeManager.mode != LocalModeManager.RunMode.LOCAL) {
+                        localModeManager.mode = LocalModeManager.RunMode.LOCAL
+                        refreshModeUI()
+                        Toast.makeText(activity,
+                            "已自动切换为本地语音识别", Toast.LENGTH_SHORT).show()
+                    }
                     refreshModelStatus()
-                    Toast.makeText(activity, "安装成功", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(activity, "语音识别安装成功", Toast.LENGTH_SHORT).show()
+                } else {
+                    tvDownloadProgress?.text =
+                        "❌ 下载失败: ${result.exceptionOrNull()?.message ?: "请检查网络"}"
+                    Toast.makeText(activity,
+                        "下载失败: ${result.exceptionOrNull()?.message ?: "请检查网络"}",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    /** 下载 AI 润色模型 */
+    private fun downloadAiModel(tier: ModelInfo.Tier) {
+        if (isDownloading) {
+            Toast.makeText(activity, "正在下载中，请稍候", Toast.LENGTH_SHORT).show()
+            return
+        }
+        isDownloading = true
+        tvDownloadProgress?.visibility = View.VISIBLE
+        pbDownload?.visibility = View.VISIBLE
+        tvDownloadProgress?.text = "正在下载 AI 润色模型..."
+
+        val appCompat = activity as? androidx.appcompat.app.AppCompatActivity ?: return
+        appCompat.lifecycleScope.launch {
+            val result = downloadManager.downloadByType(
+                ModelInfo.ModelType.AI, tier
+            ) { modelName, progress ->
+                activity.runOnUiThread {
+                    pbDownload?.progress = progress
+                    tvDownloadProgress?.text = "下载 $modelName: $progress%"
+                }
+            }
+
+            isDownloading = false
+
+            activity.runOnUiThread {
+                pbDownload?.visibility = View.GONE
+                if (result.isSuccess) {
+                    tvDownloadProgress?.text = "✅ AI 润色模型下载完成"
+                    refreshModelStatus()
+                    Toast.makeText(activity, "AI 润色模型安装成功", Toast.LENGTH_SHORT).show()
                 } else {
                     tvDownloadProgress?.text =
                         "❌ 下载失败: ${result.exceptionOrNull()?.message ?: "请检查网络"}"

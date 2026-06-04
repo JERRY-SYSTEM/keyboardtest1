@@ -80,7 +80,8 @@ class SettingsActivity : AppCompatActivity() {
     private var tvAiModelStatus: TextView? = null
     private var tvDownloadProgress: TextView? = null
     private var pbDownload: android.widget.ProgressBar? = null
-    private var btnDownloadAuto: Button? = null
+    private var btnDownloadVoice: Button? = null
+    private var btnDownloadAi: Button? = null
     private var btnUninstall: Button? = null
     private var switchGpu: androidx.appcompat.widget.SwitchCompat? = null
     private var isDownloading = false
@@ -140,7 +141,8 @@ class SettingsActivity : AppCompatActivity() {
         aiSettingsHelper.bindViews(
             etGroqKey, tvModeLabel, btnToggleMode, tvHardwareInfo,
             tvVoiceModelStatus, tvAiModelStatus,
-            btnDownloadAuto, btnUninstall,
+            btnDownloadVoice, btnDownloadAi,
+            btnUninstall,
             tvDownloadProgress, pbDownload, switchGpu
         )
 
@@ -222,7 +224,8 @@ class SettingsActivity : AppCompatActivity() {
             tvAiModelStatus = findViewById(R.id.tv_ai_model_status)
             tvDownloadProgress = findViewById(R.id.tv_download_progress)
             pbDownload = findViewById(R.id.pb_download)
-            btnDownloadAuto = findViewById(R.id.btn_download_auto)
+            btnDownloadVoice = findViewById(R.id.btn_download_voice)
+            btnDownloadAi = findViewById(R.id.btn_download_ai)
             btnUninstall = findViewById(R.id.btn_uninstall)
             switchGpu = findViewById(R.id.switch_gpu)
         } catch (_: Exception) {}

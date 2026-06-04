@@ -149,6 +149,31 @@ class ModelDownloadManager(private val context: Context) {
     }
 
     /**
+     * 下载指定类型的所有模型（只下载未安装的）
+     */
+    suspend fun downloadByType(
+        type: ModelInfo.ModelType,
+        tier: ModelInfo.Tier,
+        onProgress: ((modelName: String, percent: Int) -> Unit)? = null
+    ): Result<File> {
+        val models = ModelRegistry.ALL_MODELS.filter { it.type == type && it.tier == tier }
+        if (models.isEmpty()) {
+            return Result.failure(Exception("No models for type=$type tier=$tier"))
+        }
+        var lastResult: Result<File>? = null
+        for (model in models) {
+            if (isDownloaded(model.id)) continue
+            lastResult = download(model) { p ->
+                onProgress?.invoke(model.name, p)
+            }
+            if (lastResult.isFailure) break
+        }
+        return lastResult ?: Result.success(models.firstNotNullOfOrNull {
+            File(modelsDir, it.fileName).takeIf { f -> f.exists() }
+        } ?: modelsDir)
+    }
+
+    /**
      * 下载某个 tier 的所有模型（识别 + 润色）
      * 返回最后一个下载结果
      */

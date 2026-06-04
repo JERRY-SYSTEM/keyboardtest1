@@ -421,28 +421,37 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
+            android:layout_marginBottom="4dp">
 
             <Button
-                android:id="@+id/btn_download_auto"
+                android:id="@+id/btn_download_voice"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="2"
-                android:text="⬇ 下载适合手机的模型"
+                android:layout_weight="1"
+                android:text="⬇ 下载语音识别"
                 android:textSize="12sp"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_marginEnd="4dp" />
 
             <Button
-                android:id="@+id/btn_uninstall"
+                android:id="@+id/btn_download_ai"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="🗑 卸载"
+                android:text="⬇ 下载语音润色"
                 android:textSize="12sp"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_marginStart="4dp" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/btn_uninstall"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🗑 卸载本地模型"
+            android:textSize="12sp"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_marginBottom="8dp" />
 
         <!-- 下载进度 -->
         <TextView
