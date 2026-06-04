@@ -145,11 +145,9 @@ class SettingsActivity : AppCompatActivity() {
             btnUninstall,
             tvDownloadProgress, pbDownload, switchGpu
         )
-        // 绑定桥梁插件视图
+        // 绑定桥梁状态视图（仅显示状态，不下载）
         aiSettingsHelper.bindBridgeViews(
-            findViewById(R.id.tv_bridge_status),
-            findViewById(R.id.btn_download_bridge),
-            findViewById(R.id.tv_bridge_error)
+            findViewById(R.id.tv_bridge_status)
         )
 
         statsManager = PolishStatsManager(this)

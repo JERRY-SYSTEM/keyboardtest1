@@ -17,6 +17,7 @@ import com.cesia.input.model.ModelDownloadManager
 import com.cesia.input.model.ModelInfo
 import com.cesia.input.model.ModelManager
 import com.cesia.input.model.ModelRegistry
+import com.cesia.input.engine.ai.WhisperEngine
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.launch
 import java.io.File
@@ -50,10 +51,8 @@ class VoiceAISettingsHelper(
     var pbDownload: ProgressBar? = null
     var switchGpu: SwitchCompat? = null
 
-    // 桥梁插件视图
+    // 桥梁状态视图
     var tvBridgeStatus: TextView? = null
-    var btnDownloadBridge: Button? = null
-    var tvBridgeError: TextView? = null
 
     private var isDownloading = false
 
@@ -86,15 +85,9 @@ class VoiceAISettingsHelper(
         this.switchGpu = switchGpu
     }
 
-    /** 绑定桥梁插件视图（在 SettingsActivity.initViews 中单独调用） */
-    fun bindBridgeViews(
-        tvBridgeStatus: TextView?,
-        btnDownloadBridge: Button?,
-        tvBridgeError: TextView?
-    ) {
+    /** 绑定桥梁状态视图 */
+    fun bindBridgeViews(tvBridgeStatus: TextView?) {
         this.tvBridgeStatus = tvBridgeStatus
-        this.btnDownloadBridge = btnDownloadBridge
-        this.tvBridgeError = tvBridgeError
     }
 
     /** 加载已保存的设置 */
@@ -129,11 +122,6 @@ class VoiceAISettingsHelper(
         // GPU 开关
         switchGpu?.setOnCheckedChangeListener { _, checked ->
             modelManager.useGpu = checked
-        }
-
-        // 下载桥梁插件
-        btnDownloadBridge?.setOnClickListener {
-            downloadBridge()
         }
 
         // 下载语音识别模型（Whisper）
@@ -244,6 +232,23 @@ class VoiceAISettingsHelper(
         btnUninstall?.isEnabled = voiceInstalled != null || aiInstalled != null
     }
 
+    /** 刷新桥梁状态（仅用于诊断显示） */
+    fun refreshBridgeStatus() {
+        val bridgeLoaded = WhisperEngine.isBridgeLoaded()
+        val bridgeError = WhisperEngine.getBridgeLoadError()
+
+        if (bridgeLoaded) {
+            tvBridgeStatus?.text = "✅ native-bridge.so 已加载（本地语音识别可用）"
+            tvBridgeStatus?.setTextColor(0xFF2E7D32.toInt())
+            tvBridgeStatus?.setBackgroundColor(0xFFE8F5E9.toInt())
+        } else {
+            val reason = bridgeError ?: "未知错误"
+            tvBridgeStatus?.text = "⚠️ native-bridge.so 未加载: $reason"
+            tvBridgeStatus?.setTextColor(0xFFE65100.toInt())
+            tvBridgeStatus?.setBackgroundColor(0xFFFFF3E0.toInt())
+        }
+    }
+
     /** 硬件检测 + 推荐 */
     private fun detectHardware() {
         val ram = getTotalRamGB()
@@ -261,97 +266,9 @@ class VoiceAISettingsHelper(
             val firstLine = reader.readLine() ?: return 0.0
             reader.close()
             val kb = firstLine.trim().split("\\s+".toRegex())[1].toDoubleOrNull() ?: 0.0
-            // 厂商按 1000 进制标称 GB，保留 1 位小数
             Math.round(kb / 1000.0 / 1000.0 * 10.0) / 10.0
         } catch (_: Exception) {
             0.0
-        }
-    }
-
-    // ==================== 桥梁插件 ====================
-
-    /** 刷新桥梁插件状态 */
-    fun refreshBridgeStatus() {
-        val bridgeLoaded = com.cesia.input.engine.ai.WhisperEngine.isBridgeLoaded()
-        val bridgeError = com.cesia.input.engine.ai.WhisperEngine.getBridgeLoadError()
-        val bridgeInstalled = downloadManager.isBridgeInstalled()
-
-        if (bridgeLoaded) {
-            // 桥梁已加载成功
-            tvBridgeStatus?.text = "✅ 语音引擎已就绪（native-bridge.so 已加载）"
-            tvBridgeStatus?.setTextColor(0xFF2E7D32.toInt()) // 绿色
-            tvBridgeStatus?.setBackgroundColor(0xFFE8F5E9.toInt()) // 浅绿背景
-            btnDownloadBridge?.text = "✅ 语音引擎已安装"
-            btnDownloadBridge?.isEnabled = false
-            tvBridgeError?.visibility = android.view.View.GONE
-        } else if (bridgeInstalled) {
-            // 文件存在但加载失败
-            tvBridgeStatus?.text = "⚠️ 语音引擎文件存在但加载失败"
-            tvBridgeStatus?.setTextColor(0xFFE65100.toInt()) // 橙色
-            tvBridgeStatus?.setBackgroundColor(0xFFFFF3E0.toInt()) // 浅橙背景
-            btnDownloadBridge?.text = "🔄 重新下载语音引擎"
-            btnDownloadBridge?.isEnabled = true
-            tvBridgeError?.text = "加载错误: ${bridgeError ?: "未知"}"
-            tvBridgeError?.visibility = android.view.View.VISIBLE
-        } else {
-            // 桥梁未安装
-            tvBridgeStatus?.text = "❌ 语音引擎未安装（本地语音识别不可用）"
-            tvBridgeStatus?.setTextColor(0xFFC62828.toInt()) // 红色
-            tvBridgeStatus?.setBackgroundColor(0xFFFFEBEE.toInt()) // 浅红背景
-            btnDownloadBridge?.text = "⬇ 下载语音引擎（桥梁）"
-            btnDownloadBridge?.isEnabled = !isDownloading
-            tvBridgeError?.visibility = android.view.View.GONE
-        }
-    }
-
-    /** 下载桥梁插件 */
-    private fun downloadBridge() {
-        if (isDownloading) {
-            Toast.makeText(activity, "正在下载中，请稍候", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 检查网络
-        val url = com.cesia.input.model.ModelRegistry.Bridge.getDownloadUrl()
-        if (url.isBlank() || !url.startsWith("http")) {
-            Toast.makeText(activity,
-                "桥梁下载 URL 未配置，请检查 ModelRegistry.Bridge",
-                Toast.LENGTH_LONG).show()
-            return
-        }
-
-        isDownloading = true
-        tvDownloadProgress?.visibility = android.view.View.VISIBLE
-        pbDownload?.visibility = android.view.View.VISIBLE
-        tvDownloadProgress?.text = "正在下载语音引擎（桥梁）..."
-        btnDownloadBridge?.isEnabled = false
-
-        val appCompat = activity as? androidx.appcompat.app.AppCompatActivity ?: return
-        appCompat.lifecycleScope.launch {
-            val result = downloadManager.downloadBridge(force = true) { progress ->
-                activity.runOnUiThread {
-                    pbDownload?.progress = progress
-                    tvDownloadProgress?.text = "下载语音引擎: $progress%"
-                }
-            }
-
-            isDownloading = false
-
-            activity.runOnUiThread {
-                pbDownload?.visibility = android.view.View.GONE
-                if (result.isSuccess) {
-                    tvDownloadProgress?.text = "✅ 语音引擎下载完成，请重启输入法生效"
-                    Toast.makeText(activity,
-                        "语音引擎下载成功！请重启输入法后生效",
-                        Toast.LENGTH_LONG).show()
-                } else {
-                    val errMsg = result.exceptionOrNull()?.message ?: "请检查网络"
-                    tvDownloadProgress?.text = "❌ 下载失败: $errMsg"
-                    Toast.makeText(activity, "下载失败: $errMsg", Toast.LENGTH_LONG).show()
-                }
-                refreshBridgeStatus()
-                refreshModelStatus()
-            }
         }
     }
 
@@ -438,6 +355,4 @@ class VoiceAISettingsHelper(
             }
         }
     }
-
-    // ModelRegistry 在 com.cesia.input.model 包中
 }
