@@ -59,10 +59,15 @@ class VoiceEngine(private val context: Context) {
 
     // ==================== 本地模型 ====================
 
+    private var lastErrorMessage: String? = null
+
+    fun getLastErrorMessage(): String? = lastErrorMessage
+
     /** 加载本地 whisper 模型 */
     suspend fun loadLocalModel(): Boolean = withContext(Dispatchers.IO) {
         val modelFile = modelManager.getInstalledVoiceModelFile()
         if (modelFile == null) {
+            lastErrorMessage = "模型文件不存在"
             Log.w(TAG, "No local voice model installed")
             return@withContext false
         }
@@ -70,10 +75,15 @@ class VoiceEngine(private val context: Context) {
         try {
             whisperLoaded = whisperEngine.nativeInit(modelFile.absolutePath, modelManager.useGpu)
             if (whisperLoaded) {
+                lastErrorMessage = null
                 Log.i(TAG, "Whisper model loaded: ${modelFile.name}")
+            } else {
+                lastErrorMessage = "nativeInit 返回 false（模型文件可能损坏或格式不支持）"
+                Log.e(TAG, lastErrorMessage!!)
             }
             whisperLoaded
         } catch (e: Throwable) {
+            lastErrorMessage = "${e.javaClass.simpleName}: ${e.message}"
             Log.e(TAG, "Failed to load whisper model", e)
             false
         }

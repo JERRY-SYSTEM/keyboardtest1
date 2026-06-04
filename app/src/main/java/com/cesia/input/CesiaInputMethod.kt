@@ -1807,34 +1807,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      * - 本地模式 + 已下载 Whisper 模型 → 本地 Whisper
      * - 本地模式 + 未下载模型 → 回退到 Google 语音识别（系统自带）
      */
+    /**
+     * 根据模型安装情况确定语音后端
+     * 规则：Whisper 已安装 → LOCAL_WHISPER，否则 → Google（通过 TypelessEngine）
+     * 同时在状态栏显示当前后端信息
+     */
     private fun updateVoiceBackend() {
-        val modePrefs = getSharedPreferences("cesia_local_mode", Context.MODE_PRIVATE)
-        val modeName = modePrefs.getString("run_mode", LocalModeManager.RunMode.CLOUD_FREE.name)
-            ?: LocalModeManager.RunMode.CLOUD_FREE.name
-        val mode = try { LocalModeManager.RunMode.valueOf(modeName) }
-            catch (_: Exception) { LocalModeManager.RunMode.CLOUD_FREE }
         val hasLocalModel = modelManager.hasVoiceModel()
+        val modelFile = modelManager.getInstalledVoiceModelFile()
+        val modelName = modelFile?.name ?: "无"
 
-        when (mode) {
-            LocalModeManager.RunMode.CLOUD_FREE, LocalModeManager.RunMode.CLOUD_PAID -> {
-                // 云端模式：如果 Whisper 已安装则用本地识别（替换 Google），否则用 Google
-                if (hasLocalModel) {
-                    voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
-                    Log.i("Cesia", "语音后端: 本地 Whisper（云端模式下自动替换 Google）")
-                } else {
-                    // Google 语音通过 TypelessEngine/FallbackRecognizer，不需要设置 VoiceEngine
-                    Log.i("Cesia", "语音后端: Google 云端（Whisper 未安装）")
-                }
-            }
-            LocalModeManager.RunMode.LOCAL -> {
-                if (hasLocalModel) {
-                    voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
-                    Log.i("Cesia", "语音后端: 本地 Whisper")
-                } else {
-                    // 本地模式但没有模型，回退到 Google
-                    Log.w("Cesia", "语音后端: 本地模型未安装，回退到 Google")
-                }
-            }
+        if (hasLocalModel) {
+            voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
+            Log.i("Cesia", "语音后端: 本地 Whisper ($modelName)")
+            updateStatus("🎤 语音: 本地 Whisper ($modelName)")
+        } else {
+            // Whisper 未安装，使用 Google 语音识别（通过 TypelessEngine/FallbackRecognizer）
+            Log.i("Cesia", "语音后端: Google（Whisper 未安装）")
+            updateStatus("🎤 语音: Google（Whisper 未安装）")
         }
     }
 
@@ -1938,20 +1928,27 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     val loaded = voiceEngine.loadLocalModel()
                     if (!loaded) {
                         withContext(Dispatchers.Main) {
-                            updateStatus("⚠️ Whisper 加载失败，回退到 Google...")
+                            // 获取详细失败信息
+                            val reason = voiceEngine.getLastErrorMessage() ?: "未知错误"
+                            updateStatus("⚠️ Whisper 加载失败: $reason，回退到 Google...")
+                            Log.e("Cesia", "Whisper 加载失败详情: $reason")
                             startGoogleRecording(PolishChoice.CLOUD_OPENROUTER)
                         }
                         return@launch
+                    }
+                    // 加载成功，显示确认
+                    withContext(Dispatchers.Main) {
+                        updateStatus("✅ Whisper 模型已加载，请说话...")
                     }
                 }
                 val text = voiceEngine.recordAndTranscribe(30000)
                 withContext(Dispatchers.Main) {
                     handleCloudVoiceResult(text)
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e("Cesia", "Whisper 录音失败", e)
                 withContext(Dispatchers.Main) {
-                    updateStatus("❌ 语音识别失败: ${e.message}")
+                    updateStatus("❌ 语音识别失败: ${e.javaClass.simpleName}: ${e.message}")
                     resetToIdle()
                 }
             }
@@ -1993,15 +1990,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         candidateBar.visibility = View.GONE
         voiceStartTime = System.currentTimeMillis()
 
-        // 每次录音前更新语音后端（模式可能已切换）
+        // 每次录音前更新语音后端（模型状态可能已变化）
         updateVoiceBackend()
 
         when (voiceEngine.getBackend()) {
             VoiceEngine.Backend.LOCAL_WHISPER -> {
                 if (modelManager.hasVoiceModel()) {
-                    updateStatus("🎤 正在收听 (本地 Whisper)...")
                     startWhisperRecordingAsync()
                 } else {
+                    // 模型被删除了，回退 Google
                     updateStatus("🎤 正在收听 (Google)...")
                     typelessEngine?.startListening(continuous = true)
                 }

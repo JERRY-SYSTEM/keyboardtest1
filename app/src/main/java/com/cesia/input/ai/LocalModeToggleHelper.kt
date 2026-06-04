@@ -54,13 +54,21 @@ class LocalModeToggleHelper(
             LocalModeManager.RunMode.CLOUD_PAID -> LocalModeManager.RunMode.LOCAL
         }
         // 检查目标模式是否可用
-        val available = when (targetMode) {
-            LocalModeManager.RunMode.LOCAL -> modelManager.hasVoiceModel()
-            LocalModeManager.RunMode.CLOUD_FREE, LocalModeManager.RunMode.CLOUD_PAID -> true
-        }
-        val reason = when (targetMode) {
-            LocalModeManager.RunMode.LOCAL -> "本地语音模型未安装，请前往设置下载"
-            else -> null
+        val (available, reason) = when (targetMode) {
+            LocalModeManager.RunMode.LOCAL -> {
+                val hasWhisper = modelManager.hasVoiceModel()
+                val hasQwen = modelManager.hasAiModel()
+                when {
+                    !hasWhisper && !hasQwen -> false to "本地模型未安装：需要 Whisper（语音识别）和 Qwen（AI 润色），请前往设置下载"
+                    !hasWhisper -> false to "Whisper 语音模型未安装，请前往设置下载"
+                    !hasQwen -> {
+                        // Whisper 有了但 Qwen 没有：允许切换，但提示润色会回退云端
+                        true to "⚠️ 提示：Qwen 未安装，语音识别用本地 Whisper，AI 润色将使用云端"
+                    }
+                    else -> true to null
+                }
+            }
+            LocalModeManager.RunMode.CLOUD_FREE, LocalModeManager.RunMode.CLOUD_PAID -> true to null
         }
 
         if (available) {
@@ -70,7 +78,9 @@ class LocalModeToggleHelper(
             // 通知外部（更新 VoiceEngine backend）
             onModeChanged?.invoke()
             // 显示切换提示
-            Toast.makeText(context, localModeManager.getModeDisplayName(), Toast.LENGTH_SHORT).show()
+            val displayName = localModeManager.getModeDisplayName()
+            val toastMsg = if (reason != null) "$displayName（$reason）" else displayName
+            Toast.makeText(context, toastMsg, if (reason != null) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
         } else {
             // 当前模式不可用，引导用户
             showMissingPrompt(reason ?: "无法使用当前模式")
