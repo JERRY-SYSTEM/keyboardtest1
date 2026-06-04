@@ -43,6 +43,7 @@ import com.cesia.input.model.ModelManager
 import com.cesia.input.stats.PolishStatsManager
 import com.cesia.input.stats.MagicHistoryManager
 import com.cesia.input.voice.VoiceEngine
+import com.cesia.input.engine.ai.WhisperEngine
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.*
 
@@ -1809,23 +1810,41 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      */
     /**
      * 根据模型安装情况确定语音后端
-     * 规则：Whisper 已安装 → LOCAL_WHISPER，否则 → Google（通过 TypelessEngine）
+     * 规则：
+     * 1. 桥梁（native-bridge.so）必须已加载
+     * 2. Whisper 模型文件必须存在
+     * 3. 两个条件都满足 → LOCAL_WHISPER，否则 → Google
      * 同时在状态栏显示当前后端信息
      */
     private fun updateVoiceBackend() {
+        val bridgeLoaded = WhisperEngine.isBridgeLoaded()
         val hasLocalModel = modelManager.hasVoiceModel()
         val modelFile = modelManager.getInstalledVoiceModelFile()
         val modelName = modelFile?.name ?: "无"
 
-        if (hasLocalModel) {
-            voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
-            Log.i("Cesia", "语音后端: 本地 Whisper ($modelName)")
-            updateStatus("🎤 语音: 本地 Whisper ($modelName)")
-        } else {
-            // Whisper 未安装，使用 Google 语音识别（通过 TypelessEngine/FallbackRecognizer）
-            Log.i("Cesia", "语音后端: Google（Whisper 未安装）")
-            updateStatus("🎤 语音: Google（Whisper 未安装）")
+        // 诊断信息
+        val bridgeError = WhisperEngine.getBridgeLoadError()
+        Log.i("Cesia", "updateVoiceBackend: bridgeLoaded=$bridgeLoaded, bridgeError=$bridgeError, hasLocalModel=$hasLocalModel, modelName=$modelName")
+
+        if (!bridgeLoaded) {
+            // 桥梁未加载，无法使用 Whisper
+            val reason = bridgeError ?: "未知错误"
+            Log.w("Cesia", "语音后端: Google（桥梁未加载: $reason）")
+            updateStatus("🎤 语音: Google（⚠️ 桥梁未加载）")
+            return
         }
+
+        if (!hasLocalModel) {
+            // 桥梁已加载但模型未下载
+            Log.w("Cesia", "语音后端: Google（Whisper 模型未安装）")
+            updateStatus("🎤 语音: Google（⚠️ Whisper 模型未安装）")
+            return
+        }
+
+        // 桥梁和模型都可用
+        voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
+        Log.i("Cesia", "语音后端: 本地 Whisper ($modelName)")
+        updateStatus("🎤 语音: 本地 Whisper ✅")
     }
 
     private fun getOpenRouterApiKey(): String {

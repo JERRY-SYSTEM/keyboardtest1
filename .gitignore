@@ -1,39 +1,20 @@
+# CMake build intermediates
+ai-engine/.cxx/
+ai-engine/build/
+app/build/
+*.so
+
 # Gradle
-*.class
-# ⚠️ 不要忽略 gradle-wrapper.jar，它是构建必须的
-# *.jar
-*.war
-*.ear
-*.nar
-*.sar
-*.apk
-*.ap_
-*.dex
-
-# Android
-build/
-captures/
 .gradle/
-local.properties
-*.iml
+build/
+
+# whisper.cpp source (submodule)
+# ai-engine/src/main/cpp/whisper.cpp/
+
+# Compiled .so files (should be downloaded as bridge plugin, not committed)
+# ai-engine/src/main/jniLibs/arm64-v8a/libnative-bridge.so
+
+# IDE
 .idea/
-
-# JNI
-*.o
-*.dylib
-*.dll
-# 保留 jniLibs 中的预编译 .so（RIME 引擎）
-!**/jniLibs/**/*.so
-
-# Assets (large files)
-wenet_model.bin
-wenet_units.txt
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Keystore (injected via GitHub Secrets at build time)
-*.keystore
-*.jks
-*.keystore.old
+*.iml
+local.properties

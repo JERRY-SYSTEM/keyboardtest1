@@ -30,7 +30,7 @@ data class ModelInfo(
  * 所有可用模型定义
  */
 object ModelRegistry {
-    
+
     const val KB = 1024L
     const val MB = KB * 1024
     const val GB = MB * 1024
@@ -78,4 +78,75 @@ object ModelRegistry {
     )
 
     fun getById(id: String): ModelInfo? = ALL_MODELS.find { it.id == id }
+
+    // ==================== 桥梁插件（native-bridge.so）====================
+
+    /**
+     * 桥梁插件信息
+     * 包含 whisper.cpp 的 JNI 实现，随模型一起下载
+     *
+     * 下载地址说明：
+     * - 可以从 GitHub Release 下载预编译版本
+     * - 也可以从 hf-mirror 下载
+     * - 文件名格式：libnative-bridge-<abi>.so
+     */
+    object Bridge {
+        const val ID = "native-bridge"
+        const val FILE_NAME = "libnative-bridge.so"
+        const val DISPLAY_NAME = "语音识别引擎（桥梁）"
+        const val DESCRIPTION = "本地语音识别和 AI 润色的 native 引擎，必须下载后才能使用本地模型"
+
+        // 预编译桥梁的下载 URL（按 ABI 区分）
+        // 实际使用时替换为真实的下载地址
+        const val DOWNLOAD_URL_ARM64 = "https://github.com/harviex/cesia-input-method/releases/download/bridge/libnative-bridge-arm64-v8a.so"
+
+        // 文件大小（约 2-5MB，取决于编译选项）
+        const val SIZE_BYTES = 5L * MB
+
+        /**
+         * 获取当前 ABI 对应的下载 URL
+         */
+        fun getDownloadUrl(): String {
+            val abi = System.getProperty("os.arch") ?: "arm64"
+            return when {
+                abi.contains("aarch64") || abi.contains("arm64") -> DOWNLOAD_URL_ARM64
+                else -> DOWNLOAD_URL_ARM64 // 默认 arm64
+            }
+        }
+
+        /**
+         * 获取当前 ABI 对应的文件名
+         */
+        fun getFileName(): String = FILE_NAME
+
+        /**
+         * 获取桥梁在设备上的安装路径
+         * 返回 null 表示不支持当前平台
+         */
+        fun getInstallDir(context: android.content.Context): java.io.File? {
+            // 放到 app 的 nativeLibraryDir 下
+            val nativeDir = context.applicationInfo.nativeLibraryDir ?: return null
+            return java.io.File(nativeDir)
+        }
+
+        /**
+         * 检查桥梁是否已安装
+         */
+        fun isInstalled(context: android.content.Context): Boolean {
+            val dir = getInstallDir(context) ?: return false
+            return java.io.File(dir, FILE_NAME).exists()
+        }
+
+        /**
+         * 尝试加载桥梁，返回是否成功
+         */
+        fun tryLoad(): Boolean {
+            return try {
+                System.loadLibrary("native-bridge")
+                true
+            } catch (e: UnsatisfiedLinkError) {
+                false
+            }
+        }
+    }
 }

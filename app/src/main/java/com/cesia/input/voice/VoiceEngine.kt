@@ -65,20 +65,36 @@ class VoiceEngine(private val context: Context) {
 
     /** 加载本地 whisper 模型 */
     suspend fun loadLocalModel(): Boolean = withContext(Dispatchers.IO) {
+        // 首先检查桥梁是否可用
+        if (!WhisperEngine.isBridgeLoaded()) {
+            val bridgeError = WhisperEngine.getBridgeLoadError() ?: "未知错误"
+            lastErrorMessage = "桥梁未加载: $bridgeError。请下载「语音识别引擎（桥梁）」插件"
+            Log.e(TAG, lastErrorMessage!!)
+            return@withContext false
+        }
+
         val modelFile = modelManager.getInstalledVoiceModelFile()
         if (modelFile == null) {
-            lastErrorMessage = "模型文件不存在"
+            lastErrorMessage = "模型文件不存在，请下载 Whisper 模型"
             Log.w(TAG, "No local voice model installed")
             return@withContext false
         }
 
+        // 检查模型文件可读
+        if (!modelFile.canRead()) {
+            lastErrorMessage = "模型文件无法读取: ${modelFile.absolutePath}"
+            Log.e(TAG, lastErrorMessage!!)
+            return@withContext false
+        }
+
         try {
+            Log.i(TAG, "Loading whisper model: ${modelFile.absolutePath} (${modelFile.length()} bytes)")
             whisperLoaded = whisperEngine.nativeInit(modelFile.absolutePath, modelManager.useGpu)
             if (whisperLoaded) {
                 lastErrorMessage = null
-                Log.i(TAG, "Whisper model loaded: ${modelFile.name}")
+                Log.i(TAG, "Whisper model loaded successfully: ${modelFile.name}")
             } else {
-                lastErrorMessage = "nativeInit 返回 false（模型文件可能损坏或格式不支持）"
+                lastErrorMessage = "nativeInit 返回 false（模型文件可能损坏、格式不支持或缺少依赖库）"
                 Log.e(TAG, lastErrorMessage!!)
             }
             whisperLoaded

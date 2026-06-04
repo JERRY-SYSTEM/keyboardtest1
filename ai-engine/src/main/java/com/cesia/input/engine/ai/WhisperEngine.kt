@@ -17,15 +17,25 @@ class WhisperEngine {
 
     companion object {
         private const val TAG = "WhisperEngine"
+        private var bridgeLoaded = false
+        private var bridgeLoadError: String? = null
 
         init {
             try {
                 System.loadLibrary("native-bridge")
-                Log.i(TAG, "native-bridge loaded")
+                bridgeLoaded = true
+                bridgeLoadError = null
+                Log.i(TAG, "native-bridge loaded successfully")
             } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "Failed to load native-bridge", e)
+                bridgeLoaded = false
+                bridgeLoadError = "${e.javaClass.simpleName}: ${e.message}"
+                Log.e(TAG, "Failed to load native-bridge: ${e.message}")
             }
         }
+
+        fun isBridgeLoaded(): Boolean = bridgeLoaded
+
+        fun getBridgeLoadError(): String? = bridgeLoadError
     }
 
     /**
