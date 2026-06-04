@@ -65,6 +65,7 @@ class VoiceEngine(private val context: Context) {
 
     /** 加载本地 whisper 模型 */
     suspend fun loadLocalModel(): Boolean = withContext(Dispatchers.IO) {
+        Log.i(TAG, "loadLocalModel: bridgeLoaded=${WhisperEngine.isBridgeLoaded()}, hasVoiceModel=${modelManager.hasVoiceModel()}")
         // 首先检查桥梁是否可用
         if (!WhisperEngine.isBridgeLoaded()) {
             val bridgeError = WhisperEngine.getBridgeLoadError() ?: "未知错误"

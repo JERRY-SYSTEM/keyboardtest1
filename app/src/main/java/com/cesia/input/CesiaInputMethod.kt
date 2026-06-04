@@ -112,9 +112,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     /** 长按语音键：切换本地/云端模式 */
     private fun toggleLocalCloudMode() {
         if (!localModeEnabled) {
-            // 尝试切换到本地模式：只要求 Whisper 模型（Qwen 可选，没有时润色回退云端）
+            // 尝试切换到本地模式：必须 Whisper + Qwen 都安装
             val bridgeLoaded = WhisperEngine.isBridgeLoaded()
             val hasVoiceModel = modelManager.hasVoiceModel()
+            val hasAiModel = modelManager.hasAiModel()
 
             if (!bridgeLoaded) {
                 updateStatus("⚠️ 无法切换到本地模式：native-bridge.so 未加载")
@@ -122,6 +123,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             if (!hasVoiceModel) {
                 updateStatus("⚠️ 无法切换到本地模式：Whisper 模型未安装，请先到设置中下载")
+                return
+            }
+            if (!hasAiModel) {
+                updateStatus("⚠️ 无法切换到本地模式：Qwen 模型未安装，请先到设置中下载")
                 return
             }
         }
@@ -134,7 +139,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val voiceFile = modelManager.getInstalledVoiceModelFile()
             val aiFile = modelManager.getInstalledAiModelFile()
             val voiceName = voiceFile?.name ?: "?"
-            val aiName = aiFile?.name ?: "未安装（润色回退云端）"
+            val aiName = aiFile?.name ?: "?"
             updateStatus("📱 本地模式（Whisper: $voiceName + Qwen: $aiName）")
         } else {
             updateStatus("☁️ 云端模式（Whisper 可用时自动加速）")
@@ -905,27 +910,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 return@setOnClickListener
             }
             if (!isRecording && !isWaitingForChoice) {
-                // 根据模型可用性自动选择后端
                 val bridgeLoaded = WhisperEngine.isBridgeLoaded()
                 val hasVoiceModel = modelManager.hasVoiceModel()
+                Log.i("Cesia", "单击语音键: bridgeLoaded=$bridgeLoaded, hasVoiceModel=$hasVoiceModel, localMode=$localModeEnabled")
 
                 if (localModeEnabled) {
-                    // 本地模式：只要求 Whisper 模型
-                    if (!bridgeLoaded) {
-                        updateStatus("⚠️ 无法使用本地语音：native-bridge.so 未加载")
+                    // 本地模式：必须 Whisper + Qwen 都安装
+                    if (!bridgeLoaded || !hasVoiceModel || !modelManager.hasAiModel()) {
+                        updateStatus("⚠️ 本地模式需要 Whisper + Qwen 模型，请先到设置中下载")
                         return@setOnClickListener
                     }
-                    if (!hasVoiceModel) {
-                        updateStatus("⚠️ 本地模型未安装，请先到设置中下载")
-                        return@setOnClickListener
-                    }
-                    startLocalRecording()
+                    startRecordingWithChoice(VoiceChoice.LOCAL_WHISPER, PolishChoice.LOCAL_AI)
                 } else {
-                    // 云端模式：Whisper 可用时自动加速，否则用 Google
+                    // 云端模式：Whisper 可用时用 Whisper 识别 + 云端润色，否则 Google + 云端润色
                     if (bridgeLoaded && hasVoiceModel) {
-                        startLocalRecording()
+                        startRecordingWithChoice(VoiceChoice.LOCAL_WHISPER, PolishChoice.CLOUD_OPENROUTER)
                     } else {
-                        startCloudRecording()
+                        startRecordingWithChoice(VoiceChoice.GOOGLE, PolishChoice.CLOUD_OPENROUTER)
                     }
                 }
             } else if (isWaitingForChoice) {
@@ -1959,6 +1960,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun startWhisperRecordingAsync() {
         voiceEngineScope.launch {
             try {
+                Log.i("Cesia", "startWhisperRecordingAsync: hasLocalModel=${voiceEngine.hasLocalModel()}, bridgeLoaded=${WhisperEngine.isBridgeLoaded()}")
                 if (!voiceEngine.hasLocalModel()) {
                     // 模型文件不存在，回退 Google
                     withContext(Dispatchers.Main) {
