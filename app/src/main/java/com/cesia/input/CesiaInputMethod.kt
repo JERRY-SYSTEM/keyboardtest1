@@ -112,10 +112,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     /** 长按语音键：切换本地/云端模式 */
     private fun toggleLocalCloudMode() {
         if (!localModeEnabled) {
-            // 尝试切换到本地模式：检查模型是否已安装
+            // 尝试切换到本地模式：只要求 Whisper 模型（Qwen 可选，没有时润色回退云端）
             val bridgeLoaded = WhisperEngine.isBridgeLoaded()
             val hasVoiceModel = modelManager.hasVoiceModel()
-            val hasAiModel = modelManager.hasAiModel()
 
             if (!bridgeLoaded) {
                 updateStatus("⚠️ 无法切换到本地模式：native-bridge.so 未加载")
@@ -123,10 +122,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             if (!hasVoiceModel) {
                 updateStatus("⚠️ 无法切换到本地模式：Whisper 模型未安装，请先到设置中下载")
-                return
-            }
-            if (!hasAiModel) {
-                updateStatus("⚠️ 无法切换到本地模式：Qwen 模型未安装，请先到设置中下载")
                 return
             }
         }
@@ -139,10 +134,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             val voiceFile = modelManager.getInstalledVoiceModelFile()
             val aiFile = modelManager.getInstalledAiModelFile()
             val voiceName = voiceFile?.name ?: "?"
-            val aiName = aiFile?.name ?: "?"
+            val aiName = aiFile?.name ?: "未安装（润色回退云端）"
             updateStatus("📱 本地模式（Whisper: $voiceName + Qwen: $aiName）")
         } else {
-            updateStatus("☁️ 云端模式（Google + OpenRouter）")
+            updateStatus("☁️ 云端模式（Whisper 可用时自动加速）")
         }
     }
 
@@ -1843,32 +1838,30 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val bridgeError = WhisperEngine.getBridgeLoadError()
         Log.i("Cesia", "updateVoiceBackend: localMode=$localModeEnabled, bridgeLoaded=$bridgeLoaded, bridgeError=$bridgeError, hasLocalModel=$hasLocalModel, modelName=$modelName")
 
-        // 云端模式：始终使用 Google
-        if (!localModeEnabled) {
-            voiceEngine.setBackend(VoiceEngine.Backend.CLOUD_GROQ)  // CLOUD_GROQ 分支会回退到 Google
-            Log.i("Cesia", "语音后端: Google（云端模式）")
+        // bridge + 模型都可用 → Whisper（两种模式下都优先使用本地 Whisper）
+        if (bridgeLoaded && hasLocalModel) {
+            voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
+            val modeLabel = if (localModeEnabled) "本地模式" else "云端模式+本地加速"
+            Log.i("Cesia", "语音后端: 本地 Whisper ($modeLabel, $modelName)")
+            updateStatus("🎤 语音: 本地 Whisper ✅")
             return
         }
 
-        // 本地模式：检查 bridge
-        if (!bridgeLoaded) {
-            val reason = bridgeError ?: "未知错误"
-            Log.w("Cesia", "语音后端: Google（本地模式但桥梁未加载: $reason）")
-            updateStatus("🎤 语音: Google（⚠️ 桥梁未加载: $reason）")
+        // 本地模式但缺少依赖 → 回退 Google + 提示具体原因
+        if (localModeEnabled) {
+            if (!bridgeLoaded) {
+                val reason = bridgeError ?: "未知错误"
+                Log.w("Cesia", "语音后端: Google（本地模式但桥梁未加载: $reason）")
+                updateStatus("🎤 语音: Google（⚠️ 桥梁未加载: $reason）")
+            } else if (!hasLocalModel) {
+                Log.w("Cesia", "语音后端: Google（本地模式但 Whisper 模型未安装）")
+                updateStatus("🎤 语音: Google（⚠️ Whisper 模型未安装）")
+            }
             return
         }
 
-        // 本地模式：检查模型
-        if (!hasLocalModel) {
-            Log.w("Cesia", "语音后端: Google（本地模式但 Whisper 模型未安装）")
-            updateStatus("🎤 语音: Google（⚠️ Whisper 模型未安装）")
-            return
-        }
-
-        // 本地模式 + bridge + 模型都可用
-        voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_WHISPER)
-        Log.i("Cesia", "语音后端: 本地 Whisper ($modelName)")
-        updateStatus("🎤 语音: 本地 Whisper ✅")
+        // 云端模式 + 无本地模型 → 静默使用 Google（不提示）
+        Log.i("Cesia", "语音后端: Google（云端模式，无本地模型）")
     }
 
     private fun getOpenRouterApiKey(): String {
