@@ -236,16 +236,21 @@ class VoiceAISettingsHelper(
     fun refreshBridgeStatus() {
         val bridgeLoaded = WhisperEngine.isBridgeLoaded()
         val bridgeError = WhisperEngine.getBridgeLoadError()
+        val voiceModel = modelManager.getInstalledVoiceModelFile()
 
-        if (bridgeLoaded) {
-            tvBridgeStatus?.text = "✅ native-bridge.so 已加载（本地语音识别可用）"
-            tvBridgeStatus?.setTextColor(0xFF2E7D32.toInt())
-            tvBridgeStatus?.setBackgroundColor(0xFFE8F5E9.toInt())
-        } else {
+        if (!bridgeLoaded) {
             val reason = bridgeError ?: "未知错误"
             tvBridgeStatus?.text = "⚠️ native-bridge.so 未加载: $reason"
             tvBridgeStatus?.setTextColor(0xFFE65100.toInt())
             tvBridgeStatus?.setBackgroundColor(0xFFFFF3E0.toInt())
+        } else if (voiceModel == null) {
+            tvBridgeStatus?.text = "⚠️ native-bridge.so 已加载，但 Whisper 模型未安装（请下载模型）"
+            tvBridgeStatus?.setTextColor(0xFFE65100.toInt())
+            tvBridgeStatus?.setBackgroundColor(0xFFFFF3E0.toInt())
+        } else {
+            tvBridgeStatus?.text = "✅ native-bridge.so 已加载，Whisper 模型已就绪（${voiceModel.name}）"
+            tvBridgeStatus?.setTextColor(0xFF2E7D32.toInt())
+            tvBridgeStatus?.setBackgroundColor(0xFFE8F5E9.toInt())
         }
     }
 

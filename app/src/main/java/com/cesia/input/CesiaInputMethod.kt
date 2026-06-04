@@ -111,10 +111,36 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     /** 长按语音键：切换本地/云端模式 */
     private fun toggleLocalCloudMode() {
+        if (!localModeEnabled) {
+            // 尝试切换到本地模式：检查模型是否已安装
+            val bridgeLoaded = WhisperEngine.isBridgeLoaded()
+            val hasVoiceModel = modelManager.hasVoiceModel()
+            val hasAiModel = modelManager.hasAiModel()
+
+            if (!bridgeLoaded) {
+                updateStatus("⚠️ 无法切换到本地模式：native-bridge.so 未加载")
+                return
+            }
+            if (!hasVoiceModel) {
+                updateStatus("⚠️ 无法切换到本地模式：Whisper 模型未安装，请先到设置中下载")
+                return
+            }
+            if (!hasAiModel) {
+                updateStatus("⚠️ 无法切换到本地模式：Qwen 模型未安装，请先到设置中下载")
+                return
+            }
+        }
+
         localModeEnabled = !localModeEnabled
+        updateVoiceBackend()
         updateMicButtonAppearance()
+
         if (localModeEnabled) {
-            updateStatus("📱 本地模式（Whisper + Qwen）")
+            val voiceFile = modelManager.getInstalledVoiceModelFile()
+            val aiFile = modelManager.getInstalledAiModelFile()
+            val voiceName = voiceFile?.name ?: "?"
+            val aiName = aiFile?.name ?: "?"
+            updateStatus("📱 本地模式（Whisper: $voiceName + Qwen: $aiName）")
         } else {
             updateStatus("☁️ 云端模式（Google + OpenRouter）")
         }
