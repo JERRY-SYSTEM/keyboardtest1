@@ -901,24 +901,30 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 return@setOnClickListener
             }
             if (!isRecording && !isWaitingForChoice) {
-                val bridgeLoaded = SherpaOnnxEngine.isLibraryLoaded()
-                val hasVoiceModel = modelManager.hasVoiceModel()
-                Log.i("Cesia", "单击语音键: bridgeLoaded=$bridgeLoaded, hasVoiceModel=$hasVoiceModel, localMode=$localModeEnabled")
+                try {
+                    val bridgeLoaded = SherpaOnnxEngine.isLibraryLoaded()
+                    val hasVoiceModel = modelManager.hasVoiceModel()
+                    Log.i("Cesia", "单击语音键: bridgeLoaded=$bridgeLoaded, hasVoiceModel=$hasVoiceModel, localMode=$localModeEnabled")
 
-                if (localModeEnabled) {
-                    // 本地模式：必须 Sherpa + 语音模型 + Qwen 都安装
-                    if (!bridgeLoaded || !hasVoiceModel || !modelManager.hasAiModel()) {
-                        updateStatus("⚠️ 本地模式需要语音识别 + Qwen 模型，请先到设置中下载")
-                        return@setOnClickListener
-                    }
-                    startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.LOCAL_AI)
-                } else {
-                    // 云端模式：本地模型可用时用本地识别 + 云端润色，否则 Google + 云端润色
-                    if (bridgeLoaded && hasVoiceModel) {
-                        startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.CLOUD_OPENROUTER)
+                    if (localModeEnabled) {
+                        // 本地模式：必须 Sherpa + 语音模型 + Qwen 都安装
+                        if (!bridgeLoaded || !hasVoiceModel || !modelManager.hasAiModel()) {
+                            updateStatus("⚠️ 本地模式需要语音识别 + Qwen 模型，请先到设置中下载")
+                            return@setOnClickListener
+                        }
+                        startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.LOCAL_AI)
                     } else {
-                        startRecordingWithChoice(VoiceChoice.GOOGLE, PolishChoice.CLOUD_OPENROUTER)
+                        // 云端模式：本地模型可用时用本地识别 + 云端润色，否则 Google + 云端润色
+                        if (bridgeLoaded && hasVoiceModel) {
+                            startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.CLOUD_OPENROUTER)
+                        } else {
+                            Log.i("Cesia", "单击语音键: 使用 Google 语音识别")
+                            startRecordingWithChoice(VoiceChoice.GOOGLE, PolishChoice.CLOUD_OPENROUTER)
+                        }
                     }
+                } catch (e: Throwable) {
+                    Log.e("Cesia", "单击语音键异常", e)
+                    updateStatus("❌ 语音启动失败: ${e.javaClass.simpleName}")
                 }
             } else if (isWaitingForChoice) {
                 updateStatus("请点击 AI+ 或 AI× 选择处理方式")
@@ -1942,7 +1948,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     /** Google 语音识别（流式，通过 FallbackRecognizer） */
     private fun startGoogleRecording(polishChoice: PolishChoice) {
-        typelessEngine?.startListening(continuous = true)
+        try {
+            Log.i("Cesia", "startGoogleRecording: typelessEngine=${typelessEngine != null}")
+            typelessEngine?.startListening(continuous = true)
+        } catch (e: Throwable) {
+            Log.e("Cesia", "startGoogleRecording 异常", e)
+            updateStatus("❌ Google 语音启动失败: ${e.javaClass.simpleName}")
+        }
     }
 
     /** 本地 Zipformer 流式录音+识别（边说边出字） */
@@ -1972,10 +1984,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
 
                 var lastStreamingText = ""
+                var segmentCount = 0
                 voiceEngine.recordInSegments(
                     maxDurationMs = 30000,
                     segmentDurationMs = 3000,
                     onSegmentResult = { text, isFinal ->
+                        segmentCount++
+                        Log.i("Cesia", "onSegmentResult #$segmentCount: text='${text.take(50)}', isFinal=$isFinal")
                         if (text.isNotEmpty() && text != lastStreamingText) {
                             lastStreamingText = text
                             withContext(Dispatchers.Main) {
@@ -1986,13 +2001,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         }
                         if (isFinal) {
                             withContext(Dispatchers.Main) {
+                                Log.i("Cesia", "onSegmentResult: isFinal, text='${text.take(50)}', recognizedText='${recognizedText.take(50)}'")
                                 if (text.isNotEmpty()) {
                                     handleCloudVoiceResult(text)
+                                } else {
+                                    Log.w("Cesia", "onSegmentResult: isFinal but text is empty!")
                                 }
                             }
                         }
                     }
                 )
+                Log.i("Cesia", "startWhisperRecordingAsync: recordInSegments returned, lastStreamingText='${lastStreamingText.take(50)}'")
             } catch (e: Throwable) {
                 Log.e("Cesia", "Zipformer 录音失败", e)
                 withContext(Dispatchers.Main) {
@@ -2005,6 +2024,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     /** 处理云端/本地识别结果 → 显示 AI+/AI× 按钮 */
     private fun handleCloudVoiceResult(text: String) {
+        Log.i("Cesia", "handleCloudVoiceResult: text='${text.take(50)}', isRecording=$isRecording, recognizedText='${recognizedText.take(50)}'")
         if (!isRecording && recognizedText.isEmpty()) return
         isRecording = false
         stopVoiceWave()
