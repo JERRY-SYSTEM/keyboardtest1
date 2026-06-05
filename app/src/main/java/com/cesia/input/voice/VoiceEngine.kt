@@ -288,6 +288,7 @@ class VoiceEngine(private val context: Context) {
         val readBuffer = FloatArray(1024)
         val startTime = System.currentTimeMillis()
         var lastResult = ""
+        val accumulatedText = StringBuilder()
 
         try {
             while (System.currentTimeMillis() - startTime < maxDurationMs) {
@@ -304,25 +305,29 @@ class VoiceEngine(private val context: Context) {
                 val currentResult = sherpaEngine.getStreamingResult(onlineRec, stream)
                 if (currentResult.isNotEmpty() && currentResult != lastResult) {
                     Log.i(TAG, "recordStreaming: 中间结果 '$currentResult'")
+                    // 中间结果：只更新显示，不累积
                     onSegmentResult(currentResult, false)
                     lastResult = currentResult
                 }
 
                 // 检查端点（说话结束）
                 if (sherpaEngine.isEndpoint(onlineRec, stream)) {
-                    val finalText = sherpaEngine.getStreamingResult(onlineRec, stream)
-                    if (finalText.isNotEmpty()) {
-                        onSegmentResult(finalText, true)
+                    val endpointText = sherpaEngine.getStreamingResult(onlineRec, stream)
+                    if (endpointText.isNotEmpty()) {
+                        // 端点结果：累积到已确认文本
+                        accumulatedText.append(endpointText)
+                        lastResult = ""
+                        // 重置流，继续识别下一段
+                        sherpaEngine.resetStream(onlineRec, stream)
+                        // 通知 UI 当前已确认的文本
+                        onSegmentResult(accumulatedText.toString(), false)
                     }
-                    // 重置继续识别
-                    sherpaEngine.resetStream(onlineRec, stream)
-                    lastResult = ""
                 }
             }
 
-            // 最终结果
-            val finalText = sherpaEngine.getStreamingResult(onlineRec, stream)
-            if (finalText.isNotEmpty() && finalText != lastResult) {
+            // 录音结束：返回所有累积的文本
+            val finalText = accumulatedText.toString()
+            if (finalText.isNotEmpty()) {
                 onSegmentResult(finalText, true)
             }
         } catch (e: Exception) {

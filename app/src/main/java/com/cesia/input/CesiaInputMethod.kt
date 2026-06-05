@@ -1981,23 +1981,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     updateStatus("🎤 正在收听 (本地 Sherpa: $modelName)...")
                 }
 
-                val sb = StringBuilder()
+                var lastStreamingText = ""
                 voiceEngine.recordInSegments(
                     maxDurationMs = 30000,
                     segmentDurationMs = 3000,
                     onSegmentResult = { text, isFinal ->
-                        if (text.isNotEmpty()) {
-                            sb.append(text)
+                        if (text.isNotEmpty() && text != lastStreamingText) {
+                            lastStreamingText = text
                             withContext(Dispatchers.Main) {
-                                updateStatus("🎤 $sb")
-                                // 实时显示在候选栏或输入框
-                                recognizedText = sb.toString()
+                                updateStatus("🎤 $text")
+                                recognizedText = text
                                 updateCandidateBar()
                             }
                         }
                         if (isFinal) {
                             withContext(Dispatchers.Main) {
-                                handleCloudVoiceResult(sb.toString())
+                                if (text.isNotEmpty()) {
+                                    handleCloudVoiceResult(text)
+                                }
                             }
                         }
                     }
