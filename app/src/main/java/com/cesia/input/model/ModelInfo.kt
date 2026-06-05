@@ -42,7 +42,7 @@ object ModelRegistry {
             id = "sherpa-zipformer",
             name = "Zipformer",
             description = "中英双语, 流式识别, 完全离线 (~206MB)",
-            downloadUrl = "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-zh-2023-09-14",
+            downloadUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
             fileName = "zipformer",  // 目录名，实际包含多个文件
             sizeBytes = 206L * MB,
             type = ModelInfo.ModelType.VOICE
@@ -80,7 +80,7 @@ object ModelRegistry {
 
     // Zipformer 各文件下载路径
     fun getZipformerFileUrl(file: String): String {
-        return "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/$file"
+        return "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/$file"
     }
 
     // Zipformer 文件下载后的标准文件名映射

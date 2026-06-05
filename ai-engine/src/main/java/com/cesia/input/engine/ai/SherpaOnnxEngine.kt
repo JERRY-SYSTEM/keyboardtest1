@@ -187,9 +187,9 @@ class SherpaOnnxEngine {
             )
 
             val endpointConfig = EndpointConfig(
-                rule1 = EndpointRule(mustContainNonSilence = false, minTrailingSilence = 2.0f, minUtteranceLength = 0.0f),
-                rule2 = EndpointRule(mustContainNonSilence = true, minTrailingSilence = 0.8f, minUtteranceLength = 0.0f),
-                rule3 = EndpointRule(mustContainNonSilence = false, minTrailingSilence = 0.0f, minUtteranceLength = 0.0f)
+                rule1 = EndpointRule(mustContainNonSilence = true, minTrailingSilence = 2.4f, minUtteranceLength = 1.0f),
+                rule2 = EndpointRule(mustContainNonSilence = true, minTrailingSilence = 1.2f, minUtteranceLength = 0.5f)
+                // 不设置 rule3：避免 minTrailingSilence=0 导致立即触发端点
             )
 
             val config = OnlineRecognizerConfig(
@@ -234,39 +234,46 @@ class SherpaOnnxEngine {
         }
     }
 
-    /**
-     * 流式识别 — 喂入音频数据
-     */
+    /** 流式识别 — 喂入音频数据 */
     fun acceptWaveform(
-        recognizer: OnlineRecognizer,
-        stream: OnlineStream,
-        audioData: FloatArray
-    ) {
-        try {
-            stream.acceptWaveform(audioData, 16000)
-            while (recognizer.isReady(stream)) {
-                recognizer.decode(stream)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Accept waveform error: ${e.message}", e)
-        }
-    }
+         recognizer: OnlineRecognizer,
+         stream: OnlineStream,
+         audioData: FloatArray
+     ) {
+         try {
+             stream.acceptWaveform(audioData, 16000)
+             var decodeCount = 0
+             while (recognizer.isReady(stream)) {
+                 recognizer.decode(stream)
+                 decodeCount++
+             }
+             if (decodeCount > 0) {
+                 Log.d(TAG, "acceptWaveform: decoded $decodeCount times, audioSamples=${audioData.size}")
+             } else {
+                 Log.d(TAG, "acceptWaveform: isReady=false, audioSamples=${audioData.size}, not decoding")
+             }
+         } catch (e: Exception) {
+             Log.e(TAG, "Accept waveform error: ${e.message}", e)
+         }
+     }
 
-    /**
-     * 流式识别 — 获取当前识别结果
-     */
-    fun getStreamingResult(
-        recognizer: OnlineRecognizer,
-        stream: OnlineStream
-    ): String {
-        return try {
-            val result = recognizer.getResult(stream)
-            result.text.trim()
-        } catch (e: Exception) {
-            Log.e(TAG, "Get streaming result error: ${e.message}", e)
-            ""
-        }
-    }
+     /** 流式识别 — 获取当前识别结果 */
+     fun getStreamingResult(
+         recognizer: OnlineRecognizer,
+         stream: OnlineStream
+     ): String {
+         return try {
+             val result = recognizer.getResult(stream)
+             val text = result.text.trim()
+             if (text.isNotEmpty()) {
+                 Log.d(TAG, "getStreamingResult: '$text'")
+             }
+             text
+         } catch (e: Exception) {
+             Log.e(TAG, "Get streaming result error: ${e.message}", e)
+             ""
+         }
+     }
 
     /**
      * 流式识别 — 检查是否检测到端点（说话结束）

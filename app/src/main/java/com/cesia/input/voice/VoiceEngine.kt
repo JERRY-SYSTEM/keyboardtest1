@@ -173,15 +173,27 @@ class VoiceEngine(private val context: Context) {
 
     fun isLocalModelLoaded(): Boolean = recognizerLoaded
 
-    /**
-     * 检查是否有可用的本地模型
-     */
-    fun hasSherpaModel(): Boolean = findModelDir() != null
+    /** 检查是否有可用的本地模型 */
+    fun hasSherpaModel(): Boolean {
+         val modelDir = findModelDir()
+         if (modelDir == null) return false
+         // 验证文件非空且完整
+         return if (isZipformerModel(modelDir)) {
+             File(modelDir, "encoder.onnx").length() > 1000 &&
+             File(modelDir, "decoder.onnx").length() > 1000 &&
+             File(modelDir, "joiner.onnx").length() > 1000 &&
+             File(modelDir, "tokens.txt").length() > 100
+         } else if (File(modelDir, "encoder.onnx").exists() && File(modelDir, "decoder.onnx").exists()) {
+             File(modelDir, "encoder.onnx").length() > 1000 &&
+             File(modelDir, "decoder.onnx").length() > 1000 &&
+             File(modelDir, "tokens.txt").length() > 100
+         } else {
+             false
+         }
+     }
 
-    /**
-     * 获取模型名称和路径信息
-     */
-    fun getSherpaModelName(): String {
+     /** 获取模型名称和路径信息 */
+     fun getSherpaModelName(): String {
         val modelDir = findModelDir() ?: return "无模型"
         val modelId = modelManager.installedVoiceModelId ?: "未知"
         return if (isZipformerModel(modelDir)) {
