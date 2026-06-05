@@ -60,8 +60,7 @@ class VoiceEngine(private val context: Context) {
 
     private var currentBackend = Backend.LOCAL_SHERPA
     private var currentModelType = ModelType.PARAFORMER
-    private var recognizer: com.k2fsa.sherpa.onnx.OnlineRecognizer? = null
-    private var stream: com.k2fsa.sherpa.onnx.OnlineStream? = null
+    private var recognizer: Any? = null
     private var recognizerLoaded = false
     private var lastErrorMessage: String? = null
 
@@ -91,15 +90,8 @@ class VoiceEngine(private val context: Context) {
     // ==================== 本地模型加载 ====================
 
     /**
-     * 加载本地 Sherpa-onnx 模型
-     * 自动扫描 models/sherpa/ 目录，根据文件存在情况判断模型类型
-     *
-     * 支持的目录结构：
-     *   models/sherpa/sensevoice/  → model.onnx + tokens.txt (离线识别)
-     *   models/sherpa/paraformer/  → encoder.onnx + decoder.onnx + tokens.txt (流式)
-     *   models/sherpa/zipformer/   → encoder.onnx + decoder.onnx + joiner.onnx + tokens.txt (流式)
-     *
-     * 也支持在 models/sherpa/ 根目录放置文件（自动识别类型）
+     * 加载本地 Paraformer 模型（单文件 model.onnx）
+     * 模型文件路径：models/sherpa/model.onnx
      */
     suspend fun loadLocalModel(modelType: ModelType? = null): Boolean = withContext(Dispatchers.IO) {
         // 检查库是否可用
@@ -110,65 +102,60 @@ class VoiceEngine(private val context: Context) {
             return@withContext false
         }
 
-        // 确定模型类型和目录
-        val (type, modelDir) = if (modelType != null) {
-            val dir = findModelDir(modelType)
-            if (dir == null) {
-                lastErrorMessage = "模型目录不存在: models/sherpa/${modelType.name.lowercase()}/"
-                Log.e(TAG, lastErrorMessage!!)
-                return@withContext false
-            }
-            modelType to dir
-        } else {
-            // 自动扫描所有支持的模型目录
-            val found = findAnyModelDir()
-            if (found == null) {
-                lastErrorMessage = "未找到任何语音模型。请下载模型并放入 models/sherpa/{sensevoice|paraformer|zipformer}/ 目录"
-                Log.e(TAG, lastErrorMessage!!)
-                return@withContext false
-            }
-            found
+        // 只支持 Paraformer
+        val type = ModelType.PARAFORMER
+        currentModelType = type
+
+        // 查找模型文件：models/sherpa/model.onnx
+        val modelFile = findParaformerModel()
+        if (modelFile == null) {
+            lastErrorMessage = "未找到模型文件。请下载 Paraformer 模型并放入 models/sherpa/model.onnx"
+            Log.e(TAG, lastErrorMessage!!)
+            return@withContext false
         }
 
-        currentModelType = type
-        Log.i(TAG, "Loading Sherpa-onnx model: type=$type, dir=${modelDir.absolutePath}")
+        Log.i(TAG, "Loading Paraformer model: ${modelFile.absolutePath}")
 
         try {
-            val sherpaType = when (type) {
-                ModelType.SENSE_VOICE -> SherpaOnnxEngine.ModelType.SENSE_VOICE
-                ModelType.PARAFORMER -> SherpaOnnxEngine.ModelType.PARAFORMER
-                ModelType.ZIPFORMER -> SherpaOnnxEngine.ModelType.ZIPFORMER
-            }
-
             // 释放旧的识别器
-            stream?.let { try { it.release() } catch (_: Exception) {} }
-            recognizer?.let { try { it.release() } catch (_: Exception) {} }
+            (recognizer as? com.k2fsa.sherpa.onnx.OfflineRecognizer)?.release()
+            recognizer = null
+            recognizerLoaded = false
 
-            // 创建新的流式识别器
-            val newRecognizer = sherpaEngine.createStreamingRecognizer(
+            // 创建离线识别器（单文件 model.onnx）
+            val newRecognizer = sherpaEngine.createOfflineRecognizer(
                 assetManager = null,
-                modelDir = modelDir.absolutePath,
-                modelType = sherpaType,
-                numThreads = 2,
-                provider = "cpu"
+                modelDir = modelFile.parentFile.absolutePath,
+                modelType = SherpaOnnxEngine.ModelType.PARAFORMER,
+                numThreads = 2
             )
 
             if (newRecognizer != null) {
                 recognizer = newRecognizer
                 recognizerLoaded = true
                 lastErrorMessage = null
-                Log.i(TAG, "Sherpa-onnx model loaded: $type")
+                Log.i(TAG, "Paraformer model loaded successfully")
                 true
             } else {
-                lastErrorMessage = "创建识别器失败: $type（模型文件可能损坏或不完整）"
+                lastErrorMessage = "创建识别器失败（模型文件可能损坏）"
                 Log.e(TAG, lastErrorMessage!!)
                 false
             }
         } catch (e: Throwable) {
             lastErrorMessage = "${e.javaClass.simpleName}: ${e.message}"
-            Log.e(TAG, "Failed to load Sherpa-onnx model", e)
+            Log.e(TAG, "Failed to load Paraformer model", e)
             false
         }
+    }
+
+    /**
+     * 查找 Paraformer 模型文件
+     * 支持路径：models/sherpa/model.onnx
+     */
+    private fun findParaformerModel(): File? {
+        val sherpaDir = File(context.filesDir, "models/sherpa")
+        val modelFile = File(sherpaDir, "model.onnx")
+        return if (modelFile.exists() && modelFile.isFile) modelFile else null
     }
 
     fun isLocalModelLoaded(): Boolean = recognizerLoaded
@@ -248,98 +235,16 @@ class VoiceEngine(private val context: Context) {
     private fun getSherpaModelDir(type: ModelType): File? = findModelDir(type)
 
     /**
-     * 检查是否有可用的 Sherpa 模型（供外部调用）
+     * 检查是否有可用的 Paraformer 模型
      */
-    fun hasSherpaModel(): Boolean = findAnyModelDir() != null
+    fun hasSherpaModel(): Boolean = findParaformerModel() != null
 
     /**
-     * 获取当前检测到的模型名称（供外部显示）
+     * 获取模型名称
      */
     fun getSherpaModelName(): String {
-        val found = findAnyModelDir() ?: return "无"
-        return found.first.displayName
-    }
-
-    // ==================== 流式识别 ====================
-
-    /**
-     * 开始流式识别
-     * @return 是否成功启动
-     */
-    fun startStreamingRecognition(): Boolean {
-        val rec = recognizer
-        if (rec == null) {
-            Log.e(TAG, "startStreamingRecognition: recognizer is null")
-            return false
-        }
-        return try {
-            stream?.let {
-                try { it.release() } catch (_: Exception) {}
-            }
-            val newStream = rec.createStream()
-            stream = newStream
-            Log.i(TAG, "Streaming recognition started")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start streaming: ${e.message}")
-            false
-        }
-    }
-
-    /**
-     * 喂入音频数据（流式识别）
-     * @param audioData 16kHz 单声道 PCM float[-1.0, 1.0]
-     * @return 当前识别结果
-     */
-    fun feedAudio(audioData: FloatArray): RecognitionResult {
-        val rec = recognizer ?: return RecognitionResult("", false, backend = "none")
-        val str = stream ?: return RecognitionResult("", false, backend = "none")
-
-        return try {
-            sherpaEngine.acceptWaveform(rec, str, audioData)
-            val text = sherpaEngine.getStreamingResult(rec, str)
-            val isEndpoint = sherpaEngine.isEndpoint(rec, str)
-            RecognitionResult(
-                text = text,
-                isFinal = isEndpoint,
-                modelType = currentModelType.displayName,
-                backend = "local"
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "feedAudio error: ${e.message}")
-            RecognitionResult("", false, backend = "local")
-        }
-    }
-
-    /**
-     * 停止流式识别，返回最终结果
-     */
-    fun stopStreamingRecognition(): RecognitionResult {
-        val rec = recognizer ?: return RecognitionResult("", true, backend = "none")
-        val str = stream ?: return RecognitionResult("", true, backend = "none")
-
-        return try {
-            // 标记输入结束
-            str.inputFinished()
-            // 解码剩余数据
-            while (rec.isReady(str)) {
-                rec.decode(str)
-            }
-            val text = rec.getResult(str).text.trim()
-            Log.i(TAG, "Streaming final result: \"$text\"")
-            RecognitionResult(
-                text = text,
-                isFinal = true,
-                modelType = currentModelType.displayName,
-                backend = "local"
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "stopStreaming error: ${e.message}")
-            RecognitionResult("", true, backend = "local")
-        } finally {
-            try { str.release() } catch (_: Exception) {}
-            stream = null
-        }
+        val modelFile = findParaformerModel() ?: return "无"
+        return "Paraformer (${modelFile.length() / 1024 / 1024}MB)"
     }
 
     // ==================== 离线识别（录音后识别） ====================
@@ -383,35 +288,39 @@ class VoiceEngine(private val context: Context) {
 
     private suspend fun transcribeLocal(audioData: FloatArray): String = withContext(Dispatchers.IO) {
         try {
-            val type = when (currentModelType) {
-                ModelType.SENSE_VOICE -> SherpaOnnxEngine.ModelType.SENSE_VOICE
-                ModelType.PARAFORMER -> SherpaOnnxEngine.ModelType.PARAFORMER
-                ModelType.ZIPFORMER -> SherpaOnnxEngine.ModelType.ZIPFORMER
+            val rec = recognizer
+            if (rec == null) {
+                Log.e(TAG, "transcribeLocal: recognizer is null, trying to load...")
+                if (!loadLocalModel()) {
+                    return@withContext ""
+                }
             }
 
-            val modelDir = getSherpaModelDir(currentModelType)
-            if (modelDir == null || !modelDir.exists()) {
-                Log.e(TAG, "Model dir not found for $currentModelType")
+            val modelFile = findParaformerModel()
+            if (modelFile == null) {
+                Log.e(TAG, "transcribeLocal: model file not found")
                 return@withContext ""
             }
 
+            // 每次识别创建新的离线识别器（因为单文件模型）
             val offlineRec = sherpaEngine.createOfflineRecognizer(
                 assetManager = null,
-                modelDir = modelDir.absolutePath,
-                modelType = type,
+                modelDir = modelFile.parentFile.absolutePath,
+                modelType = SherpaOnnxEngine.ModelType.PARAFORMER,
                 numThreads = 2
             )
 
             if (offlineRec == null) {
-                Log.e(TAG, "Failed to create offline recognizer")
+                Log.e(TAG, "transcribeLocal: failed to create offline recognizer")
                 return@withContext ""
             }
 
             val result = sherpaEngine.transcribeOffline(offlineRec, audioData)
             try { offlineRec.release() } catch (_: Exception) {}
+            Log.i(TAG, "transcribeLocal result: \"$result\"")
             result
         } catch (e: Exception) {
-            Log.e(TAG, "Local transcribe error: ${e.message}", e)
+            Log.e(TAG, "transcribeLocal error: ${e.message}", e)
             ""
         }
     }
@@ -494,9 +403,7 @@ class VoiceEngine(private val context: Context) {
      */
     fun release() {
         try {
-            stream?.let { try { it.release() } catch (_: Exception) {} }
-            recognizer?.let { try { it.release() } catch (_: Exception) {} }
-            stream = null
+            (recognizer as? com.k2fsa.sherpa.onnx.OfflineRecognizer)?.release()
             recognizer = null
             recognizerLoaded = false
             Log.i(TAG, "VoiceEngine released")
