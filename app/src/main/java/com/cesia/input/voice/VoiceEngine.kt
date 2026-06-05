@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 /**
  * 语音识别引擎
  * 支持：
- * - Sherpa-onnx Paraformer 流式识别（OnlineRecognizer，边说边出文字）
+ * - Sherpa-onnx Zipformer 流式识别（OnlineRecognizer，边说边出文字）
  * - Sherpa-onnx 离线识别（OfflineRecognizer，整段识别）
  * - Groq 云端识别（whisper-large-v3）
  */
@@ -39,7 +39,6 @@ class VoiceEngine(private val context: Context) {
 
     enum class ModelType(val displayName: String) {
         SENSE_VOICE("SenseVoice"),
-        PARAFORMER("Paraformer"),
         ZIPFORMER("Zipformer")
     }
 
@@ -55,7 +54,7 @@ class VoiceEngine(private val context: Context) {
     private val recorder = VoiceRecorder()
 
     private var currentBackend = Backend.LOCAL_SHERPA
-    private var currentModelType = ModelType.PARAFORMER
+    private var currentModelType = ModelType.ZIPFORMER
     private var recognizer: Any? = null
     private var recognizerLoaded = false
     private var lastErrorMessage: String? = null
@@ -87,23 +86,36 @@ class VoiceEngine(private val context: Context) {
 
     /**
      * 查找模型目录
-     * 优先查找 Paraformer 多文件目录 local_models/paraformer/
+     * 优先查找 Zipformer 多文件目录 local_models/zipformer/
      * 兼容旧路径 local_models/ 下的 .onnx 单文件
      */
     private fun findModelDir(): File? {
-        // 1. Paraformer 多文件目录
+        // 1. Zipformer 多文件目录
+        val zipformerDir = File(context.filesDir, "local_models/zipformer")
+        if (zipformerDir.exists() && zipformerDir.isDirectory) {
+            val encoder = File(zipformerDir, "encoder.onnx")
+            val decoder = File(zipformerDir, "decoder.onnx")
+            val joiner = File(zipformerDir, "joiner.onnx")
+            val tokens = File(zipformerDir, "tokens.txt")
+            if (encoder.exists() && decoder.exists() && joiner.exists() && tokens.exists()) {
+                Log.i(TAG, "findModelDir: Zipformer 目录完整 ${zipformerDir.absolutePath}")
+                return zipformerDir
+            }
+        }
+
+        // 2. 兼容旧版 Paraformer 目录（迁移期保留）
         val paraformerDir = File(context.filesDir, "local_models/paraformer")
         if (paraformerDir.exists() && paraformerDir.isDirectory) {
             val encoder = File(paraformerDir, "encoder.onnx")
             val decoder = File(paraformerDir, "decoder.onnx")
             val tokens = File(paraformerDir, "tokens.txt")
             if (encoder.exists() && decoder.exists() && tokens.exists()) {
-                Log.i(TAG, "findModelDir: Paraformer 目录完整 ${paraformerDir.absolutePath}")
+                Log.i(TAG, "findModelDir: 旧版 Paraformer 目录可用 ${paraformerDir.absolutePath}")
                 return paraformerDir
             }
         }
 
-        // 2. 通过 ModelManager 查找单文件模型
+        // 3. 通过 ModelManager 查找单文件模型
         val installedFile = modelManager.getInstalledVoiceModelFile()
         if (installedFile != null) {
             Log.i(TAG, "findModelDir: ModelManager 找到 ${installedFile.absolutePath}")
@@ -122,11 +134,12 @@ class VoiceEngine(private val context: Context) {
     }
 
     /**
-     * 判断是否为 Paraformer 多文件模型
+     * 判断是否为 Zipformer 多文件模型
      */
-    private fun isParaformerModel(modelDir: File): Boolean {
+    private fun isZipformerModel(modelDir: File): Boolean {
         return File(modelDir, "encoder.onnx").exists() &&
                File(modelDir, "decoder.onnx").exists() &&
+               File(modelDir, "joiner.onnx").exists() &&
                File(modelDir, "tokens.txt").exists()
     }
 
@@ -134,7 +147,8 @@ class VoiceEngine(private val context: Context) {
 
     /**
      * 检查本地语音模型是否可用
-     * 支持 Paraformer 多文件模型（local_models/paraformer/）
+     * 支持 Zipformer 多文件模型（local_models/zipformer/）
+     * 兼容旧版 Paraformer 目录
      */
     suspend fun loadLocalModel(modelType: ModelType? = null): Boolean = withContext(Dispatchers.IO) {
         if (!SherpaOnnxEngine.isLibraryLoaded()) {
@@ -146,7 +160,7 @@ class VoiceEngine(private val context: Context) {
 
         val modelDir = findModelDir()
         if (modelDir == null) {
-            lastErrorMessage = "未找到模型目录（local_models/paraformer/）"
+            lastErrorMessage = "未找到模型目录（local_models/zipformer/）"
             Log.e(TAG, lastErrorMessage!!)
             return@withContext false
         }
@@ -170,7 +184,12 @@ class VoiceEngine(private val context: Context) {
     fun getSherpaModelName(): String {
         val modelDir = findModelDir() ?: return "无模型"
         val modelId = modelManager.installedVoiceModelId ?: "未知"
-        return if (isParaformerModel(modelDir)) {
+        return if (isZipformerModel(modelDir)) {
+            val totalBytes = modelDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            val totalMB = totalBytes / 1024 / 1024
+            "Zipformer 流式 (${totalMB}MB)"
+        } else if (File(modelDir, "encoder.onnx").exists() && File(modelDir, "decoder.onnx").exists()) {
+            // 旧版 Paraformer（无 joiner）
             val totalBytes = modelDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
             val totalMB = totalBytes / 1024 / 1024
             "Paraformer 流式 (${totalMB}MB)"
@@ -224,7 +243,7 @@ class VoiceEngine(private val context: Context) {
 
     /**
      * 录音识别（边说边出文字）
-     * - Paraformer 模型：使用 OnlineRecognizer 真正流式识别
+     * - Zipformer 模型：使用 OnlineRecognizer 真正流式识别
      * - 其他模型：使用 OfflineRecognizer 分段识别
      */
     suspend fun recordInSegments(
@@ -245,15 +264,23 @@ class VoiceEngine(private val context: Context) {
             return
         }
 
-        if (isParaformerModel(modelDir)) {
+        if (isZipformerModel(modelDir) || isParaformerModel(modelDir)) {
             recordStreaming(modelDir, maxDurationMs, onSegmentResult)
         } else {
             recordInSegmentsOffline(modelDir, maxDurationMs, segmentDurationMs, onSegmentResult)
         }
     }
 
+    // 兼容旧版 Paraformer 目录检测
+    private fun isParaformerModel(modelDir: File): Boolean {
+        return File(modelDir, "encoder.onnx").exists() &&
+               File(modelDir, "decoder.onnx").exists() &&
+               File(modelDir, "tokens.txt").exists() &&
+               !File(modelDir, "joiner.onnx").exists()
+    }
+
     /**
-     * Paraformer 流式识别（OnlineRecognizer）
+     * Zipformer/Paraformer 流式识别（OnlineRecognizer）
      * 真正边说边识别，不需要分段
      */
     private suspend fun recordStreaming(
@@ -263,10 +290,18 @@ class VoiceEngine(private val context: Context) {
     ) {
         Log.i(TAG, "recordStreaming: 使用 OnlineRecognizer 流式识别")
 
+        val modelType = if (isZipformerModel(modelDir)) {
+            SherpaOnnxEngine.ModelType.ZIPFORMER
+        } else {
+            // 旧版 Paraformer 目录（无 joiner），尝试用 Zipformer transducer 加载
+            Log.w(TAG, "旧版 Paraformer 目录，尝试用 transducer 模式加载（建议重新下载 Zipformer 模型）")
+            SherpaOnnxEngine.ModelType.ZIPFORMER
+        }
+
         val onlineRec = sherpaEngine.createStreamingRecognizer(
             assetManager = null,
             modelDir = modelDir.absolutePath,
-            modelType = SherpaOnnxEngine.ModelType.PARAFORMER,
+            modelType = modelType,
             numThreads = 2
         )
         if (onlineRec == null) {
@@ -432,8 +467,11 @@ class VoiceEngine(private val context: Context) {
         modelDir: File
     ): String = withContext(Dispatchers.IO) {
         try {
-            val modelType = if (isParaformerModel(modelDir)) {
-                SherpaOnnxEngine.ModelType.PARAFORMER
+            val modelType = if (isZipformerModel(modelDir)) {
+                SherpaOnnxEngine.ModelType.ZIPFORMER
+            } else if (File(modelDir, "encoder.onnx").exists() && File(modelDir, "decoder.onnx").exists()) {
+                // 旧版 Paraformer 目录（无 joiner），尝试用 transducer 加载
+                SherpaOnnxEngine.ModelType.ZIPFORMER
             } else {
                 SherpaOnnxEngine.ModelType.SENSE_VOICE
             }

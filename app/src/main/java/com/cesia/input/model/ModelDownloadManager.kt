@@ -148,33 +148,33 @@ class ModelDownloadManager(private val context: Context) {
         } else false
     }
 
-    /** 下载 Paraformer 语音识别模型（多文件）
-     * 下载 encoder.onnx + decoder.onnx + tokens.txt 到 local_models/paraformer/ 目录
+    /** 下载 Zipformer 语音识别模型（多文件）
+     * 下载 encoder.onnx + decoder.onnx + joiner.onnx + tokens.txt 到 local_models/zipformer/ 目录
      */
-    suspend fun downloadParaformer(
+    suspend fun downloadZipformer(
         onProgress: ((fileName: String, percent: Int) -> Unit)? = null
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
-            val paraformerDir = File(modelsDir, "paraformer")
-            paraformerDir.mkdirs()
+            val zipformerDir = File(modelsDir, "zipformer")
+            zipformerDir.mkdirs()
 
-            val files = ModelRegistry.PARAFORMER_FILES
+            val files = ModelRegistry.ZIPFORMER_FILES
             var totalDownloaded = 0L
             val totalFiles = files.size
 
             for (file in files) {
-                val destFile = File(paraformerDir, file)
+                val destFile = File(zipformerDir, file)
 
                 // 文件已存在则跳过
                 if (destFile.exists()) {
-                    Log.i(TAG, "Paraformer file already exists: $file")
+                    Log.i(TAG, "Zipformer file already exists: $file")
                     totalDownloaded++
                     onProgress?.invoke(file, ((totalDownloaded * 100) / totalFiles).toInt())
                     continue
                 }
 
-                val url = ModelRegistry.getParaformerFileUrl(file)
-                Log.i(TAG, "Downloading Paraformer file: $url")
+                val url = ModelRegistry.getZipformerFileUrl(file)
+                Log.i(TAG, "Downloading Zipformer file: $url")
 
                 val request = Request.Builder().url(url).build()
                 val response = client.newCall(request).execute()
@@ -188,7 +188,7 @@ class ModelDownloadManager(private val context: Context) {
                 val body = response.body
                     ?: return@withContext Result.failure(Exception("Empty response for $file"))
 
-                val tempFile = File(paraformerDir, "$file.tmp")
+                val tempFile = File(zipformerDir, "$file.tmp")
                 body.byteStream().use { input ->
                     FileOutputStream(tempFile).use { output ->
                         val buffer = ByteArray(BUFFER_SIZE)
@@ -211,15 +211,15 @@ class ModelDownloadManager(private val context: Context) {
 
                 totalDownloaded++
                 onProgress?.invoke(file, ((totalDownloaded * 100) / totalFiles).toInt())
-                Log.i(TAG, "Paraformer file downloaded: $file (${destFile.length()} bytes)")
+                Log.i(TAG, "Zipformer file downloaded: $file (${destFile.length()} bytes)")
             }
 
             // 标记模型已安装
-            modelManager.markInstalled("sherpa-paraformer", ModelInfo.ModelType.VOICE)
-            Log.i(TAG, "Paraformer model download complete: ${paraformerDir.absolutePath}")
-            Result.success(paraformerDir)
+            modelManager.markInstalled("sherpa-zipformer", ModelInfo.ModelType.VOICE)
+            Log.i(TAG, "Zipformer model download complete: ${zipformerDir.absolutePath}")
+            Result.success(zipformerDir)
         } catch (e: Exception) {
-            Log.e(TAG, "Paraformer download failed", e)
+            Log.e(TAG, "Zipformer download failed", e)
             Result.failure(e)
         }
     }

@@ -116,7 +116,7 @@ class VoiceAISettingsHelper(
             modelManager.useGpu = checked
         }
 
-        // 下载语音识别模型（Paraformer 多文件）
+        // 下载语音识别模型（Zipformer 多文件）
         btnDownloadVoice?.setOnClickListener {
             val installedFile = modelManager.getInstalledVoiceModelFile()
             if (installedFile != null && installedFile.exists()) {
@@ -127,13 +127,13 @@ class VoiceAISettingsHelper(
                     installedFile.length()
                 }
                 Toast.makeText(activity,
-                    "Paraformer 已安装（${ModelDownloadManager.Formatter.formatSize(actualSize)}）",
+                    "Zipformer 已安装（${ModelDownloadManager.Formatter.formatSize(actualSize)}）",
                     Toast.LENGTH_SHORT).show()
             } else {
                 // 未安装 → 显示预估大小
-                val totalBytes = 80L * 1024 * 1024  // 80MB 预估
+                val totalBytes = 30L * 1024 * 1024  // 30MB 预估
                 Toast.makeText(activity,
-                    "将下载 Paraformer 语音识别模型（约 ${ModelDownloadManager.Formatter.formatSize(totalBytes)}，3个文件）",
+                    "将下载 Zipformer 语音识别模型（约 ${ModelDownloadManager.Formatter.formatSize(totalBytes)}，4个文件）",
                     Toast.LENGTH_SHORT).show()
                 downloadVoiceModel()
             }
@@ -177,10 +177,11 @@ class VoiceAISettingsHelper(
         val voiceInstalled = modelManager.getInstalledVoiceModelFile()
         tvVoiceModelStatus?.text = if (voiceInstalled != null) {
             if (voiceInstalled.isDirectory) {
-                // Paraformer 多文件模型 — 计算目录总大小
+                // Zipformer/Paraformer 多文件模型 — 计算目录总大小
                 val totalBytes = voiceInstalled.walkTopDown().filter { it.isFile }.sumOf { it.length() }
                 val files = voiceInstalled.listFiles()?.filter { it.isFile }?.map { it.name } ?: emptyList()
-                "✅ Paraformer 已安装 (${ModelDownloadManager.Formatter.formatSize(totalBytes)})\n   ${files.joinToString(", ")}"
+                val modelLabel = if (files.contains("joiner.onnx")) "Zipformer" else "Paraformer"
+                "✅ $modelLabel 已安装 (${ModelDownloadManager.Formatter.formatSize(totalBytes)})\n   ${files.joinToString(", ")}"
             } else {
                 "✅ 已安装: ${voiceInstalled.name} (${ModelDownloadManager.Formatter.formatSize(voiceInstalled.length())})"
             }
@@ -282,7 +283,7 @@ class VoiceAISettingsHelper(
         }
     }
 
-    /** 下载 Paraformer 语音识别模型（多文件） */
+    /** 下载 Zipformer 语音识别模型（多文件） */
     private fun downloadVoiceModel() {
         if (isDownloading) {
             Toast.makeText(activity, "正在下载中，请稍候", Toast.LENGTH_SHORT).show()
@@ -291,11 +292,11 @@ class VoiceAISettingsHelper(
         isDownloading = true
         tvDownloadProgress?.visibility = View.VISIBLE
         pbDownload?.visibility = View.VISIBLE
-        tvDownloadProgress?.text = "正在下载 Paraformer 语音识别模型..."
+        tvDownloadProgress?.text = "正在下载 Zipformer 语音识别模型..."
 
         val appCompat = activity as? androidx.appcompat.app.AppCompatActivity ?: return
         appCompat.lifecycleScope.launch {
-            val result = downloadManager.downloadParaformer { fileName, progress ->
+            val result = downloadManager.downloadZipformer { fileName, progress ->
                 activity.runOnUiThread {
                     pbDownload?.progress = progress
                     tvDownloadProgress?.text = "下载 $fileName: $progress%"
@@ -307,11 +308,11 @@ class VoiceAISettingsHelper(
             activity.runOnUiThread {
                 pbDownload?.visibility = View.GONE
                 if (result.isSuccess) {
-                    tvDownloadProgress?.text = "✅ Paraformer 模型下载完成"
+                    tvDownloadProgress?.text = "✅ Zipformer 模型下载完成"
                     refreshModelStatus()
                     refreshBridgeStatus()
                     Toast.makeText(activity,
-                        "Paraformer 安装成功，支持流式语音识别", Toast.LENGTH_SHORT).show()
+                        "Zipformer 安装成功，支持流式语音识别（边说边出字）", Toast.LENGTH_SHORT).show()
                 } else {
                     tvDownloadProgress?.text =
                         "❌ 下载失败: ${result.exceptionOrNull()?.message ?: "请检查网络"}"

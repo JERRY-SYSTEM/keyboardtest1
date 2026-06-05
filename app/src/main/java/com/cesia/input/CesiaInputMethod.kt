@@ -1945,7 +1945,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         typelessEngine?.startListening(continuous = true)
     }
 
-    /** 本地 Paraformer 分段录音+识别（边说边出文字） */
+    /** 本地 Zipformer 流式录音+识别（边说边出字） */
     private fun startWhisperRecordingAsync() {
         voiceEngineScope.launch {
             try {
@@ -1994,7 +1994,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                 )
             } catch (e: Throwable) {
-                Log.e("Cesia", "Paraformer 录音失败", e)
+                Log.e("Cesia", "Zipformer 录音失败", e)
                 withContext(Dispatchers.Main) {
                     updateStatus("❌ 语音识别失败: ${e.javaClass.simpleName}: ${e.message}")
                     resetToIdle()

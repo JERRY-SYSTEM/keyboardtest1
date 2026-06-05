@@ -9,12 +9,11 @@ import com.k2fsa.sherpa.onnx.*
  *
  * 支持三种模型类型（根据硬件自动选择）：
  * - SenseVoice: ~228MB, 多语言(中/英/日/韩/粤), 内置标点, 离线识别
- * - Paraformer: ~80MB, 中文专精, 高准确率, 流式识别
- * - Zipformer: ~30MB, 最轻量, 中英双语, 流式识别
+ * - Zipformer: ~30MB, 中英双语, 流式识别（边说边出字）
  *
  * 使用前需:
  * 1. 下载模型到本地文件
- * 2. 调用 createRecognizer() 创建识别器
+ * 2. 调用 createStreamingRecognizer() 创建流式识别器
  * 3. 流式识别: createStream() → acceptWaveform() → getResult()
  * 4. 释放: stream.delete(), recognizer.delete()
  */
@@ -50,15 +49,13 @@ class SherpaOnnxEngine {
         val supportsStreaming: Boolean
     ) {
         SENSE_VOICE("SenseVoice", "多语言(中/英/日/韩/粤), 内置标点, 离线", 228, false),
-        PARAFORMER("Paraformer", "中文专精, 高准确率, 流式", 80, true),
-        ZIPFORMER("Zipformer", "最轻量, 中英双语, 流式", 30, true)
+        ZIPFORMER("Zipformer", "中英双语, 流式识别, 边说边出字", 30, true)
     }
 
     /**
      * 根据设备硬件能力推荐模型类型
      * - 高端设备 (RAM >= 6GB): SenseVoice（离线高精度）
-     * - 中端设备 (RAM 4-6GB): Paraformer（流式+中文专精）
-     * - 低端设备 (RAM < 4GB): Zipformer（流式+轻量）
+     * - 中低端设备 (RAM < 6GB): Zipformer（流式+轻量+中英双语）
      */
     fun recommendModelType(): ModelType {
         val runtime = Runtime.getRuntime()
@@ -67,7 +64,6 @@ class SherpaOnnxEngine {
 
         return when {
             maxMemoryMB >= 6144 -> ModelType.SENSE_VOICE
-            maxMemoryMB >= 4096 -> ModelType.PARAFORMER
             else -> ModelType.ZIPFORMER
         }
     }
@@ -95,17 +91,6 @@ class SherpaOnnxEngine {
                             model = "$modelDir/model.onnx",
                             language = "zh",
                             useInverseTextNormalization = true
-                        ),
-                        tokens = tokensPath,
-                        numThreads = numThreads,
-                        debug = false,
-                        provider = provider
-                    )
-                }
-                ModelType.PARAFORMER -> {
-                    OfflineModelConfig(
-                        paraformer = OfflineParaformerModelConfig(
-                            model = "$modelDir/model.onnx"
                         ),
                         tokens = tokensPath,
                         numThreads = numThreads,
@@ -153,12 +138,12 @@ class SherpaOnnxEngine {
 
     /**
      * 创建流式识别器（用于实时识别）
-     * 适用于 Paraformer 和 Zipformer 模型
+     * 适用于 Zipformer 模型
      */
     fun createStreamingRecognizer(
         assetManager: AssetManager?,
         modelDir: String,
-        modelType: ModelType = ModelType.PARAFORMER,
+        modelType: ModelType = ModelType.ZIPFORMER,
         numThreads: Int = 2,
         provider: String = "cpu"
     ): OnlineRecognizer? {
@@ -167,24 +152,13 @@ class SherpaOnnxEngine {
 
             val modelConfig = when (modelType) {
                 ModelType.SENSE_VOICE -> {
-                    // SenseVoice 不支持流式，回退到 Paraformer 配置
-                    Log.w(TAG, "SenseVoice does not support streaming, using Paraformer config")
+                    // SenseVoice 不支持流式，回退到 Zipformer 配置
+                    Log.w(TAG, "SenseVoice does not support streaming, using Zipformer config")
                     OnlineModelConfig(
-                        paraformer = OnlineParaformerModelConfig(
+                        transducer = OnlineTransducerModelConfig(
                             encoder = "$modelDir/encoder.onnx",
-                            decoder = "$modelDir/decoder.onnx"
-                        ),
-                        tokens = tokensPath,
-                        numThreads = numThreads,
-                        debug = false,
-                        provider = provider
-                    )
-                }
-                ModelType.PARAFORMER -> {
-                    OnlineModelConfig(
-                        paraformer = OnlineParaformerModelConfig(
-                            encoder = "$modelDir/encoder.onnx",
-                            decoder = "$modelDir/decoder.onnx"
+                            decoder = "$modelDir/decoder.onnx",
+                            joiner = "$modelDir/joiner.onnx"
                         ),
                         tokens = tokensPath,
                         numThreads = numThreads,

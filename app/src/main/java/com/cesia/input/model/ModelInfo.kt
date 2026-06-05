@@ -21,7 +21,7 @@ data class ModelInfo(
     val tier: Tier
         get() = when (id) {
             "sherpa-zipformer", "qwen-0.8b" -> Tier.BASIC
-            "sherpa-sensevoice", "sherpa-paraformer", "qwen-2b" -> Tier.PREMIUM
+            "sherpa-sensevoice", "qwen-2b" -> Tier.PREMIUM
             else -> Tier.BASIC
         }
 }
@@ -36,15 +36,15 @@ object ModelRegistry {
     const val GB = MB * 1024
 
     val ALL_MODELS = listOf(
-        // === 语音识别模型 (Sherpa-onnx Paraformer) ===
-        // Paraformer 支持流式识别（OnlineRecognizer），完全离线运行
+        // === 语音识别模型 (Sherpa-onnx Zipformer) ===
+        // Zipformer 支持流式识别（OnlineRecognizer），完全离线运行，边说边出字
         ModelInfo(
-            id = "sherpa-paraformer",
-            name = "Paraformer",
-            description = "中文专精, 流式识别, 完全离线 (~80MB)",
-            downloadUrl = "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-paraformer-zh",
-            fileName = "paraformer",  // 目录名，实际包含多个文件
-            sizeBytes = 80L * MB,
+            id = "sherpa-zipformer",
+            name = "Zipformer",
+            description = "中英双语, 流式识别, 完全离线 (~30MB)",
+            downloadUrl = "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-zh-2023-09-14",
+            fileName = "zipformer",  // 目录名，实际包含多个文件
+            sizeBytes = 30L * MB,
             type = ModelInfo.ModelType.VOICE
         ),
 
@@ -69,16 +69,17 @@ object ModelRegistry {
         )
     )
 
-    // Paraformer 流式模型文件列表
-    val PARAFORMER_FILES = listOf(
+    // Zipformer 流式模型文件列表
+    val ZIPFORMER_FILES = listOf(
         "encoder.onnx",
         "decoder.onnx",
+        "joiner.onnx",
         "tokens.txt"
     )
 
-    // Paraformer 各文件下载路径（相对于 hf repo 的 resolve/main/）
-    fun getParaformerFileUrl(file: String): String {
-        return "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-paraformer-zh/resolve/main/$file"
+    // Zipformer 各文件下载路径（相对于 hf repo 的 resolve/main/）
+    fun getZipformerFileUrl(file: String): String {
+        return "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-zh-2023-09-14/resolve/main/$file"
     }
 
     fun getById(id: String): ModelInfo? = ALL_MODELS.find { it.id == id }
