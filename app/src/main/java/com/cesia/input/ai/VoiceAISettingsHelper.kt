@@ -230,6 +230,16 @@ class VoiceAISettingsHelper(
         val voiceModel = modelManager.getInstalledVoiceModelFile()
         val modelId = modelManager.installedVoiceModelId
 
+        // llama.cpp 状态：检查 native-bridge 库是否可加载 + AI 模型是否存在
+        val llamaLibLoaded = try {
+            System.loadLibrary("native-bridge")
+            true
+        } catch (_: UnsatisfiedLinkError) {
+            false
+        }
+        val aiModelFile = modelManager.getInstalledAiModelFile()
+        val llamaReady = llamaLibLoaded && aiModelFile != null && aiModelFile.exists()
+
         if (!bridgeLoaded) {
             val reason = bridgeError ?: "未知错误"
             tvBridgeStatus?.text = "⚠️ Sherpa-onnx 库未加载\n原因: $reason"
@@ -242,6 +252,12 @@ class VoiceAISettingsHelper(
         } else {
             val aiModel = modelManager.getInstalledAiModelFile()
             val aiText = if (aiModel != null) "Qwen: ${aiModel.name}" else "Qwen: 未安装"
+            val llamaStatusStr = if (llamaLibLoaded) {
+                if (aiModel != null) "✅ llama.cpp 已连接 (${aiModel.name})"
+                else "⚠️ llama.cpp 库已加载，但 AI 模型未安装"
+            } else {
+                "❌ llama.cpp 库未加载（native-bridge.so 缺失）"
+            }
             val modelInfo = modelId?.let { id ->
                 ModelRegistry.getById(id)?.let { info ->
                     "\n模型: ${info.name} (${info.description})"
@@ -253,7 +269,8 @@ class VoiceAISettingsHelper(
                 append("路径: ${voiceModel.parent}")
                 if (modelInfo.isNotEmpty()) appendLine(modelInfo) else appendLine()
                 appendLine(aiText)
-                append("框架→模型: 已连接")
+                appendLine("---")
+                append(llamaStatusStr)
             }
             tvBridgeStatus?.setTextColor(0xFF2E7D32.toInt())
             tvBridgeStatus?.setBackgroundColor(0xFFE8F5E9.toInt())
@@ -298,11 +315,11 @@ class VoiceAISettingsHelper(
         val appCompat = activity as? androidx.appcompat.app.AppCompatActivity ?: return
         appCompat.lifecycleScope.launch {
             Log.i("VoiceAISettings", "downloadZipformer: starting download")
-            val result = downloadManager.downloadZipformer { fileName, progress ->
-                Log.i("VoiceAISettings", "downloadZipformer: onProgress $fileName $progress%")
+            val result = downloadManager.downloadZipformer { fileName, overallPercent ->
+                Log.i("VoiceAISettings", "downloadZipformer: onProgress $fileName $overallPercent%")
                 activity.runOnUiThread {
-                    pbDownload?.progress = progress
-                    tvDownloadProgress?.text = "下载 $fileName: $progress%"
+                    pbDownload?.progress = overallPercent
+                    tvDownloadProgress?.text = "下载 $fileName: $overallPercent%"
                 }
             }
 

@@ -1853,7 +1853,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             voiceEngine.setBackend(VoiceEngine.Backend.LOCAL_SHERPA)
             val modeLabel = if (localModeEnabled) "本地模式" else "云端模式+本地加速"
             Log.i("Cesia", "语音后端: 本地 Sherpa-onnx ($modeLabel, $modelName)")
-            updateStatus("🎤 语音: 本地 Sherpa-onnx ✅ ($modelName)")
+            updateStatus("🎤 语音: 本地 ✅")
             // 异步预热 OnlineRecognizer，避免首次点击语音键的延迟
             voiceEngine.warmupRecognizer()
             return
@@ -1985,7 +1985,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
 
                 withContext(Dispatchers.Main) {
-                    updateStatus("🎤 正在收听 (本地 Sherpa: $modelName)...")
+                    updateStatus("🎤 正在收听...")
                 }
 
                 var lastStreamingText = ""

@@ -48,13 +48,13 @@ object ModelRegistry {
             type = ModelInfo.ModelType.VOICE
         ),
 
-        // === AI 模型 ===
+        // === AI 模型 (GGUF 格式，用于 llama.cpp 本地推理) ===
         ModelInfo(
             id = "qwen-0.8b",
             name = "Qwen 3.5 0.8B",
             description = "AI 润色轻量模型（~560MB），极速响应，省资源",
-            downloadUrl = "https://hf-mirror.com/bartowski/Qwen3.5-0.8B-Instruct-GGUF/resolve/main/Qwen3.5-0.8B-Instruct-Q4_K_M.gguf",
-            fileName = "Qwen3.5-0.8B-Instruct-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/Qwen3.5-0.8B-Instruct-GGUF/resolve/main/Qwen3.5-0.8B-Instruct-Q6_K.gguf",
+            fileName = "Qwen3.5-0.8B-Instruct-Q6_K.gguf",
             sizeBytes = 560L * MB,
             type = ModelInfo.ModelType.AI
         ),
@@ -62,8 +62,8 @@ object ModelRegistry {
             id = "qwen-2b",
             name = "Qwen 3.5 2B",
             description = "AI 润色标准模型（~1.4GB），更好的润色质量",
-            downloadUrl = "https://hf-mirror.com/bartowski/Qwen3.5-2B-Instruct-GGUF/resolve/main/Qwen3.5-2B-Instruct-Q4_K_M.gguf",
-            fileName = "Qwen3.5-2B-Instruct-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/Qwen3.5-2B-Instruct-GGUF/resolve/main/Qwen3.5-2B-Instruct-Q6_K.gguf",
+            fileName = "Qwen3.5-2B-Instruct-Q6_K.gguf",
             sizeBytes = 1400L * MB,
             type = ModelInfo.ModelType.AI
         )

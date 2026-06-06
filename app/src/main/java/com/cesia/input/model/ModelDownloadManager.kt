@@ -150,6 +150,7 @@ class ModelDownloadManager(private val context: Context) {
 
     /** 下载 Zipformer 语音识别模型（多文件）
      * 下载 encoder.onnx + decoder.onnx + joiner.onnx + tokens.txt 到 local_models/zipformer/ 目录
+     * onProgress 回调: (当前文件名, 整体进度0-100)
      */
     suspend fun downloadZipformer(
         onProgress: ((fileName: String, percent: Int) -> Unit)? = null
@@ -159,8 +160,12 @@ class ModelDownloadManager(private val context: Context) {
             zipformerDir.mkdirs()
 
             val files = ModelRegistry.ZIPFORMER_FILES
-            var totalDownloaded = 0L
             val totalFiles = files.size
+            var completedFiles = 0
+
+            // 预计算总大小（用于字节级进度）
+            var totalBytes = 0L
+            var downloadedBytes = 0L
 
             for (file in files) {
                 val localName = ModelRegistry.getZipformerLocalName(file)
@@ -169,8 +174,10 @@ class ModelDownloadManager(private val context: Context) {
                 // 文件已存在则跳过
                 if (destFile.exists()) {
                     Log.i(TAG, "Zipformer file already exists: $localName")
-                    totalDownloaded++
-                    onProgress?.invoke(localName, ((totalDownloaded * 100) / totalFiles).toInt())
+                    totalBytes += destFile.length()
+                    downloadedBytes += destFile.length()
+                    completedFiles++
+                    onProgress?.invoke(localName, (downloadedBytes * 100 / totalBytes.coerceAtLeast(1)).toInt())
                     continue
                 }
 
@@ -189,7 +196,11 @@ class ModelDownloadManager(private val context: Context) {
                 val body = response.body
                     ?: return@withContext Result.failure(Exception("Empty response for $file"))
 
+                val fileSize = body.contentLength().takeIf { it > 0 } ?: 0L
+                totalBytes += fileSize
+
                 val tempFile = File(zipformerDir, "$localName.tmp")
+                var fileDownloaded = 0L
                 body.byteStream().use { input ->
                     FileOutputStream(tempFile).use { output ->
                         val buffer = ByteArray(BUFFER_SIZE)
@@ -200,6 +211,16 @@ class ModelDownloadManager(private val context: Context) {
                                 return@withContext Result.failure(Exception("Download cancelled"))
                             }
                             output.write(buffer, 0, bytesRead)
+                            fileDownloaded += bytesRead
+                            downloadedBytes += bytesRead
+
+                            // 字节级整体进度
+                            val overallPercent = if (totalBytes > 0) {
+                                (downloadedBytes * 100 / totalBytes).toInt()
+                            } else {
+                                (completedFiles * 100 / totalFiles)
+                            }
+                            onProgress?.invoke(localName, overallPercent.coerceIn(0, 100))
                         }
                     }
                 }
@@ -210,8 +231,7 @@ class ModelDownloadManager(private val context: Context) {
                     return@withContext Result.failure(Exception("Failed to rename $localName"))
                 }
 
-                totalDownloaded++
-                onProgress?.invoke(localName, ((totalDownloaded * 100) / totalFiles).toInt())
+                completedFiles++
                 Log.i(TAG, "Zipformer file downloaded: $localName (${destFile.length()} bytes)")
             }
 
