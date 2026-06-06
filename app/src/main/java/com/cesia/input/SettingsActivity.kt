@@ -81,7 +81,7 @@ class SettingsActivity : AppCompatActivity() {
     private var pbDownload: android.widget.ProgressBar? = null
     private var btnDownloadVoice: Button? = null
     private var btnDownloadAi: Button? = null
-    private var btnUninstall: Button = null!!
+    private var btnUninstall: Button? = null
     private var switchGpu: androidx.appcompat.widget.SwitchCompat? = null
     private var isDownloading = false
 
@@ -228,10 +228,10 @@ class SettingsActivity : AppCompatActivity() {
             pbDownload = findViewById(R.id.pb_download)
             btnDownloadVoice = findViewById(R.id.btn_download_voice)
             btnDownloadAi = findViewById(R.id.btn_download_ai)
+            btnUninstall = findViewById(R.id.btn_uninstall)
             switchGpu = findViewById(R.id.switch_gpu)
         } catch (_: Exception) {}
-        // btnUninstall 必须在 try-catch 外，确保不为 null
-        btnUninstall = findViewById(R.id.btn_uninstall)
+
     }
 
     private fun showVersion() {
@@ -359,7 +359,7 @@ class SettingsActivity : AppCompatActivity() {
         // === 语音与 AI 本地化 ===
         btnDownloadVoice?.setOnClickListener { downloadVoiceModel() }
         btnDownloadAi?.setOnClickListener { downloadAiModel() }
-        btnUninstall.setOnClickListener { uninstallModels() }
+        btnUninstall?.setOnClickListener { uninstallModels() }
         switchGpu?.setOnCheckedChangeListener { _, isChecked ->
             modelManager.useGpu = isChecked
             appendLog("GPU 加速: ${if (isChecked) "开启" else "关闭"}")
