@@ -354,6 +354,61 @@ class SettingsActivity : AppCompatActivity() {
 
         // 检查更新
         btnCheckUpdate?.setOnClickListener { checkForUpdates() }
+
+        // === 语音与 AI 本地化 ===
+        btnDownloadVoice?.setOnClickListener { downloadVoiceModel() }
+        btnDownloadAi?.setOnClickListener { downloadAiModel() }
+        btnUninstall?.setOnClickListener { uninstallModels() }
+        switchGpu?.setOnCheckedChangeListener { _, isChecked ->
+            modelManager.useGpu = isChecked
+            appendLog("GPU 加速: ${if (isChecked) "开启" else "关闭"}")
+        }
+    }
+
+    // ======================== 模型下载 ========================
+
+    private fun downloadVoiceModel() {
+        val modelInfo = ModelRegistry.getById("sherpa-zipformer") ?: return
+        tvStatus.text = "🔄 下载语音模型中..."
+        appendLog("⬇ 开始下载语音模型: ${modelInfo.name}")
+        // TODO: 实现下载逻辑
+        Toast.makeText(this, "下载功能开发中", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun downloadAiModel() {
+        // 默认下载 0.6B 模型（最快）
+        val modelInfo = ModelRegistry.getById("qwen-0.6b") ?: return
+        tvStatus.text = "🔄 下载 AI 模型中..."
+        appendLog("⬇ 开始下载 AI 模型: ${modelInfo.name} (${modelInfo.sizeBytes / 1024 / 1024}MB)")
+        // TODO: 实现下载逻辑
+        Toast.makeText(this, "下载功能开发中", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun uninstallModels() {
+        var count = 0
+        // 删除 AI 模型
+        val aiFile = modelManager.getInstalledAiModelFile()
+        if (aiFile != null && aiFile.exists()) {
+            val deleted = aiFile.delete()
+            if (deleted) {
+                modelManager.installedAiModelId = null
+                count++
+                appendLog("🗑 已删除 AI 模型: ${aiFile.name}")
+            }
+        }
+        // 删除语音模型
+        val voiceDir = java.io.File(filesDir, "local_models/zipformer")
+        if (voiceDir.exists()) {
+            val deleted = voiceDir.deleteRecursively()
+            if (deleted) {
+                modelManager.installedVoiceModelId = null
+                count++
+                appendLog("🗑 已删除语音模型")
+            }
+        }
+        tvStatus.text = "✅ 已卸载 $count 个模型"
+        appendLog("卸载完成: $count 个模型")
+        Toast.makeText(this, "已卸载 $count 个模型", Toast.LENGTH_SHORT).show()
     }
 
     // ======================== 主题切换 ========================
