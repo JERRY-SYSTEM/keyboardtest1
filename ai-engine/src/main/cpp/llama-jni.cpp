@@ -7,6 +7,9 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+// 安全日志宏 — 每个关键步骤都打印
+#define LOG_STEP(step) LOGI("STEP: %s (line %d)", step, __LINE__)
+
 #ifdef HAS_LLAMA
 #include "llama.h"
 
@@ -26,11 +29,15 @@ JNIEXPORT jboolean JNICALL
 Java_com_cesia_input_engine_ai_LlamaEngine_nativeInit(
         JNIEnv * env, jobject /* this */, jstring modelPath, jint nGpuLayers) {
 
+    LOG_STEP("nativeInit start");
+
     const char * path = env->GetStringUTFChars(modelPath, nullptr);
+    LOGI("Loading model from: %s", path);
 
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = nGpuLayers;
 
+    LOG_STEP("calling llama_model_load_from_file");
     llama_model * model = llama_model_load_from_file(path, mparams);
     env->ReleaseStringUTFChars(modelPath, path);
 
@@ -38,20 +45,23 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeInit(
         LOGE("Failed to load llama model");
         return JNI_FALSE;
     }
+    LOG_STEP("model loaded successfully");
 
     llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx = 2048;
-    cparams.n_batch = 512;
-    cparams.n_ubatch = 512;
+    cparams.n_ctx = 1024;        // 减少上下文，节省内存
+    cparams.n_batch = 256;       // 减少 batch size
+    cparams.n_ubatch = 256;
     cparams.n_threads = 4;
     cparams.n_threads_batch = 4;
 
+    LOG_STEP("calling llama_init_from_model");
     llama_context * ctx = llama_init_from_model(model, cparams);
     if (!ctx) {
         llama_model_free(model);
         LOGE("Failed to create llama context");
         return JNI_FALSE;
     }
+    LOG_STEP("context created");
 
     const llama_vocab * vocab = llama_model_get_vocab(model);
     if (!vocab) {
@@ -60,14 +70,16 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeInit(
         LOGE("Failed to get vocab from model");
         return JNI_FALSE;
     }
+    LOG_STEP("vocab obtained");
 
-    // Create sampler chain: temp(0.3) -> top_k(40) -> top_p(0.9) -> dist
+    // Create sampler chain
     auto sparams = llama_sampler_chain_default_params();
     llama_sampler * sampler = llama_sampler_chain_init(sparams);
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.3f));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.9f, 1));
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    LOG_STEP("sampler created");
 
     g_handle.model = model;
     g_handle.ctx = ctx;
@@ -85,6 +97,8 @@ JNIEXPORT jstring JNICALL
 Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
         JNIEnv * env, jobject /* this */, jstring prompt, jint maxTokens) {
 
+    LOG_STEP("nativeGenerate start");
+
     if (!g_handle.ctx || !g_handle.model || !g_handle.vocab || !g_handle.sampler) {
         LOGE("llama not initialized");
         return env->NewStringUTF("");
@@ -94,10 +108,12 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
     std::string prompt_text(prompt_str);
     env->ReleaseStringUTFChars(prompt, prompt_str);
 
+    LOGI("Prompt length: %zu chars", prompt_text.size());
+
     // Tokenize prompt
-    int32_t n_vocab = llama_vocab_n_tokens(g_handle.vocab);
     std::vector<llama_token> tokens(prompt_text.size() + 16);
 
+    LOG_STEP("calling llama_tokenize");
     int32_t n_tokens = llama_tokenize(
         g_handle.vocab,
         prompt_text.c_str(),
@@ -113,6 +129,7 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
         return env->NewStringUTF("");
     }
 
+    LOGI("Tokenized: %d tokens", n_tokens);
     tokens.resize((size_t) n_tokens);
 
     // Check if prompt fits in context
@@ -122,17 +139,21 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
         return env->NewStringUTF("");
     }
 
-    // Reset sampler for new generation
+    // Reset sampler
     llama_sampler_reset(g_handle.sampler);
+    LOG_STEP("sampler reset");
 
     // Feed prompt tokens in batches
     int32_t n_batch = llama_n_batch(g_handle.ctx);
-    std::string result_text;
+    LOGI("n_batch=%d, processing %d prompt tokens", n_batch, (int32_t) tokens.size());
 
+    std::string result_text;
     int32_t i = 0;
     for (; i < (int32_t) tokens.size(); ) {
         int32_t batch_end = std::min(i + n_batch, (int32_t) tokens.size());
         int32_t batch_size = batch_end - i;
+
+        LOGI("decode prompt batch: pos=%d, size=%d", i, batch_size);
 
         llama_batch batch = llama_batch_get_one(
             tokens.data() + i,
@@ -145,8 +166,11 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
             return env->NewStringUTF("");
         }
 
+        LOGI("decode prompt batch OK: pos=%d", batch_end);
         i = batch_end;
     }
+
+    LOG_STEP("prompt decode complete, starting generation");
 
     // Generate tokens one by one
     int32_t n_generated = 0;
@@ -155,7 +179,7 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
         llama_token token = llama_sampler_sample(
             g_handle.sampler,
             g_handle.ctx,
-            -1  // use last token's logits
+            -1
         );
 
         // Check for EOS
@@ -167,7 +191,6 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
             }
         }
 
-        // Accept token into sampler
         llama_sampler_accept(g_handle.sampler, token);
 
         // Convert token to text
@@ -177,8 +200,8 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
             token,
             buf,
             sizeof(buf),
-            0,      // lstrip
-            false   // special
+            0,
+            false
         );
 
         if (n_chars > 0) {
@@ -192,6 +215,10 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
             LOGE("llama_decode failed at gen pos %d: ret=%d", n_generated, ret);
             break;
         }
+
+        if (n_generated % 10 == 0) {
+            LOGI("Generated %d tokens so far...", n_generated);
+        }
     }
 
     LOGI("Generated %d tokens, result length=%zu", n_generated, result_text.size());
@@ -201,6 +228,8 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeGenerate(
 JNIEXPORT void JNICALL
 Java_com_cesia_input_engine_ai_LlamaEngine_nativeFree(
         JNIEnv * /* env */, jobject /* this */) {
+
+    LOG_STEP("nativeFree start");
 
     if (g_handle.sampler) {
         llama_sampler_free(g_handle.sampler);
