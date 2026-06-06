@@ -2172,9 +2172,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun stopRecordingAndWait() {
         isRecording = false
         stopVoiceWave()
-        // 停止所有语音后端（不再取消协程，让识别自然结束）
+        // 停止所有语音后端
         typelessEngine?.stopListening()
-        // voiceEngineScope.coroutineContext.cancelChildren() // 移除：会打断 isFinal 回调
+        // 释放 AudioRecord 让 readChunk 立即返回 null，退出 recordStreaming 循环
+        voiceEngine.releaseRecorder()
+        // 取消语音识别协程（确保协程立即结束）
+        voiceEngineScope.coroutineContext.cancelChildren()
         setStatusDot("processing")
     }
 

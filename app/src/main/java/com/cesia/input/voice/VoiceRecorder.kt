@@ -169,9 +169,10 @@ class VoiceRecorder {
          if (read < 0) {
              consecutiveReadErrors++
              Log.w(TAG, "readChunk: AudioRecord.read() returned $read (error #$consecutiveReadErrors)")
-             if (read == AudioRecord.ERROR_INVALID_OPERATION) {
-                 Log.e(TAG, "readChunk: AudioRecord invalid operation, stopping")
-                 stop()
+             // AudioRecord 已停止，立即返回 null
+             if (read == AudioRecord.ERROR_INVALID_OPERATION || read == AudioRecord.ERROR_DEAD_OBJECT) {
+                 Log.e(TAG, "readChunk: AudioRecord stopped/dead, returning null immediately")
+                 return null
              }
              if (consecutiveReadErrors >= MAX_CONSECUTIVE_ERRORS) {
                  stop()

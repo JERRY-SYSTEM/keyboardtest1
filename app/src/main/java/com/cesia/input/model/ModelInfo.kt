@@ -49,22 +49,23 @@ object ModelRegistry {
         ),
 
         // === AI 模型 (GGUF 格式，用于 llama.cpp 本地推理) ===
+        // 使用 ModelScope 国内镜像，确保国内可下载
         ModelInfo(
-            id = "qwen-0.8b",
-            name = "Qwen 3.5 0.8B",
-            description = "AI 润色轻量模型（~560MB），极速响应，省资源",
-            downloadUrl = "https://huggingface.co/bartowski/Qwen3.5-0.8B-Instruct-GGUF/resolve/main/Qwen3.5-0.8B-Instruct-Q6_K.gguf",
-            fileName = "Qwen3.5-0.8B-Instruct-Q6_K.gguf",
-            sizeBytes = 560L * MB,
+            id = "qwen-4b",
+            name = "Qwen 3 4B",
+            description = "AI 润色模型（~2.7GB），更好的润色质量",
+            downloadUrl = "https://modelscope.cn/models/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q6_K.gguf",
+            fileName = "Qwen3-4B-Q6_K.gguf",
+            sizeBytes = 2700L * MB,
             type = ModelInfo.ModelType.AI
         ),
         ModelInfo(
-            id = "qwen-2b",
-            name = "Qwen 3.5 2B",
-            description = "AI 润色标准模型（~1.4GB），更好的润色质量",
-            downloadUrl = "https://huggingface.co/bartowski/Qwen3.5-2B-Instruct-GGUF/resolve/main/Qwen3.5-2B-Instruct-Q6_K.gguf",
-            fileName = "Qwen3.5-2B-Instruct-Q6_K.gguf",
-            sizeBytes = 1400L * MB,
+            id = "qwen-8b",
+            name = "Qwen 3 8B",
+            description = "AI 润色大模型（~5.2GB），最佳润色效果",
+            downloadUrl = "https://modelscope.cn/models/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q6_K.gguf",
+            fileName = "Qwen3-8B-Q6_K.gguf",
+            sizeBytes = 5200L * MB,
             type = ModelInfo.ModelType.AI
         )
     )

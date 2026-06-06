@@ -8,6 +8,7 @@ import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -416,7 +417,7 @@ class VoiceEngine(private val context: Context) {
             var totalSamples = 0
             var nonEmptyResults = 0
             var endpointCount = 0
-            while (System.currentTimeMillis() - startTime[0] < maxDurationMs) {
+            while (coroutineContext.isActive && System.currentTimeMillis() - startTime[0] < maxDurationMs) {
                 val read = recorder.readChunk(readBuffer.size) ?: break
                 if (read.isEmpty()) {
                     consecutiveEmptyReads++
@@ -758,6 +759,19 @@ class VoiceEngine(private val context: Context) {
     }
 
     fun getRecorder(): VoiceRecorder = recorder
+
+    /**
+     * 紧急释放 AudioRecord（用于停止录音时立即中断 readChunk 阻塞）
+     */
+    fun releaseRecorder() {
+        try {
+            recorder.stop()
+            recorder.release()
+            Log.i(TAG, "releaseRecorder: AudioRecord released")
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseRecorder: ${e.message}")
+        }
+    }
 
     /**
      * 释放资源
