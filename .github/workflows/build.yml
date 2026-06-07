@@ -19,6 +19,12 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          submodules: recursive
+
+      - name: Apply llama.cpp patches
+        run: |
+          cd ai-engine/src/main/cpp/llama.cpp
+          git apply ../../../../../patches/ggml-vulkan-adreno.patch || echo "Patch may already be applied"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -37,7 +43,6 @@ jobs:
 
       - name: Restore debug keystore
         run: |
-          # 从GitHub Secret恢复固定keystore，确保每次构建签名一致
           echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > /tmp/cesia-debug.keystore
           echo "Keystore restored"
 
@@ -52,9 +57,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "APK_VERSION=$VERSION" >> $GITHUB_ENV
-          # 写入 gradle.properties，确保 Gradle 配置期能读到
           echo "apkVersion=$VERSION" > gradle.properties.tmp
-          # 保留原有属性，追加版本号
           grep -v "^apkVersion=" gradle.properties >> gradle.properties.tmp 2>/dev/null || true
           mv gradle.properties.tmp gradle.properties
           echo "✅ Version: $VERSION (commit count: $COUNT)"
