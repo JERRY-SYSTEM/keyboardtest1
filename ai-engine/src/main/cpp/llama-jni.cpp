@@ -43,10 +43,14 @@ typedef struct {
 
 typedef uint32_t VkResult;
 typedef struct VkInstance_T* VkInstance;
+typedef struct VkPhysicalDevice_T* VkPhysicalDevice;
 typedef void* VkAllocationCallbacks;
 typedef void* (*PFN_vkGetInstanceProcAddr)(VkInstance, const char*);
 typedef VkResult (*PFN_vkCreateInstance)(const VkInstanceCreateInfo*, const VkAllocationCallbacks*, VkInstance*);
 typedef void (*PFN_vkDestroyInstance)(VkInstance, const VkAllocationCallbacks*);
+typedef VkResult (*PFN_vkEnumeratePhysicalDevices)(VkInstance, uint32_t*, void*);
+typedef void (*PFN_vkGetPhysicalDeviceQueueFamilyProperties)(void*, uint32_t*, void*);
+typedef void (*PFN_vkGetPhysicalDeviceProperties)(void*, void*);
 
 #ifdef HAS_LLAMA
 #include "llama.h"
@@ -67,7 +71,14 @@ static volatile sig_atomic_t g_signal_received = 0;
 
 static void signal_handler(int sig) {
     g_signal_received = sig;
-    LOGE("Caught signal %d, jumping back to safe point", sig);
+    const char * sig_name = "unknown";
+    switch(sig) {
+        case SIGSEGV: sig_name = "SIGSEGV"; break;
+        case SIGABRT: sig_name = "SIGABRT"; break;
+        case SIGFPE:  sig_name = "SIGFPE";  break;
+        case SIGILL:  sig_name = "SIGILL";  break;
+    }
+    LOGE("Caught signal %d (%s), jumping back to safe point", sig, sig_name);
     siglongjmp(g_jump_buf, 1);
 }
 
@@ -89,7 +100,8 @@ static void restore_signal_handlers() {
     signal(SIGILL, SIG_DFL);
 }
 
-// 轻量 Vulkan 探测（在信号保护下执行）
+// 完整 Vulkan 探测（在信号保护下执行）
+// 模拟 ggml-vulkan 的初始化流程，提前发现驱动兼容性问题
 // 返回 true = Vulkan 可用，false = 不可用
 static bool probe_vulkan_safe() {
     LOG_STEP("probe_vulkan_safe start");
@@ -105,8 +117,7 @@ static bool probe_vulkan_safe() {
         return false;
     }
 
-    // dlsym returns void*, safely cast to function pointer via memcpy
-    void * sym_gipa = dlsym(vulkan_lib, "vkGetInstanceProcAddr");
+    void* sym_gipa = dlsym(vulkan_lib, "vkGetInstanceProcAddr");
     if (!sym_gipa) {
         LOGE("probe_vulkan_safe: dlsym vkGetInstanceProcAddr failed");
         dlclose(vulkan_lib);
@@ -115,7 +126,8 @@ static bool probe_vulkan_safe() {
     PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
     memcpy(&vkGetInstanceProcAddr, &sym_gipa, sizeof(sym_gipa));
 
-    void * sym_vci = vkGetInstanceProcAddr(nullptr, "vkCreateInstance");
+    // Step 1: vkCreateInstance
+    void* sym_vci = vkGetInstanceProcAddr(nullptr, "vkCreateInstance");
     if (!sym_vci) {
         LOGE("probe_vulkan_safe: vkCreateInstance not found");
         dlclose(vulkan_lib);
@@ -135,22 +147,103 @@ static bool probe_vulkan_safe() {
 
     VkInstance instance = nullptr;
     VkResult result = vkCreateInstance(&create_info, nullptr, &instance);
-
-    if (result == VK_SUCCESS && instance != nullptr) {
-        void * sym_vdi = vkGetInstanceProcAddr(instance, "vkDestroyInstance");
-        if (sym_vdi) {
-            PFN_vkDestroyInstance vkDestroyInstance;
-            memcpy(&vkDestroyInstance, &sym_vdi, sizeof(sym_vdi));
-            vkDestroyInstance(instance, nullptr);
-        }
-        LOG_STEP("probe_vulkan_safe: Vulkan is available!");
+    if (result != VK_SUCCESS || instance == nullptr) {
+        LOGE("probe_vulkan_safe: vkCreateInstance failed, result=%d", (int)result);
         dlclose(vulkan_lib);
-        return true;
+        return false;
+    }
+    LOG_STEP("probe_vulkan_safe: instance created");
+
+    // Step 2: vkEnumeratePhysicalDevices
+    void* sym_vepd = vkGetInstanceProcAddr(instance, "vkEnumeratePhysicalDevices");
+    if (!sym_vepd) {
+        LOGE("probe_vulkan_safe: vkEnumeratePhysicalDevices not found");
+        void* s = vkGetInstanceProcAddr(instance, "vkDestroyInstance");
+        PFN_vkDestroyInstance vdi;
+        memcpy(&vdi, &s, sizeof(s));
+        if (vdi) vdi(instance, nullptr);
+        dlclose(vulkan_lib);
+        return false;
+    }
+    PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices;
+    memcpy(&vkEnumeratePhysicalDevices, &sym_vepd, sizeof(sym_vepd));
+
+    uint32_t dev_count = 0;
+    result = vkEnumeratePhysicalDevices(instance, &dev_count, nullptr);
+    if (result != VK_SUCCESS || dev_count == 0) {
+        LOGE("probe_vulkan_safe: vkEnumeratePhysicalDevices count failed, result=%d, count=%u", (int)result, dev_count);
+        void* s = vkGetInstanceProcAddr(instance, "vkDestroyInstance");
+        PFN_vkDestroyInstance vdi;
+        memcpy(&vdi, &s, sizeof(s));
+        if (vdi) vdi(instance, nullptr);
+        dlclose(vulkan_lib);
+        return false;
+    }
+    LOG_STEP("probe_vulkan_safe: found devices");
+
+    // Step 3: vkGetPhysicalDeviceQueueFamilyProperties
+    void* sym_vgdqfp = vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceQueueFamilyProperties");
+    if (!sym_vgdqfp) {
+        LOGE("probe_vulkan_safe: vkGetPhysicalDeviceQueueFamilyProperties not found");
+        void* s = vkGetInstanceProcAddr(instance, "vkDestroyInstance");
+        PFN_vkDestroyInstance vdi;
+        memcpy(&vdi, &s, sizeof(s));
+        if (vdi) vdi(instance, nullptr);
+        dlclose(vulkan_lib);
+        return false;
+    }
+    PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties;
+    memcpy(&vkGetPhysicalDeviceQueueFamilyProperties, &sym_vgdqfp, sizeof(sym_vgdqfp));
+
+    // Need a physical device first
+    VkPhysicalDevice devices[4] = {};
+    uint32_t count = 4;
+    result = vkEnumeratePhysicalDevices(instance, &count, devices);
+    if (result != VK_SUCCESS || count == 0) {
+        LOGE("probe_vulkan_safe: vkEnumeratePhysicalDevices list failed");
+        void* s = vkGetInstanceProcAddr(instance, "vkDestroyInstance");
+        PFN_vkDestroyInstance vdi;
+        memcpy(&vdi, &s, sizeof(s));
+        if (vdi) vdi(instance, nullptr);
+        dlclose(vulkan_lib);
+        return false;
     }
 
-    LOGE("probe_vulkan_safe: vkCreateInstance failed, result=%d", (int)result);
+    // Test queue family enumeration on device 0
+    uint32_t qf_count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(devices[0], &qf_count, nullptr);
+    LOG_STEP("probe_vulkan_safe: queue family count retrieved");
+
+    if (qf_count > 0) {
+        typedef struct {
+            uint32_t queueFlags;
+            uint32_t queueCount;
+            uint32_t timestampValidBits;
+            struct { uint32_t width, height, depth; } minImageTransferGranularity;
+        } QFProps;
+        QFProps qf[16] = {};
+        uint32_t qf_count2 = 16;
+        vkGetPhysicalDeviceQueueFamilyProperties(devices[0], &qf_count2, (void*)qf);
+        LOGI("probe_vulkan_safe: queue families = %u", qf_count2);
+    }
+
+    // Step 4: vkGetPhysicalDeviceProperties
+    void* sym_vgpdp = vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties");
+    if (sym_vgpdp) {
+        LOG_STEP("probe_vulkan_safe: getPhysicalDeviceProperties available");
+    }
+
+    // Cleanup
+    void* sym_vdi = vkGetInstanceProcAddr(instance, "vkDestroyInstance");
+    if (sym_vdi) {
+        PFN_vkDestroyInstance vdi;
+        memcpy(&vdi, &sym_vdi, sizeof(sym_vdi));
+        vdi(instance, nullptr);
+    }
     dlclose(vulkan_lib);
-    return false;
+
+    LOG_STEP("probe_vulkan_safe: Vulkan is fully available!");
+    return true;
 }
 
 extern "C" {

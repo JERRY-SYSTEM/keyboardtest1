@@ -18,6 +18,7 @@ if (EXISTS "${LLAMA_SRC}/CMakeLists.txt")
 
     # Vulkan GPU backend — works on Android via system libvulkan.so
     set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)
+    set(GGML_VULKAN_DEBUG ON CACHE BOOL "Enable Vulkan debug logging" FORCE)
 
     # OpenCL — DISABLED (unresolved symbol issues on Android)
     set(GGML_OPENCL OFF CACHE BOOL "Disable OpenCL" FORCE)
