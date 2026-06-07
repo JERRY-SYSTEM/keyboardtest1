@@ -16,16 +16,21 @@ if (EXISTS "${LLAMA_SRC}/CMakeLists.txt")
     set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
     set(GGML_OPENMP ON CACHE BOOL "Enable OpenMP" FORCE)
 
-    # Vulkan GPU backend — works on Android via system libvulkan.so
-    set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)
-    set(GGML_VULKAN_DEBUG ON CACHE BOOL "Enable Vulkan debug logging" FORCE)
-
-    # OpenCL — DISABLED (unresolved symbol issues on Android)
-    set(GGML_OPENCL OFF CACHE BOOL "Disable OpenCL" FORCE)
-
-    # Android cross-compile: SPIRV-Headers from local install
+    # Vulkan — optional, disable if SPIRV-Headers not available
     if (ANDROID)
-        set(SPIRV-Headers_DIR "/home/ca/cesia-input-method/ai-engine/src/main/cpp/SPIRV-Headers/install/share/cmake/SPIRV-Headers" CACHE PATH "" FORCE)
+        # Android: guard against missing SPIRV-Headers (not in NDK / CI)
+        if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SPIRV-Headers/install/share/cmake/SPIRV-Headers")
+            set(SPIRV-Headers_DIR "${CMAKE_CURRENT_SOURCE_DIR}/SPIRV-Headers/install/share/cmake/SPIRV-Headers" CACHE PATH "" FORCE)
+            set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)
+            set(GGML_VULKAN_DEBUG ON CACHE BOOL "Enable Vulkan debug" FORCE)
+            message(STATUS "Vulkan: SPIRV-Headers found, enabled")
+        else()
+            set(GGML_VULKAN OFF CACHE BOOL "Disable Vulkan (no SPIRV-Headers)" FORCE)
+            message(STATUS "Vulkan: SPIRV-Headers not found, disabled")
+        endif()
+    else()
+        set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)
+        set(GGML_VULKAN_DEBUG ON CACHE BOOL "Enable Vulkan debug" FORCE)
     endif()
 
     add_subdirectory(${LLAMA_SRC} llama EXCLUDE_FROM_ALL)
@@ -50,9 +55,9 @@ if (LLAMA_EXISTS)
         ${LLAMA_SRC}/include
         ${LLAMA_SRC}/ggml/include
     )
-    if (ANDROID)
+    if (ANDROID AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SPIRV-Headers/include")
         target_include_directories(native-bridge PRIVATE
-            /home/ca/cesia-input-method/ai-engine/src/main/cpp/SPIRV-Headers/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/SPIRV-Headers/include
         )
     endif()
 endif()
@@ -60,7 +65,10 @@ endif()
 # 链接库
 set(BRIDGE_LIBS android log)
 if (LLAMA_EXISTS)
-    list(APPEND BRIDGE_LIBS llama ggml-vulkan ggml-cpu ggml-base)
+    list(APPEND BRIDGE_LIBS llama ggml-cpu ggml-base)
+    if (GGML_VULKAN)
+        list(APPEND BRIDGE_LIBS ggml-vulkan)
+    endif()
 endif()
 target_link_libraries(native-bridge ${BRIDGE_LIBS})
 
