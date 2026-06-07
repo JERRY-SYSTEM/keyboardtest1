@@ -55,6 +55,10 @@ class CesiaKeyboardView @JvmOverloads constructor(
     var onSwipeEarly: (() -> Unit)? = null
     private var swipeEarlyNotified = false  // 防止重复通知
 
+    // 追踪第一根手指的 ID，用于忽略多指触控时的滑动检测
+    private var activePointerId = -1
+    private var multiTouch = false
+
     override fun onTouchEvent(me: android.view.MotionEvent): Boolean {
         when (me.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> {
@@ -62,15 +66,28 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 if (System.currentTimeMillis() < swipeLockUntil) {
                     return true
                 }
+                activePointerId = me.getPointerId(0)
+                multiTouch = false
                 gestureStartX = me.x
                 gestureStartY = me.y
                 isSwipeDetected = false
                 swipeEarlyNotified = false
             }
+            android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                // 第二根手指按下：标记多指状态，忽略后续滑动检测
+                multiTouch = true
+                isSwipeDetected = false
+                swipeEarlyNotified = false
+            }
             android.view.MotionEvent.ACTION_MOVE -> {
+                // 多指状态下不检测滑动（防止双键同时按下被判为滑动手势）
+                if (multiTouch) return super.onTouchEvent(me)
                 if (!isSwipeDetected) {
-                    val dx = me.x - gestureStartX
-                    val dy = kotlin.math.abs(me.y - gestureStartY)
+                    // 只追踪第一根手指的位移
+                    val pointerIndex = me.findPointerIndex(activePointerId)
+                    if (pointerIndex < 0) return super.onTouchEvent(me)
+                    val dx = me.getX(pointerIndex) - gestureStartX
+                    val dy = kotlin.math.abs(me.getY(pointerIndex) - gestureStartY)
                     val adx = kotlin.math.abs(dx)
                     // 早期滑动趋势检测：移动超过 20px 且方向水平，提前取消长按
                     // 此时可能还没到 100px 滑动阈值，但长按 runnable 可能已经注册了
@@ -87,12 +104,23 @@ class CesiaKeyboardView @JvmOverloads constructor(
                     }
                 }
             }
+            android.view.MotionEvent.ACTION_POINTER_UP -> {
+                // 非主手指抬起：如果还有手指在屏幕上，继续正常处理
+                if (multiTouch) {
+                    // 检查是否所有手指都抬起了
+                    if (me.pointerCount <= 1) {
+                        multiTouch = false
+                    }
+                }
+            }
             android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
                 // 如果之前检测到滑动，吞掉 ACTION_UP，防止起点按键触发 onKey/onRelease
                 if (isSwipeDetected) {
                     isSwipeDetected = false
                     return true
                 }
+                activePointerId = -1
+                multiTouch = false
             }
         }
         return super.onTouchEvent(me)

@@ -3506,7 +3506,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         }
                     } else {
                         ic?.commitText(primaryCode.toChar().toString(), 1)
-                        autoExitShift()
+                        // 英文模式下输入数字保持英文模式，不自动退出
+                        if (isAsciiMode) {
+                            // 保持 isAsciiMode=true，不调用 autoExitShift
+                        } else {
+                            autoExitShift()
+                        }
                     }
                     updateCandidateBar()
                 }
@@ -3689,9 +3694,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 } else primaryCode
                 val c = adjustedCode.toChar()
                 if (c != '\u0000') { ic?.commitText(c.toString(), 1) }
-                // 标点上屏后清空候选栏和状态栏
-                rimeEngine.clear()
-                if (keyboardMode == KeyboardMode.NUMBER) t9InputBuffer.clear()
+                // 英文模式下符号直接上屏，不清空 Rime 状态
+                if (isAsciiMode) {
+                    // 保持英文模式，不清空任何状态
+                } else {
+                    // 标点上屏后清空候选栏和状态栏
+                    rimeEngine.clear()
+                    if (keyboardMode == KeyboardMode.NUMBER) t9InputBuffer.clear()
+                }
                 updateCandidateBar()
             }
         }
@@ -3758,7 +3768,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     handleShiftLongPress()
                 }
             }.also {
-                Handler(Looper.getMainLooper()).postDelayed(it, 400)
+                Handler(Looper.getMainLooper()).postDelayed(it, 500)
             }
         }
         // 剪贴板键长按：-108=粘贴，-109=剪切
@@ -3804,7 +3814,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     sendCtrlKey(KeyEvent.KEYCODE_Z)
                 }
             }.also {
-                Handler(Looper.getMainLooper()).postDelayed(it, 400)
+                Handler(Looper.getMainLooper()).postDelayed(it, 500)
             }
         }
         if (primaryCode == -200) {

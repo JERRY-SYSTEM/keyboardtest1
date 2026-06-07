@@ -173,16 +173,24 @@ object RimeJni {
     fun destroySession(session: RimeSession) {}
 
     /**
-     * 选择候选词并上屏
-     * 参考 Trime：selectCandidate(idx) → commitComposition()
+     * 选择候选词
+     * 拼音拆分支持：选中单字后，剩余拼音保留在 composition 中
+     * 多字词：整个词上屏，composition 清空
+     * @return 需要上屏的文本（可能为空，表示剩余拼音还在 composition 中）
      */
     fun selectCandidate(sessionId: Long, index: Int): String {
         if (!initialized) return ""
         return try {
+            // 先获取候选词文本（选中前）
+            val cands = getCandidates(sessionId)
+            val selectedText = if (index < cands.size) cands[index] else ""
+            // 选中候选
             TrimeRime.selectRimeCandidate(index, false)
-            val text = commitComposition(sessionId)
-            Log.d(TAG, "selectCandidate index=$index text='$text'")
-            text
+            // 检查是否有 commit 产生
+            val commitText = TrimeRime.getRimeCommit().text ?: ""
+            Log.d(TAG, "selectCandidate index=$index selected='$selectedText' commit='$commitText' composing=${isComposing()}")
+            // 如果有 commit 文本，使用 commit 文本；否则使用选中的候选词文本
+            commitText.ifEmpty { selectedText }
         } catch (e: Throwable) {
             Log.e(TAG, "selectCandidate failed: index=$index", e)
             ""

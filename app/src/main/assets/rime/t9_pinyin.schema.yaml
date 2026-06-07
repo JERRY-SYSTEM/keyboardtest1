@@ -70,8 +70,8 @@ speller:
 translator:
   dictionary: rime_ice
   spelling_hints: 5
-  enable_completion: false
-  enable_sentence: false
+  enable_completion: true
+  enable_sentence: true
   enable_user_dict: true
   comment_format:
     - xform/.*//
