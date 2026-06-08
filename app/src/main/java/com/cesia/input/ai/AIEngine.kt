@@ -23,7 +23,7 @@ class AIEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "AIEngine"
-        private const val DEFAULT_MAX_TOKENS = 64  // 润色任务不需要太多 token
+        private const val DEFAULT_MAX_TOKENS = 32  // 润色任务简短输出，32足够
         private const val LOCAL_POLISH_TIMEOUT_MS = 30000L  // 30 秒超时
     }
 
@@ -87,9 +87,8 @@ class AIEngine(private val context: Context) {
      * 构建润色 prompt（Qwen 3.5 Instruct 格式）
      */
     private fun buildPolishPrompt(text: String, instruction: String): String {
-        // Qwen3 instruct 模型：/no_think 关闭思考模式
-        // 明确要求：去除语气词、不重复、不输出特殊标记
-        return "<|im_start|>system/no_think\n你是一个文本润色助手。规则：1.只输出润色结果，不解释不思考 2.去除口语语气词（嗯、啊、那个等）3.不重复内容 4.不输出任何特殊标记 5.只输出纯文本<|im_end|>\n<|im_start|>user\n${instruction}：${text}\n<|im_end|>\n<|im_start|>assistant\n"
+        // 0.6B 模型指令遵循力弱，prompt 极简化为一句
+        return "只输出${instruction}结果，不解释不重复：${text}\n"
     }
 
     // ==================== 状态查询 ====================

@@ -315,7 +315,7 @@ Java_com_cesia_input_engine_ai_LlamaEngine_nativeInit(
 
         auto sparams = llama_sampler_chain_default_params();
         llama_sampler * sampler = llama_sampler_chain_init(sparams);
-        llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.3f));
+        llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.1f));
         llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
         llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.9f, 1));
         llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
