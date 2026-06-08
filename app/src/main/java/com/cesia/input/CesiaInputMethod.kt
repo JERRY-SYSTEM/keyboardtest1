@@ -31,6 +31,7 @@ import android.widget.PopupWindow
 import android.widget.TextView
 import android.text.TextUtils
 import android.graphics.Typeface
+import java.io.File
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -2229,7 +2230,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     return@launch
                 }
                 if (!aiEngine.isModelLoaded()) {
-                    aiEngine.loadLocalModel(modelFile.absolutePath, 99)
+                    // MNN 模型：传 config.json 路径
+                    val configPath = if (modelFile.isDirectory) {
+                        File(modelFile, "config.json").absolutePath
+                    } else {
+                        modelFile.absolutePath
+                    }
+                    aiEngine.loadLocalModel(configPath)
                 }
                 val result = aiEngine.polish(text, "润色")
                 withContext(Dispatchers.Main) {

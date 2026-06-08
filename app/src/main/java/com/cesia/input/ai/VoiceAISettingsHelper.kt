@@ -162,10 +162,8 @@ class VoiceAISettingsHelper(
                 return@setOnClickListener
             }
             var count = 0
-            val installedTier = downloadManager.getInstalledTier()
-            if (installedTier != null) {
-                count = downloadManager.deleteTier(installedTier)
-            }
+            count += if (downloadManager.deleteModel("sherpa-zipformer")) 1 else 0
+            count += if (downloadManager.deleteModel("qwen25-1.5b-mnn")) 1 else 0
             refreshModelStatus()
             Toast.makeText(activity, "已卸载 $count 个模型文件", Toast.LENGTH_SHORT).show()
         }

@@ -40,7 +40,6 @@ class ModelManager(private val context: Context) {
      */
     fun scanExistingModels(): List<String> {
         // 模型版本检查：版本不匹配时仅清除安装记录，不删除文件
-        // 文件会在后续扫描中重新注册
         val savedVersion = prefs.getInt(KEY_MODEL_VERSION, 0)
         if (savedVersion != CURRENT_MODEL_VERSION) {
             Log.i(TAG, "模型版本变更: $savedVersion -> $CURRENT_MODEL_VERSION, 清除安装记录")
@@ -52,12 +51,11 @@ class ModelManager(private val context: Context) {
         if (!modelsDir.exists()) return found
         val files = modelsDir.listFiles() ?: return found
         for (file in files) {
-            if (!file.isFile) continue
             // 跳过临时文件
             if (file.name.endsWith(".tmp")) continue
-            // 在 ModelRegistry 中查找匹配的文件名
+            // 在 ModelRegistry 中查找匹配的文件名（支持单文件和多文件目录）
             val matched = ModelRegistry.ALL_MODELS.find { it.fileName == file.name }
-            if (matched != null) {
+            if (matched != null && file.exists()) {
                 val alreadyRegistered = when (matched.type) {
                     ModelInfo.ModelType.VOICE -> installedVoiceModelId == matched.id
                     ModelInfo.ModelType.AI -> installedAiModelId == matched.id
@@ -65,7 +63,12 @@ class ModelManager(private val context: Context) {
                 if (!alreadyRegistered) {
                     markInstalled(matched.id, matched.type)
                     found.add(matched.id)
-                    Log.i(TAG, "扫描发现模型: ${matched.id} (${file.name}, ${file.length()} bytes)")
+                    val size = if (file.isDirectory) {
+                        file.listFiles()?.sumOf { it.length() } ?: 0
+                    } else {
+                        file.length()
+                    }
+                    Log.i(TAG, "扫描发现模型: ${matched.id} (${file.name}, $size bytes)")
                 }
             }
         }
@@ -156,10 +159,13 @@ class ModelManager(private val context: Context) {
         val prefs = context.getSharedPreferences("cesia_settings", Context.MODE_PRIVATE)
         return prefs.getString("groq_api_key", null)
     }
-    fun getMissingModels(tier: ModelInfo.Tier): List<ModelInfo> {
-        return ModelRegistry.ALL_MODELS
-            .filter { it.tier == tier }
-            .filter { !isModelInstalled(it.id) }
+    fun getMissingModels(type: ModelInfo.ModelType? = null): List<ModelInfo> {
+        val models = if (type != null) {
+            ModelRegistry.ALL_MODELS.filter { it.type == type }
+        } else {
+            ModelRegistry.ALL_MODELS
+        }
+        return models.filter { !isModelInstalled(it.id) }
     }
 
     /**

@@ -32,8 +32,6 @@ import com.cesia.input.ai.AIEngine
 import com.cesia.input.ai.LocalModeManager
 import com.cesia.input.ai.LocalModeToggleHelper
 import com.cesia.input.ai.VoiceAISettingsHelper
-import com.cesia.input.engine.ai.LlamaEngine
-import com.cesia.input.engine.ai.SherpaOnnxEngine
 import com.cesia.input.model.ModelDownloadManager
 import com.cesia.input.model.ModelInfo
 import com.cesia.input.model.ModelManager
@@ -410,7 +408,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun downloadAiModel() {
-        val modelInfo = ModelRegistry.getById("qwen-0.6b") ?: return
+        val modelInfo = ModelRegistry.getById("qwen25-1.5b-mnn") ?: return
         btnDownloadAi?.isEnabled = false
         btnDownloadAi?.text = "下载中..."
         tvStatus.text = "🔄 下载 AI 模型中..."
@@ -980,7 +978,13 @@ class SettingsActivity : AppCompatActivity() {
                 appendLog("正在加载模型...")
                 val loadStart = System.currentTimeMillis()
                 val loaded = kotlinx.coroutines.runBlocking {
-                    aiEngine.loadLocalModel(modelFile.absolutePath, 99)
+                    // MNN 模型：传 config.json 路径
+                    val configPath = if (modelFile.isDirectory) {
+                        File(modelFile, "config.json").absolutePath
+                    } else {
+                        modelFile.absolutePath
+                    }
+                    aiEngine.loadLocalModel(configPath)
                 }
                 val loadTime = System.currentTimeMillis() - loadStart
 

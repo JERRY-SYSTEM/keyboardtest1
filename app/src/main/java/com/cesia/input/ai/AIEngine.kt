@@ -2,20 +2,20 @@ package com.cesia.input.ai
 
 import android.content.Context
 import android.util.Log
-import com.cesia.input.engine.ai.LlamaEngine
+import com.cesia.input.engine.ai.MNNEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * 本地 AI 润色引擎 — 基于 llama.cpp + Qwen 3.5
+ * 本地 AI 润色引擎 — 基于 MNN + Qwen 3.5
  *
  * 与 PolishService（云端 OpenRouter）互补:
- * - 本地模式: 无需网络，隐私安全，使用 Qwen 3.5 GGUF 模型
+ * - 本地模式: 无需网络，隐私安全，使用 Qwen 3.5 MNN 模型
  * - 云端模式: 使用 OpenRouter API（由 PolishService 处理）
  *
  * 使用方式:
  * 1. AIEngine(context)
- * 2. loadLocalModel() — 加载已安装的 GGUF 模型
+ * 2. loadLocalModel() — 加载已安装的 MNN 模型
  * 3. polish(text) — 润色文本
  * 4. release() — 释放资源
  */
@@ -27,31 +27,34 @@ class AIEngine(private val context: Context) {
         private const val LOCAL_POLISH_TIMEOUT_MS = 30000L  // 30 秒超时
     }
 
-    private val llamaEngine = LlamaEngine()
+    private val mnnEngine = MNNEngine()
     private var modelLoaded = false
     private var currentModelPath: String? = null
 
     // ==================== 模型加载 ====================
 
     /**
-     * 加载本地 GGUF 模型
-     * @param modelPath GGUF 文件绝对路径
-     * @param nGpuLayers GPU offload 层数（99=全部，0=纯CPU）
+     * 加载本地 MNN 模型
+     * @param configPath config.json 的绝对路径（MNN 模型目录下的 config.json）
      * @return 是否成功
      */
-    suspend fun loadLocalModel(modelPath: String, nGpuLayers: Int = 99): Boolean =
+    suspend fun loadLocalModel(configPath: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
-                modelLoaded = llamaEngine.nativeInit(modelPath, nGpuLayers)
+                modelLoaded = mnnEngine.nativeInit(configPath)
                 if (modelLoaded) {
-                    currentModelPath = modelPath
-                    Log.i(TAG, "Llama model loaded: $modelPath (gpu_layers=$nGpuLayers)")
+                    currentModelPath = configPath
+                    Log.i(TAG, "MNN model loaded: $configPath")
                 } else {
-                    Log.e(TAG, "Failed to load llama model: $modelPath")
+                    Log.e(TAG, "Failed to load MNN model: $configPath")
+                    val log = mnnEngine.nativeGetLog()
+                    if (log.isNotEmpty()) {
+                        Log.e(TAG, "MNN log: $log")
+                    }
                 }
                 modelLoaded
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading llama model", e)
+                Log.e(TAG, "Error loading MNN model", e)
                 false
             }
         }
@@ -75,7 +78,7 @@ class AIEngine(private val context: Context) {
 
             try {
                 val prompt = buildPolishPrompt(text, instruction)
-                val result = llamaEngine.nativeGenerate(prompt, DEFAULT_MAX_TOKENS)
+                val result = mnnEngine.nativeGenerate(prompt, DEFAULT_MAX_TOKENS)
                 result.ifBlank { null }
             } catch (e: Exception) {
                 Log.e(TAG, "Polish error", e)
@@ -87,7 +90,7 @@ class AIEngine(private val context: Context) {
      * 构建润色 prompt（Qwen 3.5 Instruct 格式）
      */
     private fun buildPolishPrompt(text: String, instruction: String): String {
-        // 0.6B 模型指令遵循力弱，prompt 极简化为一句
+        // 0.8B 模型指令遵循力弱，prompt 极简化为一句
         return "只输出${instruction}结果，不解释不重复：${text}\n"
     }
 
@@ -98,7 +101,7 @@ class AIEngine(private val context: Context) {
     fun getCurrentModelPath(): String? = currentModelPath
 
     fun release() {
-        llamaEngine.nativeFree()
+        mnnEngine.nativeFree()
         modelLoaded = false
         currentModelPath = null
     }
