@@ -93,8 +93,8 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
 
     try {
         std::ostringstream outputStream;
-        // end_with="\n"：遇到换行就停止，防止模型无限生成
-        g_llm->response(promptStr, &outputStream, "\n", maxTokens);
+        // end_with="。"：遇到句号就停止，让润色结果在句子边界处结束
+        g_llm->response(promptStr, &outputStream, "。", maxTokens);
 
         auto context = g_llm->getContext();
         if (context->status == LlmStatus::INTERNAL_ERROR) {
@@ -143,7 +143,8 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerateStreaming(
 
     try {
         std::ostringstream outputStream;
-        g_llm->response(promptStr, &outputStream, "\n", maxTokens);
+        // end_with="。"：遇到句号就停止，让润色结果在句子边界处结束
+        g_llm->response(promptStr, &outputStream, "。", maxTokens);
 
         auto context = g_llm->getContext();
         if (context->status == LlmStatus::INTERNAL_ERROR) {
