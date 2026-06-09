@@ -94,6 +94,29 @@ class AIEngine(private val context: Context) {
         return "只输出${instruction}结果，不解释不重复：${text}\n"
     }
 
+    // ==================== 通用生成 API ====================
+
+    /**
+     * 同步生成文本（阻塞直到完成）
+     * 用于翻译等同传任务
+     * @param prompt 输入 prompt
+     * @param maxTokens 最大生成 token 数
+     * @return 生成的文本，失败返回 null
+     */
+    fun syncGenerate(prompt: String, maxTokens: Int = 256): String? {
+        if (!modelLoaded) {
+            Log.w(TAG, "syncGenerate: Model not loaded")
+            return null
+        }
+        return try {
+            val result = mnnEngine.nativeGenerate(prompt, maxTokens)
+            result.ifBlank { null }
+        } catch (e: Exception) {
+            Log.e(TAG, "syncGenerate error", e)
+            null
+        }
+    }
+
     // ==================== 状态查询 ====================
 
     fun isModelLoaded(): Boolean = modelLoaded

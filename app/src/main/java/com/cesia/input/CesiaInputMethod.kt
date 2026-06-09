@@ -43,6 +43,7 @@ import com.cesia.input.model.ModelManager
 import com.cesia.input.stats.PolishStatsManager
 import com.cesia.input.stats.MagicHistoryManager
 import com.cesia.input.voice.VoiceEngine
+import com.cesia.input.voice.SimulTranslateManager
 import com.cesia.input.engine.ai.SherpaOnnxEngine
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.*
@@ -100,6 +101,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var voiceEngine: VoiceEngine
     private lateinit var modelManager: ModelManager
     private lateinit var aiEngine: AIEngine
+    private var simulTranslateManager: SimulTranslateManager? = null
 
     // ======================== 语音/润色选择 ========================
     enum class VoiceChoice { LOCAL_SHERPA, GOOGLE }
@@ -109,41 +111,98 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // true = 本地模式, false = 云端模式（默认）
     private var localModeEnabled = false
 
-    /** 长按语音键：切换本地/云端模式 */
+    // ======================== 同传模式 ========================
+    private var simulTranslateEnabled = false  // 同传模式开关
+
+    /** 长按语音键：循环切换 云端模式 → 本地模式 → 同传模式 → 云端模式... */
     private fun toggleLocalCloudMode() {
-        if (!localModeEnabled) {
-            // 尝试切换到本地模式：必须 Whisper + Qwen 都安装
-            val bridgeLoaded = SherpaOnnxEngine.isLibraryLoaded()
-            val hasVoiceModel = voiceEngine.hasSherpaModel()
-            val hasAiModel = modelManager.hasAiModel()
+        when {
+            // 云端模式 → 本地模式
+            !localModeEnabled && !simulTranslateEnabled -> {
+                val bridgeLoaded = SherpaOnnxEngine.isLibraryLoaded()
+                val hasVoiceModel = voiceEngine.hasSherpaModel()
+                val hasAiModel = modelManager.hasAiModel()
 
-            if (!bridgeLoaded) {
-                updateStatus("⚠️ 无法切换到本地模式：Sherpa 库未加载")
-                return
+                if (!bridgeLoaded) {
+                    updateStatus("⚠️ 无法切换到本地模式：Sherpa 库未加载")
+                    return
+                }
+                if (!hasVoiceModel) {
+                    updateStatus("⚠️ 无法切换到本地模式：语音模型未安装")
+                    return
+                }
+                if (!hasAiModel) {
+                    updateStatus("⚠️ 无法切换到本地模式：Qwen 模型未安装")
+                    return
+                }
+
+                localModeEnabled = true
+                simulTranslateEnabled = false
+                updateVoiceBackend()
+                updateMicButtonAppearance()
+
+                val voiceFile = modelManager.getInstalledVoiceModelFile()
+                val aiFile = modelManager.getInstalledAiModelFile()
+                updateStatus("📱 本地模式（${voiceFile?.name ?: "?"} + ${aiFile?.name ?: "?"}）")
             }
-            if (!hasVoiceModel) {
-                updateStatus("⚠️ 无法切换到本地模式：语音模型未安装，请先到设置中下载")
-                return
+            // 本地模式 → 同传模式
+            localModeEnabled && !simulTranslateEnabled -> {
+                localModeEnabled = false
+                simulTranslateEnabled = true
+                updateMicButtonAppearance()
+                initSimulTranslate()
             }
-            if (!hasAiModel) {
-                updateStatus("⚠️ 无法切换到本地模式：Qwen 模型未安装，请先到设置中下载")
-                return
+            // 同传模式 → 云端模式（或已经是云端模式但同传开着）
+            else -> {
+                simulTranslateEnabled = false
+                localModeEnabled = false
+                updateVoiceBackend()
+                updateMicButtonAppearance()
+                updateStatus("☁️ 云端模式")
             }
         }
+    }
 
-        localModeEnabled = !localModeEnabled
-        updateVoiceBackend()
-        updateMicButtonAppearance()
-
-        if (localModeEnabled) {
-            val voiceFile = modelManager.getInstalledVoiceModelFile()
-            val aiFile = modelManager.getInstalledAiModelFile()
-            val voiceName = voiceFile?.name ?: "?"
-            val aiName = aiFile?.name ?: "?"
-            updateStatus("📱 本地模式（Whisper: $voiceName + Qwen: $aiName）")
+    /** 初始化同传管理器 */
+    private fun initSimulTranslate() {
+        if (simulTranslateManager == null) {
+            simulTranslateManager = SimulTranslateManager(this)
+        }
+        // 检查 TTS 模型是否已下载
+        val ttsModelDir = getTtsModelDir()
+        if (ttsModelDir != null) {
+            voiceEngineScope.launch {
+                val ok = simulTranslateManager?.initialize(
+                    ttsModelDir = ttsModelDir.absolutePath,
+                    engine = aiEngine.takeIf { it.isModelLoaded() }
+                ) ?: false
+                withContext(Dispatchers.Main) {
+                    if (ok) {
+                        updateStatus("🌐 同传模式（英→中）就绪")
+                    } else {
+                        updateStatus("⚠️ 同传模式：TTS 模型加载失败")
+                        simulTranslateEnabled = false
+                    }
+                }
+            }
         } else {
-            updateStatus("☁️ 云端模式（Whisper 可用时自动加速）")
+            updateStatus("⚠️ 同传模式：请先下载 TTS 模型（设置 → 语音 → 下载中文语音）")
+            simulTranslateEnabled = false
         }
+    }
+
+    /** 获取 TTS 模型目录 */
+    private fun getTtsModelDir(): File? {
+        val ttsDir = File(filesDir, "local_models/tts")
+        if (ttsDir.exists() && ttsDir.isDirectory) {
+            val modelFile = File(ttsDir, "model.onnx")
+            val int8File = File(ttsDir, "model.int8.onnx")
+            val tokensFile = File(ttsDir, "tokens.txt")
+            if ((modelFile.exists() || int8File.exists()) && tokensFile.exists()) {
+                return ttsDir
+            }
+        }
+        return null
     }
 
     /** 根据当前模式更新语音键图标 */
@@ -910,9 +969,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 try {
                     val bridgeLoaded = SherpaOnnxEngine.isLibraryLoaded()
                     val hasVoiceModel = modelManager.hasVoiceModel()
-                    Log.i("Cesia", "单击语音键: bridgeLoaded=$bridgeLoaded, hasVoiceModel=$hasVoiceModel, localMode=$localModeEnabled")
+                    Log.i("Cesia", "单击语音键: bridgeLoaded=$bridgeLoaded, hasVoiceModel=$hasVoiceModel, localMode=$localModeEnabled, simulTranslate=$simulTranslateEnabled")
 
-                    if (localModeEnabled) {
+                    if (simulTranslateEnabled) {
+                        // 同传模式：语音识别 → 翻译 → TTS 播放
+                        if (!bridgeLoaded || !hasVoiceModel) {
+                            updateStatus("⚠️ 同传模式需要语音识别模型，请先到设置中下载")
+                            return@setOnClickListener
+                        }
+                        if (!modelManager.hasAiModel()) {
+                            updateStatus("⚠️ 同传模式需要 Qwen 模型，请先到设置中下载")
+                            return@setOnClickListener
+                        }
+                        startSimulTranslateRecording()
+                    } else if (localModeEnabled) {
                         // 本地模式：必须 Sherpa + 语音模型 + Qwen 都安装
                         if (!bridgeLoaded || !hasVoiceModel || !modelManager.hasAiModel()) {
                             updateStatus("⚠️ 本地模式需要语音识别 + Qwen 模型，请先到设置中下载")
@@ -940,7 +1010,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     setStatusDot("processing")
                     updateStatus("⏳ 正在识别指令...")
                 } else {
-                    stopRecording()
+                    if (simulTranslateEnabled) {
+                        stopSimulTranslateRecording()
+                    } else {
+                        stopRecording()
+                    }
                 }
             }
         }
@@ -1921,6 +1995,78 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     /** 云端模式录音 */
     private fun startCloudRecording() {
         startRecordingWithChoice(VoiceChoice.GOOGLE, PolishChoice.CLOUD_OPENROUTER)
+    }
+
+    // ======================== 同声传译 ========================
+
+    /** 开始同传录音 */
+    private fun startSimulTranslateRecording() {
+        val mgr = simulTranslateManager ?: run {
+            updateStatus("⚠️ 同传管理器未初始化")
+            return
+        }
+        if (!mgr.isInitialized()) {
+            updateStatus("⚠️ 同传未就绪，请长按语音键切换到同传模式")
+            return
+        }
+
+        isRecording = true
+        recognizedText = ""
+        setStatusDot("recording")
+        startVoiceWave()
+        keyboardView.visibility = View.GONE
+        candidateBar.visibility = View.GONE
+
+        // 设置同传回调
+        mgr.onStatusUpdate = { status ->
+            voiceEngineScope.launch(Dispatchers.Main) { updateStatus(status) }
+        }
+        mgr.onRecognized = { text ->
+            voiceEngineScope.launch(Dispatchers.Main) { updateStatus("🎤 $text") }
+        }
+        mgr.onTranslated = { text ->
+            voiceEngineScope.launch(Dispatchers.Main) { updateStatus("🌐 $text") }
+        }
+        mgr.onError = { error ->
+            voiceEngineScope.launch(Dispatchers.Main) { updateStatus("❌ $error") }
+        }
+
+        // 启动同传
+        mgr.start()
+
+        // 开始语音识别，结果传给同传管理器
+        voiceEngineScope.launch {
+            try {
+                voiceEngine.recordInSegments(
+                    maxDurationMs = 300000,
+                    segmentDurationMs = 3000,
+                    onSegmentResult = { text, isFinal ->
+                        if (text.isNotEmpty()) {
+                            mgr.onRecognitionResult(text, isFinal)
+                        }
+                    }
+                )
+            } catch (e: Throwable) {
+                Log.e("Cesia", "同传录音失败", e)
+                withContext(Dispatchers.Main) {
+                    updateStatus("❌ 同传录音失败: ${e.javaClass.simpleName}")
+                }
+            } finally {
+                mgr.stop()
+                withContext(Dispatchers.Main) {
+                    isRecording = false
+                    resetToIdle()
+                }
+            }
+        }
+    }
+
+    /** 停止同传录音 */
+    private fun stopSimulTranslateRecording() {
+        simulTranslateManager?.stop()
+        isRecording = false
+        stopVoiceWave()
+        resetToIdle()
     }
 
     // ======================== 录音（根据选择的后端） ========================
