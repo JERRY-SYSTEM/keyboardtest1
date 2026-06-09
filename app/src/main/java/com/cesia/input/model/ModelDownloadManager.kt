@@ -3,6 +3,7 @@ package com.cesia.input.model
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -62,6 +63,84 @@ class ModelDownloadManager(private val context: Context) {
         } else false
     }
 
+    // ==================== 多镜像下载 ====================
+
+    /**
+     * 镜像源列表（按优先级排序）
+     * - hf-mirror.com：国内镜像，大多数情况可用
+     * - huggingface.co：官方源，可能被墙但部分网络可用
+     */
+    private val zipformerMirrors = listOf(
+        "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main",
+        "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main"
+    )
+
+    private val mnnMirrors = listOf(
+        "https://hf-mirror.com/taobao-mnn/Qwen2.5-1.5B-Instruct-MNN/resolve/main",
+        "https://huggingface.co/taobao-mnn/Qwen2.5-1.5B-Instruct-MNN/resolve/main"
+    )
+
+    /**
+     * 带镜像自动切换的下载
+     * @param mirrors 镜像 URL 列表
+     * @param file 文件名
+     * @param destFile 目标文件
+     * @return 成功返回使用的 URL，失败返回 null
+     */
+    private suspend fun downloadWithMirrorFallback(
+        mirrors: List<String>,
+        file: String,
+        destFile: File
+    ): String? {
+        val tempFile = File(destFile.parent, "${destFile.name}.tmp")
+
+        for ((index, mirror) in mirrors.withIndex()) {
+            val url = "$mirror/$file"
+            try {
+                Log.i(TAG, "尝试镜像 ${index + 1}/${mirrors.size}: $url")
+
+                val request = Request.Builder().url(url).build()
+                val response = client.newCall(request).execute()
+
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "镜像 ${index + 1} 返回 HTTP ${response.code}，切换下一个")
+                    continue
+                }
+
+                val body = response.body ?: continue
+
+                body.byteStream().use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            if (!coroutineContext.isActive) {
+                                tempFile.delete()
+                                return null
+                            }
+                            output.write(buffer, 0, bytesRead)
+                        }
+                    }
+                }
+
+                if (destFile.exists()) destFile.delete()
+                if (!tempFile.renameTo(destFile)) {
+                    tempFile.delete()
+                    continue
+                }
+
+                Log.i(TAG, "下载成功 (镜像 ${index + 1}): $file (${destFile.length()} bytes)")
+                return url
+
+            } catch (e: Exception) {
+                Log.w(TAG, "镜像 ${index + 1} 失败: ${e.message}，切换下一个")
+                tempFile.delete()
+            }
+        }
+
+        return null
+    }
+
     // ==================== Zipformer 语音模型下载 ====================
 
     /**
@@ -96,57 +175,15 @@ class ModelDownloadManager(private val context: Context) {
                     continue
                 }
 
-                val url = ModelRegistry.getZipformerFileUrl(file)
-                Log.i(TAG, "Downloading Zipformer file: $url")
-
-                val request = Request.Builder().url(url).build()
-                val response = client.newCall(request).execute()
-
-                if (!response.isSuccessful) {
+                // 多镜像下载
+                val result = downloadWithMirrorFallback(zipformerMirrors, file, destFile)
+                if (result == null) {
                     return@withContext Result.failure(
-                        Exception("HTTP ${response.code} for $file")
+                        Exception("所有镜像均下载失败: $file")
                     )
                 }
 
-                val body = response.body
-                    ?: return@withContext Result.failure(Exception("Empty response for $file"))
-
-                val fileSize = body.contentLength().takeIf { it > 0 } ?: 0L
-                totalBytes += fileSize
-
-                val tempFile = File(zipformerDir, "$localName.tmp")
-                var fileDownloaded = 0L
-                body.byteStream().use { input ->
-                    FileOutputStream(tempFile).use { output ->
-                        val buffer = ByteArray(BUFFER_SIZE)
-                        var bytesRead: Int
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            if (!isActive) {
-                                tempFile.delete()
-                                return@withContext Result.failure(Exception("Download cancelled"))
-                            }
-                            output.write(buffer, 0, bytesRead)
-                            fileDownloaded += bytesRead
-                        }
-                    }
-                }
-
-                downloadedBytes += fileDownloaded
-
-                if (destFile.exists()) destFile.delete()
-                if (!tempFile.renameTo(destFile)) {
-                    tempFile.delete()
-                    return@withContext Result.failure(Exception("Failed to rename $localName"))
-                }
-
-                completedFiles++
-                Log.i(TAG, "Zipformer file downloaded: $localName (${destFile.length()} bytes)")
-                val percent = if (totalBytes > 0) {
-                    (downloadedBytes * 100 / totalBytes).toInt()
-                } else {
-                    (completedFiles * 100 / totalFiles)
-                }
-                onProgress?.invoke(localName, percent.coerceIn(0, 100))
+                downloadedBytes += destFile.length()
             }
 
             modelManager.markInstalled("sherpa-zipformer", ModelInfo.ModelType.VOICE)
@@ -194,42 +231,12 @@ class ModelDownloadManager(private val context: Context) {
                     continue
                 }
 
-                val url = ModelRegistry.getMnnFileUrl(file)
-                Log.i(TAG, "Downloading MNN file: $url")
-
-                val request = Request.Builder().url(url).build()
-                val response = client.newCall(request).execute()
-
-                if (!response.isSuccessful) {
+                // 多镜像下载
+                val result = downloadWithMirrorFallback(mnnMirrors, file, destFile)
+                if (result == null) {
                     return@withContext Result.failure(
-                        Exception("HTTP ${response.code} for $file")
+                        Exception("所有镜像均下载失败: $file")
                     )
-                }
-
-                val body = response.body
-                    ?: return@withContext Result.failure(Exception("Empty response for $file"))
-
-                val tempFile = File(modelDir, "$file.tmp")
-                var fileDownloaded = 0L
-                body.byteStream().use { input ->
-                    FileOutputStream(tempFile).use { output ->
-                        val buffer = ByteArray(BUFFER_SIZE)
-                        var bytesRead: Int
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            if (!isActive) {
-                                tempFile.delete()
-                                return@withContext Result.failure(Exception("下载已取消"))
-                            }
-                            output.write(buffer, 0, bytesRead)
-                            fileDownloaded += bytesRead
-                        }
-                    }
-                }
-
-                if (destFile.exists()) destFile.delete()
-                if (!tempFile.renameTo(destFile)) {
-                    tempFile.delete()
-                    return@withContext Result.failure(Exception("重命名失败: $file"))
                 }
 
                 completedFiles++
