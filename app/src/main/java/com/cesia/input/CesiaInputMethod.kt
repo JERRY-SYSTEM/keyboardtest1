@@ -3743,42 +3743,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                 } else if (isAsciiMode) {
                     ic?.commitText(" ", 1)
-                } else if (composing && hasCands) {
-                    Log.d("Cesia", "空格选词: composing=true hasCands=true composingText='${rimeEngine.composingText}' cands=${rimeEngine.candidates.size}")
-                    // 中英混输：如果 composing 文本只包含小写字母和空格（无拼音分隔符），认为是英文输入
-                    val composingText = rimeEngine.composingText
-                    val isPureEnglish = composingText.isNotEmpty() && composingText.all { it in 'a'..'z' || it == ' ' }
-                    if (isPureEnglish) {
-                        // 英文输入：直接上屏 composing 文本（去掉空格）
-                        val englishText = composingText.replace(" ", "")
-                        rimeEngine.clear()
-                        ic?.commitText(englishText, 1)
-                        ic?.commitText(" ", 1)
-                    } else {
+                } else {
+                    // 全键盘中文模式：参照 T9 空格键逻辑，直接检查 candidates
+                    val cands = rimeEngine.candidates
+                    if (cands.isNotEmpty()) {
+                        // 有候选词：选择首选上屏
                         val selected = rimeEngine.selectCandidate(0)
-                        Log.d("Cesia", "空格选词: selectCandidate(0)='$selected'")
                         if (selected.isNotEmpty()) {
                             ic?.commitText(selected, 1)
                         } else {
-                            Log.w("Cesia", "空格选词失败: selectCandidate(0) 返回空")
-                            commitAndClear(); ic?.commitText(" ", 1)
+                            ic?.commitText(" ", 1)
                         }
-                    }
-                } else if (composing) {
-                    Log.d("Cesia", "空格-有composing但无候选: composingText='${rimeEngine.composingText}'")
-                    // composing 但没有候选词，可能是英文输入
-                    val composingText = rimeEngine.composingText
-                    val isPureEnglish = composingText.isNotEmpty() && composingText.all { it in 'a'..'z' || it == ' ' }
-                    if (isPureEnglish) {
-                        val englishText = composingText.replace(" ", "")
-                        rimeEngine.clear()
-                        ic?.commitText(englishText, 1)
-                        ic?.commitText(" ", 1)
-                    } else {
+                    } else if (composing) {
+                        // composing 但无候选：上屏拼音原文 + 空格
                         commitAndClear(); ic?.commitText(" ", 1)
+                    } else {
+                        ic?.commitText(" ", 1)
                     }
-                } else {
-                    ic?.commitText(" ", 1)
                 }
                 if (keyboardMode != KeyboardMode.NUMBER) updateCandidateBar()
             }
