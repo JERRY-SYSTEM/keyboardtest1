@@ -103,15 +103,11 @@ class AIEngine(private val context: Context) {
 
     /**
      * 构建润色 prompt（本地 MNN 格式）
-     * 注意：1.5B 模型指令遵循能力弱，prompt 必须极简
-     * 不使用 system prompt 拼接，直接用明确的输入输出格式
+     * 1.5B 模型指令遵循力弱，prompt 极简化为一句
+     * 历史验证版本：只输出${instruction}结果，不解释不重复：${text}\n
      */
     private fun buildPolishPrompt(text: String, instruction: String): String {
-        // 获取用户自定义 prompt 中的核心指令（取第一行）
-        val systemPrompt = getPolishSystemPrompt()
-        val firstLine = systemPrompt.lines().firstOrNull()?.trim() ?: "请润色以下文本"
-        // 极简格式：指令 + 输入 + 明确输出标记
-        return "$firstLine\n\n输入：${text}\n\n输出："
+        return "只输出${instruction}结果，不解释不重复：${text}\n"
     }
 
     // ==================== 通用生成 API ====================

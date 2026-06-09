@@ -2368,20 +2368,24 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             ?: LocalModeManager.RunMode.CLOUD_FREE.name
         val mode = try { LocalModeManager.RunMode.valueOf(modeName) }
             catch (_: Exception) { LocalModeManager.RunMode.CLOUD_FREE }
+        Log.d("Cesia", "polishRecognizedText: text='${text.take(50)}' mode=$mode")
 
         val useLocalPolish = when (mode) {
-            LocalModeManager.RunMode.LOCAL -> modelManager.hasAiModel() // 本地模式：有 Qwen 才用本地
+            LocalModeManager.RunMode.LOCAL -> modelManager.hasAiModel()
             LocalModeManager.RunMode.CLOUD_FREE, LocalModeManager.RunMode.CLOUD_PAID -> {
-                // 云端模式：始终使用云端 API 润色
                 false
             }
         }
+        Log.d("Cesia", "polishRecognizedText: useLocalPolish=$useLocalPolish, typelessEngine=${typelessEngine != null}, polishService=${typelessEngine?.getPolishService() != null}")
 
         if (useLocalPolish) {
+            Log.d("Cesia", "polishRecognizedText: 走本地润色")
             polishWithLocalAi(text)
         } else {
             // 云端润色（OpenRouter）
+            Log.d("Cesia", "polishRecognizedText: 走云端润色")
             typelessEngine?.polishTextAsync(text) { finalText ->
+                Log.d("Cesia", "polishRecognizedText: 云端润色回调 finalText='${finalText.take(50)}'")
                 isProcessingResult = false
                 currentInputConnection?.commitText(finalText, 1)
                 val duration = if (voiceStartTime > 0) System.currentTimeMillis() - voiceStartTime else 0

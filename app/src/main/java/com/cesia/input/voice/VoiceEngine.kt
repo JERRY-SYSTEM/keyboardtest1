@@ -427,7 +427,8 @@ class VoiceEngine(private val context: Context) {
                         Log.i(TAG, "recordStreaming: 静音超时触发伪端点, 累积='${accumulatedText}'")
                         endpointCount++
                         // 静音超时：把当前已确认的文本发出去
-                        onSegmentResult(accumulatedText.toString(), false)
+                        val converted = convertChineseDigitsToArabic(accumulatedText.toString())
+                        onSegmentResult(converted, false)
                         sherpaEngine.resetStream(onlineRec, stream)
                         lastResult = ""
                         lastResetTime = System.currentTimeMillis()
@@ -506,7 +507,8 @@ class VoiceEngine(private val context: Context) {
                     lastResetTime = System.currentTimeMillis()  // 记录 reset 时间
 
                     if (accumulatedText.isNotEmpty()) {
-                        onSegmentResult(accumulatedText.toString(), false)
+                        val converted = convertChineseDigitsToArabic(accumulatedText.toString())
+                        onSegmentResult(converted, false)
                     }
                 }
             }
@@ -528,7 +530,9 @@ class VoiceEngine(private val context: Context) {
 
             val totalText = accumulatedText.toString()
             if (totalText.isNotEmpty()) {
-                onSegmentResult(totalText, true)
+                // 中文数字转阿拉伯数字（模型常把数字输出为汉字）
+                val converted = convertChineseDigitsToArabic(totalText)
+                onSegmentResult(converted, true)
             }
         } catch (e: Exception) {
             Log.e(TAG, "recordStreaming error: ${e.message}", e)
@@ -770,6 +774,97 @@ class VoiceEngine(private val context: Context) {
             Log.i(TAG, "releaseRecorder: AudioRecord released")
         } catch (e: Exception) {
             Log.w(TAG, "releaseRecorder: ${e.message}")
+        }
+    }
+
+    /**
+     * 中文数字转阿拉伯数字
+     * 将识别结果中的中文数字（一二三四五六七八九十百千万亿）转换为阿拉伯数字
+     * 例如："今天花了三百二十五元" → "今天花了325元"
+     */
+    private fun convertChineseDigitsToArabic(text: String): String {
+        val chineseDigits: Map<Char, Long> = mapOf(
+            '零' to 0L, '一' to 1L, '二' to 2L, '三' to 3L, '四' to 4L,
+            '五' to 5L, '六' to 6L, '七' to 7L, '八' to 8L, '九' to 9L,
+            '两' to 2L, '俩' to 2L, '仨' to 3L
+        )
+        val units: Map<Char, Long> = mapOf(
+            '十' to 10L, '百' to 100L, '千' to 1000L, '万' to 10000L, '亿' to 100000000L
+        )
+
+        val result = StringBuilder()
+        var i = 0
+        val chars = text.toCharArray()
+
+        while (i < chars.size) {
+            val c = chars[i]
+            if (c in chineseDigits || c in units) {
+                // 收集连续的数字片段
+                val numStart = i
+                var numEnd = i
+                while (numEnd < chars.size && (chars[numEnd] in chineseDigits || chars[numEnd] in units)) {
+                    numEnd++
+                }
+                val chineseNumStr = text.substring(numStart, numEnd)
+                val arabicValue = parseChineseNumber(chineseNumStr, chineseDigits, units)
+                if (arabicValue != null) {
+                    result.append(arabicValue)
+                } else {
+                    // 转换失败，保留原文
+                    result.append(chineseNumStr)
+                }
+                i = numEnd
+            } else {
+                result.append(c)
+                i++
+            }
+        }
+        return result.toString()
+    }
+
+    /**
+     * 解析中文数字字符串为 Long 值
+     * 支持：零-九、十、百、千、万、亿
+     */
+    private fun parseChineseNumber(s: String, digits: Map<Char, Long>, units: Map<Char, Long>): Long? {
+        if (s.isEmpty()) return null
+        // 单个数字
+        if (s.length == 1) {
+            val d = digits[s[0]]
+            if (d != null) return d
+            if (s[0] == '十') return 10L
+            return null
+        }
+        try {
+            var result = 0L
+            var current = 0L
+            var hasDigit = false
+            for (c in s) {
+                val d = digits[c]
+                if (d != null) {
+                    current = d
+                    hasDigit = true
+                } else {
+                    val unit = units[c] ?: return null
+                    if (unit == 10000L || unit == 100000000L) {
+                        // 万/亿：前面的累加值乘以单位
+                        if (current == 0L && !hasDigit) current = 1L
+                        result = (result + current) * unit
+                        current = 0L
+                        hasDigit = false
+                    } else {
+                        // 十/百/千：当前数字乘以单位
+                        if (current == 0L) current = 1L
+                        result += current * unit
+                        current = 0L
+                        hasDigit = false
+                    }
+                }
+            }
+            result += current
+            return result
+        } catch (_: Exception) {
+            return null
         }
     }
 

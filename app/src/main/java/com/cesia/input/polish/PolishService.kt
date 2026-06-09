@@ -42,6 +42,7 @@ class PolishService(
 
     /** 同步调用润色 API */
     suspend fun polishText(text: String): PolishResult = withContext(Dispatchers.IO) {
+        Log.d("PolishService", "polishText 调用: text='${text.take(50)}' apiUrl='$apiUrl' model='$_modelId' apiKey=${if (_apiKey.isNullOrEmpty()) "未配置" else "已配置(${_apiKey!!.take(8)}...)"}")
         if (text.isBlank() || text.length < 2) {
             return@withContext PolishResult.EmptyInput
         }
