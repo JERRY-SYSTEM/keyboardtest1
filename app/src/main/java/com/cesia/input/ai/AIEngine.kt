@@ -88,8 +88,12 @@ class AIEngine(private val context: Context) {
             if (text.isBlank()) return@withContext ""
 
             try {
+                // 重置对话历史，避免上下文污染导致重复
+                mnnEngine.nativeReset()
                 val prompt = buildPolishPrompt(text, instruction)
+                Log.d(TAG, "Polish prompt: ${prompt.take(200)}")
                 val result = mnnEngine.nativeGenerate(prompt, DEFAULT_MAX_TOKENS)
+                Log.d(TAG, "Polish result: ${result.take(200)}")
                 result.ifBlank { null }
             } catch (e: Exception) {
                 Log.e(TAG, "Polish error", e)
