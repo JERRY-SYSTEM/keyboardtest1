@@ -105,7 +105,9 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
 
     try {
         std::ostringstream outputStream;
-        g_llm->response(promptStr, &outputStream, nullptr, maxTokens);
+        // 配置生成参数：抑制重复
+        std::string genConfig = R"({"repetition_penalty": 1.15})";
+        g_llm->response(promptStr, &outputStream, (char*)genConfig.c_str(), maxTokens);
 
         auto context = g_llm->getContext();
         if (context->status == LlmStatus::INTERNAL_ERROR) {
@@ -160,9 +162,10 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerateStreaming(
     }
 
     try {
-        // 使用 response 一次性生成（流式需要更复杂的实现，先用同步方式）
+        // 使用 response 一次性生成
         std::ostringstream outputStream;
-        g_llm->response(promptStr, &outputStream, nullptr, maxTokens);
+        std::string genConfig = R"({"repetition_penalty": 1.15})";
+        g_llm->response(promptStr, &outputStream, (char*)genConfig.c_str(), maxTokens);
 
         auto context = g_llm->getContext();
         if (context->status == LlmStatus::INTERNAL_ERROR) {

@@ -262,9 +262,21 @@ class TypelessEngine(
                 val finalText = when (result) {
                     is PolishService.PolishResult.Success -> {
                         val cleaned = cleanPolishedText(result.polishedText)
+                        log("✨ 云端润色: 原文='${text.take(80)}' → API返回='${result.polishedText.take(80)}' → 清理后='${cleaned.take(80)}'")
                         if (cleaned.isNotEmpty()) cleaned else text
                     }
-                    else -> text
+                    is PolishService.PolishResult.Error -> {
+                        log("⚠️ 云端润色失败: ${result.message}，使用原文")
+                        text
+                    }
+                    is PolishService.PolishResult.EmptyInput -> {
+                        log("⚠️ 云端润色: 输入为空")
+                        text
+                    }
+                    null -> {
+                        log("⚠️ 云端润色: 服务不可用，使用原文")
+                        text
+                    }
                 }
                 withContext(Dispatchers.Main) {
                     callback(finalText)

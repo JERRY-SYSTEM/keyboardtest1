@@ -129,7 +129,7 @@ class PolishService(
             .addHeader("X-Title", "Cesia Input Method")
             .build()
 
-        Log.d("PolishService", "OpenRouter 请求 [$model]: ${text.take(50)}...")
+        Log.d("PolishService", "OpenRouter 请求 [$model]: text='${text.take(80)}' systemPrompt='${systemPrompt.take(80)}'...")
 
         return try {
             client.newCall(request).execute().use { response ->
@@ -142,7 +142,7 @@ class PolishService(
                 val respBody = response.body?.string()
                     ?: return PolishResult.Error("响应为空")
 
-                Log.d("PolishService", "OpenRouter 响应 [$model]: ${respBody.take(200)}")
+                Log.d("PolishService", "OpenRouter 完整响应 [$model]: $respBody")
 
                 val respJson = JSONObject(respBody)
                 val choices = respJson.optJSONArray("choices")
@@ -153,6 +153,7 @@ class PolishService(
                         .trim()
 
                     if (content.isNotEmpty()) {
+                        Log.d("PolishService", "OpenRouter 润色结果 [$model]: '$content'")
                         return PolishResult.Success(text, content)
                     }
                 }
@@ -160,6 +161,7 @@ class PolishService(
                 // 尝试其他格式
                 val content = respJson.optString("content", "")
                 if (content.isNotEmpty()) {
+                    Log.d("PolishService", "OpenRouter 润色结果(alt) [$model]: '$content'")
                     return PolishResult.Success(text, content)
                 }
 
