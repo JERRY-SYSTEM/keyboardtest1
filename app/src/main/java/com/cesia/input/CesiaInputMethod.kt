@@ -2942,7 +2942,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             keyboardView.invalidateKey(key)
             currentLongPressKey = null
         }.also {
-            longPressHandler.postDelayed(it, 500)
+            longPressHandler.postDelayed(it, 600)
         }
     }
 
@@ -2995,7 +2995,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
             showClipboardManagerPopup()
         }.also {
-            sendKeyHandler.postDelayed(it, 500)
+            sendKeyHandler.postDelayed(it, 600)
         }
     }
 
@@ -3031,7 +3031,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
             showMagicHistoryPopup()
         }.also {
-            magicBookHandler.postDelayed(it, 500)
+            magicBookHandler.postDelayed(it, 600)
         }
     }
 
@@ -3689,8 +3689,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 if (keyboardMode == KeyboardMode.NUMBER) {
                     handleNumberKeyboardKey(primaryCode)
                 } else {
-                    // 全键盘模式的数字键原有逻辑
-                    if (!isAsciiMode && composing && hasCands) {
+                    // 全键盘模式的数字键逻辑
+                    // 如果当前 composing 是纯英文（如输入t后按9），直接上屏英文+数字
+                    val composingText = rimeEngine.composingText
+                    val isPureEnglish = composing && composingText.isNotEmpty() &&
+                        composingText.all { it in 'a'..'z' }
+                    if (isPureEnglish) {
+                        // 英文输入中按数字：上屏英文原文 + 数字，无空格
+                        rimeEngine.clear()
+                        ic?.commitText(composingText + primaryCode.toChar().toString(), 1)
+                        autoExitShift()
+                    } else if (!isAsciiMode && composing && hasCands) {
                         val index = if (primaryCode == 48) 9 else (primaryCode - 49)
                         if (index < cands.size) {
                             val selected = rimeEngine.selectCandidate(index)
@@ -3887,25 +3896,36 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             // ======================== 其他按键（标点等）=======================
             else -> {
-                if (!isAsciiMode && composing) commitAndClear()
-                // 中文模式下，逗号/句号映射为中文标点
-                val adjustedCode = if (!isAsciiMode) {
-                    when (primaryCode) {
-                        44 -> 65292   // , → ，
-                        46 -> 12290   // . → 。
-                        47 -> 65311   // / → ？
-                        else -> primaryCode
-                    }
-                } else primaryCode
-                val c = adjustedCode.toChar()
-                if (c != '\u0000') { ic?.commitText(c.toString(), 1) }
-                // 英文模式下符号直接上屏，不清空 Rime 状态
-                if (isAsciiMode) {
-                    // 保持英文模式，不清空任何状态
-                } else {
-                    // 标点上屏后清空候选栏和状态栏
+                // 如果当前 composing 是纯英文（如输入llama后按.），直接上屏英文+标点
+                val composingText = rimeEngine.composingText
+                val isPureEnglish = !isAsciiMode && composing && composingText.isNotEmpty() &&
+                    composingText.all { it in 'a'..'z' }
+                if (isPureEnglish) {
+                    // 英文输入中按标点：上屏英文原文 + 标点，无空格
+                    val punct = primaryCode.toChar().toString()
                     rimeEngine.clear()
-                    if (keyboardMode == KeyboardMode.NUMBER) t9InputBuffer.clear()
+                    ic?.commitText(composingText + punct, 1)
+                } else {
+                    if (!isAsciiMode && composing) commitAndClear()
+                    // 中文模式下，逗号/句号映射为中文标点
+                    val adjustedCode = if (!isAsciiMode) {
+                        when (primaryCode) {
+                            44 -> 65292   // , → ，
+                            46 -> 12290   // . → 。
+                            47 -> 65311   // / → ？
+                            else -> primaryCode
+                        }
+                    } else primaryCode
+                    val c = adjustedCode.toChar()
+                    if (c != '\u0000') { ic?.commitText(c.toString(), 1) }
+                    // 英文模式下符号直接上屏，不清空 Rime 状态
+                    if (isAsciiMode) {
+                        // 保持英文模式，不清空任何状态
+                    } else {
+                        // 标点上屏后清空候选栏和状态栏
+                        rimeEngine.clear()
+                        if (keyboardMode == KeyboardMode.NUMBER) t9InputBuffer.clear()
+                    }
                 }
                 updateCandidateBar()
             }
@@ -3954,7 +3974,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                     currentLongPressKey = null
                 }
-                Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 500)
+                Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 600)
             }
         }
         // popupCharacters 长按检测（功能键不注册，避免与功能长按冲突）
@@ -3973,7 +3993,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     handleShiftLongPress()
                 }
             }.also {
-                Handler(Looper.getMainLooper()).postDelayed(it, 500)
+                Handler(Looper.getMainLooper()).postDelayed(it, 600)
             }
         }
         // 剪贴板键长按：-108=粘贴，-109=剪切
@@ -4019,7 +4039,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     sendCtrlKey(KeyEvent.KEYCODE_Z)
                 }
             }.also {
-                Handler(Looper.getMainLooper()).postDelayed(it, 500)
+                Handler(Looper.getMainLooper()).postDelayed(it, 600)
             }
         }
         if (primaryCode == -200) {
