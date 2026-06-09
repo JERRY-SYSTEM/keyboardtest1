@@ -3628,6 +3628,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val hasCands = rimeEngine.hasCandidates
         val cands = rimeEngine.candidates
 
+        // 空格键调试日志
+        if (primaryCode == 32 && keyboardMode != KeyboardMode.NUMBER && !isAsciiMode) {
+            Log.d("Cesia", "空格键: composing=$composing hasCands=$hasCands cands=${cands.size} isAscii=$isAsciiMode mode=$keyboardMode")
+        }
 
         when (primaryCode) {
 
@@ -3740,6 +3744,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 } else if (isAsciiMode) {
                     ic?.commitText(" ", 1)
                 } else if (composing && hasCands) {
+                    Log.d("Cesia", "空格选词: composing=true hasCands=true composingText='${rimeEngine.composingText}' cands=${rimeEngine.candidates.size}")
                     // 中英混输：如果 composing 文本只包含小写字母和空格（无拼音分隔符），认为是英文输入
                     val composingText = rimeEngine.composingText
                     val isPureEnglish = composingText.isNotEmpty() && composingText.all { it in 'a'..'z' || it == ' ' }
@@ -3751,11 +3756,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         ic?.commitText(" ", 1)
                     } else {
                         val selected = rimeEngine.selectCandidate(0)
+                        Log.d("Cesia", "空格选词: selectCandidate(0)='$selected'")
                         if (selected.isNotEmpty()) {
                             ic?.commitText(selected, 1)
-                        } else { commitAndClear(); ic?.commitText(" ", 1) }
+                        } else {
+                            Log.w("Cesia", "空格选词失败: selectCandidate(0) 返回空")
+                            commitAndClear(); ic?.commitText(" ", 1)
+                        }
                     }
                 } else if (composing) {
+                    Log.d("Cesia", "空格-有composing但无候选: composingText='${rimeEngine.composingText}'")
                     // composing 但没有候选词，可能是英文输入
                     val composingText = rimeEngine.composingText
                     val isPureEnglish = composingText.isNotEmpty() && composingText.all { it in 'a'..'z' || it == ' ' }
