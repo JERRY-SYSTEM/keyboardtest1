@@ -107,7 +107,9 @@ class AIEngine(private val context: Context) {
      * 历史验证版本：只输出${instruction}结果，不解释不重复：${text}\n
      */
     private fun buildPolishPrompt(text: String, instruction: String): String {
-        return "只输出${instruction}结果，不解释不重复：${text}\n"
+        // 明确告诉模型：只修改原文的错别字、口语、语序，加入标点
+        // 不添加新内容，不减少核心信息，不续写，不解释
+        return "将以下口语文字修改为通顺的书面文字，只修正错别字、口语和语序，加入标点，不添加新内容，不减少信息，不续写，不解释。只输出修改后的文字：${text}\n"
     }
 
     // ==================== 通用生成 API ====================
