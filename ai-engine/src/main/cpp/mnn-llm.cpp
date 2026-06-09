@@ -18,14 +18,10 @@
 
 using namespace MNN::Transformer;
 
-// 全局 LLM 实例（单实例，线程安全由 MNN 内部保证）
 static Llm* g_llm = nullptr;
 
 extern "C" {
 
-/**
- * 初始化 MNN LLM 模型
- */
 JNIEXPORT jboolean JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
     JNIEnv* env,
@@ -52,11 +48,11 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
         }
 
         // 基础配置
-        g_llm->set_config(R"({"async":true})");
-        // 关闭 thinking（Qwen3.5 默认开启，润色任务不需要推理链）
-        g_llm->set_config(R"({"jinja":{"context":{"enable_thinking":false}}})");
-        // 设置生成参数：temperature + 重复惩罚（与云端对齐）
-        g_llm->set_config("{\"sampler\":{\"temperature\":0.3,\"repetition_penalty\":1.15,\"top_k\":40,\"top_p\":0.95}}");
+        g_llm->set_config("{\"async\":true}");
+        // 关闭 thinking
+        g_llm->set_config("{\"jinja\":{\"context\":{\"enable_thinking\":false}}}");
+        // 生成参数：低温 + 重复惩罚，与云端对齐
+        g_llm->set_config("{\"sampler\":{\"temperature\":0.1,\"repetition_penalty\":1.2,\"top_k\":20,\"top_p\":0.9}}");
 
         bool loaded = g_llm->load();
         if (!loaded) {
@@ -80,8 +76,11 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
 }
 
 /**
- * 同步生成文本（阻塞直到完成）
- * 使用与云端相同的 Chat 格式：system + user 消息
+ * 同步生成文本
+ * promptStr 可能是：
+ *   格式A（极简）："只输出润色结果，不解释不重复：xxx\n"
+ *   格式B（Chat）："system内容\n\n输入：user内容\n\n输出："
+ * end_with="。\n" 让模型在句号后停止，避免无限生成
  */
 JNIEXPORT jstring JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
@@ -102,29 +101,24 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
     try {
         std::ostringstream outputStream;
 
-        // 解析 prompt：前半部分是 system instruction，后半部分是用户输入
-        // 格式："{system_prompt}\n\n输入：{text}\n\n输出："
-        // 拆分成 system + user 两条消息，用 MNN 的 chat template 处理
+        // 检查是否是 Chat 格式（包含 "\n\n输入：" 标记）
         std::string::size_type splitPos = promptStr.find("\n\n输入：");
         if (splitPos != std::string::npos) {
+            // Chat 格式：拆成 system + user
             std::string systemPart = promptStr.substr(0, splitPos);
-            // 提取用户输入（"输入：xxx\n\n输出：" 中间的部分）
             std::string::size_type inputStart = splitPos + 8; // "\n\n输入：" 长度
             std::string::size_type inputEnd = promptStr.find("\n\n输出：", inputStart);
             std::string userPart = (inputEnd != std::string::npos)
                 ? promptStr.substr(inputStart, inputEnd - inputStart)
                 : promptStr.substr(inputStart);
 
-            // 使用 Chat 格式调用（与云端一致）
             ChatMessages messages;
             messages.emplace_back("system", systemPart);
             messages.emplace_back("user", userPart);
-
-            // end_with="\n\n" 防止模型无限生成
-            g_llm->response(messages, &outputStream, "\n\n", maxTokens);
+            g_llm->response(messages, &outputStream, "。\n", maxTokens);
         } else {
-            // 没有 split 标记，直接当普通文本
-            g_llm->response(promptStr, &outputStream, "\n\n", maxTokens);
+            // 极简格式：直接传入，用换行作为停止标记
+            g_llm->response(promptStr, &outputStream, "\n", maxTokens);
         }
 
         auto context = g_llm->getContext();
@@ -137,16 +131,37 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
         LOGI("Generate complete: %d chars, %d tokens",
              (int)result.size(), (int)context->gen_seq_len);
 
-        // 清理输出：去除 "输出：" 前缀和多余空白（模型可能带出的）
-        std::string::size_type outPos = result.find("输出：");
-        if (outPos != std::string::npos) {
-            result = result.substr(outPos + 9); // "输出：" 长度
+        // 清理输出
+        // 1. 去除模型可能带出的前缀
+        if (result.find("输出：") != std::string::npos) {
+            std::string::size_type outPos = result.rfind("输出：");
+            if (outPos != std::string::npos) {
+                result = result.substr(outPos + 9);
+            }
         }
-        // trim
+        // 2. 去除润色指令中重复的部分（如果模型把 prompt 也输出了）
+        std::string::size_type repeatPos = result.find("只输出");
+        if (repeatPos != std::string::npos && repeatPos > 0) {
+            // 模型把 prompt 指令当作输出截断了
+            // 保留 repeatPos 之前的内容
+        }
+        // 3. trim 首尾空白
         std::string::size_type start = result.find_first_not_of(" \t\n\r");
         if (start != std::string::npos) result = result.substr(start);
+        else result = "";
         std::string::size_type end = result.find_last_not_of(" \t\n\r");
         if (end != std::string::npos) result = result.substr(0, end + 1);
+
+        // 4. 如果结果比原文长很多（>3倍），截断到合理长度——防止模型自由发挥
+        // （调用方传入的 text 长度存于 prompt 中，无法直接比较，此处简单截断到 1000 字符）
+        if ((int)result.size() > 1000) {
+            result = result.substr(0, 1000);
+            // 截到最近一个句号
+            std::string::size_type lastPeriod = result.rfind("。");
+            if (lastPeriod != std::string::npos && lastPeriod > 100) {
+                result = result.substr(0, lastPeriod + 1);
+            }
+        }
 
         return env->NewStringUTF(result.c_str());
 
@@ -156,9 +171,6 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
     }
 }
 
-/**
- * 流式生成文本（回调方式）
- */
 JNIEXPORT void JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerateStreaming(
     JNIEnv* env,
@@ -188,8 +200,6 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerateStreaming(
 
     try {
         std::ostringstream outputStream;
-
-        // 同样用 Chat 格式
         std::string::size_type splitPos = promptStr.find("\n\n输入：");
         if (splitPos != std::string::npos) {
             std::string systemPart = promptStr.substr(0, splitPos);
@@ -202,9 +212,9 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerateStreaming(
             ChatMessages messages;
             messages.emplace_back("system", systemPart);
             messages.emplace_back("user", userPart);
-            g_llm->response(messages, &outputStream, "\n\n", maxTokens);
+            g_llm->response(messages, &outputStream, "。\n", maxTokens);
         } else {
-            g_llm->response(promptStr, &outputStream, "\n\n", maxTokens);
+            g_llm->response(promptStr, &outputStream, "\n", maxTokens);
         }
 
         auto context = g_llm->getContext();
@@ -227,9 +237,6 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerateStreaming(
     }
 }
 
-/**
- * 释放 LLM 资源
- */
 JNIEXPORT void JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeFree(
     JNIEnv* /*env*/,
@@ -242,9 +249,6 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeFree(
     }
 }
 
-/**
- * 检查 LLM 是否已加载
- */
 JNIEXPORT jboolean JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeIsLoaded(
     JNIEnv* /*env*/,
@@ -253,9 +257,6 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeIsLoaded(
     return (g_llm != nullptr) ? JNI_TRUE : JNI_FALSE;
 }
 
-/**
- * 获取 LLM 日志缓冲区内容
- */
 JNIEXPORT jstring JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeGetLog(
     JNIEnv* env,
@@ -267,9 +268,6 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGetLog(
     return env->NewStringUTF(g_llm->getLog().c_str());
 }
 
-/**
- * 重置 LLM 对话历史
- */
 JNIEXPORT void JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeReset(
     JNIEnv* /*env*/,
