@@ -106,6 +106,23 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
         LOGI("Generate complete: %d chars, %d tokens",
              (int)result.size(), (int)context->gen_seq_len);
 
+        // 续写检测：如果结果中出现续写标志词，截断到该位置之前
+        // 1.5B 模型常把原文中的问句当成真实问题来回答
+        const char* continuationMarkers[] = {"这是一个问题", "所以请", "请注意",
+            "首先", "其次", "最后", "总之", "如果你想", "如果你想了解", "以下是"};
+        for (const char* marker : continuationMarkers) {
+            std::string::size_type pos = result.find(marker);
+            if (pos != std::string::npos && pos > 10) {
+                result = result.substr(0, pos);
+                // trim 尾部空白
+                while (!result.empty() && (result.back() == ' ' || result.back() == '\n' || result.back() == '\t')) {
+                    result.pop_back();
+                }
+                LOGI("Truncation: removed continuation at '%s', result now %d chars", marker, (int)result.size());
+                break;
+            }
+        }
+
         return env->NewStringUTF(result.c_str());
 
     } catch (const std::exception& e) {
