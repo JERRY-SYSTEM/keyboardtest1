@@ -23,7 +23,6 @@ class AIEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "AIEngine"
-        private const val DEFAULT_MAX_TOKENS = 64  // 润色任务，64 tokens 约 100 汉字
         private const val LOCAL_POLISH_TIMEOUT_MS = 30000L  // 30 秒超时
         // 默认润色 prompt（与云端 PolishService 共用同一套）
         const val DEFAULT_POLISH_PROMPT = """你是一个文本润色与输入排版高手。请将输入的口语文字处理为通顺的书面文字，并严格执行以下规则：\n严禁删减核心信息，严禁随意扩写。仅修正错别字、口语和语序，加入标点。只输出润色排版后的纯文本。禁止解释，禁止添加任何前缀（如"润色后："）或后缀。如果用户输入的内容包含多个观点、步骤或长篇大论，请自动通过"换行分段"或使用"* "进行分点陈列。"""
@@ -90,13 +89,22 @@ class AIEngine(private val context: Context) {
             try {
                 // 重置对话历史，避免上下文污染导致重复
                 mnnEngine.nativeReset()
+
+                // 动态计算 maxTokens：原文长度 * 1.2（留 20% 余量给标点和修正），最少 32，最多 256
+                val maxTokens = (text.length * 1.2).toInt().coerceIn(32, 256)
+                Log.d(TAG, "Polish: textLen=${text.length}, maxTokens=$maxTokens")
+
                 val prompt = buildPolishPrompt(text, instruction)
                 Log.d(TAG, "Polish prompt: ${prompt.take(200)}")
+
                 // 推理前主动 GC，释放 Java 堆内存，防止 JNI 返回字符串时 OOM
                 System.gc()
-                val result = mnnEngine.nativeGenerate(prompt, DEFAULT_MAX_TOKENS)
-                Log.d(TAG, "Polish result: ${result.take(200)}")
-                result.ifBlank { null }
+                val result = mnnEngine.nativeGenerate(prompt, maxTokens)
+                Log.d(TAG, "Polish raw result: ${result.take(200)}")
+
+                val cleaned = postProcessPolishResult(text, result)
+                Log.d(TAG, "Polish cleaned: ${cleaned.take(200)}")
+                cleaned.ifBlank { null }
             } catch (e: Exception) {
                 Log.e(TAG, "Polish error", e)
                 null
@@ -104,14 +112,58 @@ class AIEngine(private val context: Context) {
         }
 
     /**
+     * 润色结果后处理：
+     * 1. 截断超过原文 110% 的部分
+     * 2. 检测并去除续写内容（模型开始回答原文问题时）
+     */
+    private fun postProcessPolishResult(original: String, raw: String): String {
+        if (raw.isBlank()) return ""
+
+        var text = raw.trim()
+
+        // 续写检测：如果结果中出现了以下模式，截断到该位置之前
+        val continuationPatterns = listOf(
+            "这是一个问题", "所以请", "请注意", "需要说明", "我来解释",
+            "我来回答", "这个问题的", "关于这个问题", "简单来说",
+            "首先，", "其次，", "最后，", "总之，", "综上，"
+        )
+        for (pattern in continuationPatterns) {
+            val idx = text.indexOf(pattern)
+            if (idx > 0) {
+                Log.d(TAG, "postProcess: 检测到续写标志 '$pattern'，截断到位置 $idx")
+                text = text.substring(0, idx).trim()
+                break
+            }
+        }
+
+        // 长度限制：不超过原文 110%
+        val maxLen = (original.length * 1.1).toInt().coerceAtLeast(original.length)
+        if (text.length > maxLen) {
+            Log.d(TAG, "postProcess: 长度超限 ${text.length} > $maxLen，截断")
+            // 在 maxLen 范围内找最后一个句子结束符
+            val truncated = text.substring(0, maxLen)
+            val lastPunct = maxOf(
+                truncated.lastIndexOf('。'),
+                truncated.lastIndexOf('？'),
+                truncated.lastIndexOf('！'),
+                truncated.lastIndexOf('，')
+            )
+            text = if (lastPunct > original.length * 0.5) {
+                truncated.substring(0, lastPunct + 1)
+            } else {
+                truncated
+            }
+        }
+
+        return text
+    }
+
+    /**
      * 构建润色 prompt（本地 MNN 格式）
-     * 1.5B 模型指令遵循力弱，prompt 极简化为一句
-     * 历史验证版本：只输出${instruction}结果，不解释不重复：${text}\n
+     * C++ 层已使用 ChatMessages（system+user 分离），这里只返回原文
      */
     private fun buildPolishPrompt(text: String, instruction: String): String {
-        // 1.5B 模型极弱，prompt 必须非常明确
-        // 关键：原文中可能有问句，但不需要回答，只修改文字本身
-        return "将以下口语文字修改为通顺的书面文字。只修正错别字、口语和语序，加入正确的标点符号。不添加任何新内容，不减少任何信息，不回答原文中的任何问题，不续写，不解释。如果原文中有问句，保留问句原样，只修改文字表达。只输出修改后的文字，不要输出任何其他内容：${text}\n"
+        return text
     }
 
     // ==================== 通用生成 API ====================

@@ -92,9 +92,14 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
     env->ReleaseStringUTFChars(prompt, promptC);
 
     try {
+        // 使用 ChatMessages 格式，让 MNN 自动应用模型的 chat template
+        // 这样 system 指令和用户输入是结构化的，模型能清晰区分
+        std::vector<MNN::Transformer::ChatMessage> messages;
+        messages.push_back({"system", "你是一个文本润色助手。将口语文字改为通顺的书面文字，只修正错别字、口语和语序，加入标点。不增加内容，不减少内容，不回答原文中的问题，不续写，不解释。只输出修改后的文字。"});
+        messages.push_back({"user", promptStr});
+
         std::ostringstream outputStream;
-        // end_with="。"：遇到句号就停止，让润色结果在句子边界处结束
-        g_llm->response(promptStr, &outputStream, "。", maxTokens);
+        g_llm->response(messages, &outputStream, "。", maxTokens);
 
         auto context = g_llm->getContext();
         if (context->status == LlmStatus::INTERNAL_ERROR) {
@@ -107,14 +112,12 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
              (int)result.size(), (int)context->gen_seq_len);
 
         // 续写检测：如果结果中出现续写标志词，截断到该位置之前
-        // 1.5B 模型常把原文中的问句当成真实问题来回答
         const char* continuationMarkers[] = {"这是一个问题", "所以请", "请注意",
             "首先", "其次", "最后", "总之", "如果你想", "如果你想了解", "以下是"};
         for (const char* marker : continuationMarkers) {
             std::string::size_type pos = result.find(marker);
             if (pos != std::string::npos && pos > 10) {
                 result = result.substr(0, pos);
-                // trim 尾部空白
                 while (!result.empty() && (result.back() == ' ' || result.back() == '\n' || result.back() == '\t')) {
                     result.pop_back();
                 }
