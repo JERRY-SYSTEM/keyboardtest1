@@ -50,10 +50,10 @@ class SimulTranslateManager(private val context: Context) {
     var onError: ((String) -> Unit)? = null
 
     /**
-     * 初始化：加载 TTS 模型
+     * 初始化：加载 TTS 引擎（使用 Android 系统 TTS，无需下载模型）
      */
-    suspend fun initialize(ttsModelDir: String, engine: AIEngine? = null): Boolean = withContext(Dispatchers.IO) {
-        Log.i(TAG, "initialize: ttsModelDir=$ttsModelDir")
+    suspend fun initialize(engine: AIEngine? = null): Boolean = withContext(Dispatchers.Main) {
+        Log.i(TAG, "initialize: 使用系统 TTS")
 
         if (!SherpaOnnxEngine.isLibraryLoaded()) {
             val err = SherpaOnnxEngine.getLibraryLoadError() ?: "未知错误"
@@ -63,16 +63,11 @@ class SimulTranslateManager(private val context: Context) {
 
         aiEngine = engine
 
-        // 加载 TTS 模型
-        val ttsOk = ttsEngine.create(
-            modelDir = ttsModelDir,
-            voiceId = 0,
-            speed = 1.0f,
-            numThreads = 2
-        )
+        // 初始化系统 TTS
+        val ttsOk = ttsEngine.create(context)
 
         if (!ttsOk) {
-            onError?.invoke("TTS 模型加载失败: $ttsModelDir")
+            onError?.invoke("TTS 引擎初始化失败，请检查系统语音引擎是否可用")
             return@withContext false
         }
 

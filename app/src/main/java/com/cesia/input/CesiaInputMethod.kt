@@ -2031,17 +2031,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 updateStatus("⚠️ Sherpa 库未加载")
                 return
             }
+            // 同传需要语音识别模型 + AI 模型（TTS 使用系统自带，无需下载）
             if (!modelManager.hasVoiceModel()) {
                 updateStatus("⚠️ 请先下载语音识别模型")
                 return
             }
             if (!modelManager.hasAiModel()) {
                 updateStatus("⚠️ 请先下载 Qwen 模型")
-                return
-            }
-            val ttsDir = getTtsModelDir()
-            if (ttsDir == null) {
-                updateStatus("⚠️ 请先下载中文语音模型（设置 → 语音）")
                 return
             }
 
@@ -2052,14 +2048,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             if (!simulTranslateManager!!.isInitialized()) {
                 voiceEngineScope.launch {
                     val ok = simulTranslateManager!!.initialize(
-                        ttsModelDir = ttsDir.absolutePath,
                         engine = aiEngine.takeIf { it.isModelLoaded() }
                     )
                     withContext(Dispatchers.Main) {
                         if (ok) {
                             startSimulTranslateRecording()
                         } else {
-                            updateStatus("⚠️ TTS 模型加载失败")
+                            updateStatus("⚠️ 同传引擎初始化失败")
                         }
                     }
                 }
@@ -2075,22 +2070,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnSimulTranslate?.text = if (active) "🔴" else "🌐"
         btnSimulTranslate?.alpha = if (active) 1.0f else 0.6f
     }
-
-    /** 获取 TTS 模型目录 */
-    private fun getTtsModelDir(): File? {
-        val ttsDir = File(filesDir, "local_models/tts")
-        if (ttsDir.exists() && ttsDir.isDirectory) {
-            val modelFile = File(ttsDir, "model.onnx")
-            val int8File = File(ttsDir, "model.int8.onnx")
-            val tokensFile = File(ttsDir, "tokens.txt")
-            if ((modelFile.exists() || int8File.exists()) && tokensFile.exists()) {
-                return ttsDir
-            }
-        }
-        return null
-    }
-
-    // ======================== 录音（根据选择的后端） ========================
 
     /**
      * 根据用户选择的识别和润色后端开始录音
@@ -4107,9 +4086,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             updateVoiceBackend()
             preloadWhisperModel()
 
-            // 同传按钮：TTS 模型已下载时显示
-            val ttsDir = getTtsModelDir()
-            btnSimulTranslate?.visibility = if (ttsDir != null) View.VISIBLE else View.GONE
+            // 同传按钮：AI 模型已加载时显示（TTS 使用系统自带）
+            btnSimulTranslate?.visibility = if (modelManager.hasAiModel()) View.VISIBLE else View.GONE
         } catch (e: Throwable) {
             Log.e("Cesia", "onStartInputView 异常(已忽略)", e)
         }

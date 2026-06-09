@@ -59,7 +59,7 @@ class ModelManager(private val context: Context) {
                 val alreadyRegistered = when (matched.type) {
                     ModelInfo.ModelType.VOICE -> installedVoiceModelId == matched.id
                     ModelInfo.ModelType.AI -> installedAiModelId == matched.id
-                    ModelInfo.ModelType.TTS -> true  // TTS 不记录 ID，始终视为已注册
+                    else -> false
                 }
                 if (!alreadyRegistered) {
                     markInstalled(matched.id, matched.type)
@@ -123,17 +123,6 @@ class ModelManager(private val context: Context) {
     /** AI 模型是否已安装 */
     fun hasAiModel(): Boolean = installedAiModelId != null && isModelInstalled(installedAiModelId!!)
 
-    /** TTS 模型是否已安装 */
-    fun hasTtsModel(): Boolean {
-        val info = ModelRegistry.getById("sherpa-tts-zh-hf-theresa") ?: return false
-        val dir = File(modelsDir, info.fileName)
-        if (!dir.exists() || !dir.isDirectory) return false
-        val modelFile = File(dir, "model.onnx")
-        val int8File = File(dir, "model.int8.onnx")
-        val tokensFile = File(dir, "tokens.txt")
-        return (modelFile.exists() || int8File.exists()) && tokensFile.exists()
-    }
-
     /** 已安装模型列表 */
     fun getInstalledModelIds(): List<String> {
         return ModelRegistry.ALL_MODELS.filter { isModelInstalled(it.id) }.map { it.id }
@@ -154,7 +143,7 @@ class ModelManager(private val context: Context) {
         when (type) {
             ModelInfo.ModelType.VOICE -> installedVoiceModelId = modelId
             ModelInfo.ModelType.AI -> installedAiModelId = modelId
-            ModelInfo.ModelType.TTS -> { /* TTS 不需要记录 ID，通过文件存在性判断 */ }
+            else -> { /* no-op */ }
         }
     }
 
