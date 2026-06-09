@@ -129,6 +129,14 @@ class SherpaTtsEngine {
 
     fun isLoaded(): Boolean = isLoaded
 
+    fun stop() {
+        try {
+            tts?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "stop: ${e.message}")
+        }
+    }
+
     fun release() {
         try {
             tts?.stop()

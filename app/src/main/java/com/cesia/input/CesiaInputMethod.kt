@@ -2047,9 +2047,32 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             if (!simulTranslateManager!!.isInitialized()) {
                 voiceEngineScope.launch {
-                    val ok = simulTranslateManager!!.initialize(
-                        engine = aiEngine
-                    )
+                    // 确保 AI 模型已加载
+                    if (!aiEngine.isModelLoaded()) {
+                        val modelFile = modelManager.getInstalledAiModelFile()
+                        if (modelFile == null) {
+                            withContext(Dispatchers.Main) {
+                                updateStatus("⚠️ AI 模型未找到，请重新下载")
+                            }
+                            return@launch
+                        }
+                        val configPath = if (modelFile.isDirectory) {
+                            java.io.File(modelFile, "config.json").absolutePath
+                        } else {
+                            modelFile.absolutePath
+                        }
+                        Log.i("Cesia", "同传：加载 AI 模型 $configPath")
+                        val loaded = aiEngine.loadLocalModel(configPath)
+                        if (!loaded) {
+                            withContext(Dispatchers.Main) {
+                                updateStatus("⚠️ AI 模型加载失败")
+                            }
+                            return@launch
+                        }
+                        Log.i("Cesia", "同传：AI 模型加载成功")
+                    }
+
+                    val ok = simulTranslateManager!!.initialize(engine = aiEngine)
                     withContext(Dispatchers.Main) {
                         if (ok) {
                             startSimulTranslateRecording()
@@ -4087,8 +4110,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             preloadWhisperModel()
             preloadAiModel()
 
-            // 同传按钮：AI 模型已加载时显示（TTS 使用系统自带）
-            btnSimulTranslate?.visibility = if (aiEngine.isModelLoaded()) View.VISIBLE else View.GONE
+            // 同传按钮：AI 模型文件已下载时显示（TTS 使用系统自带）
+            btnSimulTranslate?.visibility = if (modelManager.hasAiModel()) View.VISIBLE else View.GONE
         } catch (e: Throwable) {
             Log.e("Cesia", "onStartInputView 异常(已忽略)", e)
         }

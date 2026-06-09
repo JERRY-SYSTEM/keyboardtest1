@@ -7,15 +7,14 @@ import com.cesia.input.engine.ai.SherpaOnnxEngine
 import com.cesia.input.engine.ai.SherpaTtsEngine
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import java.io.File
 
 /**
  * 同声传译管理器
  *
- * 链路：语音输入 → SherpaOnnx 流式识别（英文）→ MNN LLM 翻译（英→中）→ SherpaOnnx TTS 播放（中文）
+ * 链路：语音输入 → SherpaOnnx 流式识别（英文）→ MNN LLM 翻译（英→中）→ 系统 TTS 播放（中文）
  *
  * 使用方式：
- * 1. initialize() 初始化（传入 TTS 模型目录）
+ * 1. initialize() 初始化（传入 AIEngine）
  * 2. start() 开始同传
  * 3. stop() 停止
  * 4. release() 释放资源
@@ -24,14 +23,16 @@ class SimulTranslateManager(private val context: Context) {
 
     companion object {
         private const val TAG = "SimulTranslate"
-        private const val TRANSLATE_DELAY_MS = 800L  // 识别稳定后等待多久开始翻译
-        private const val MIN_TEXT_LENGTH = 3         // 最少多少个字符才翻译
+        private const val TRANSLATE_DELAY_MS = 400L  // 识别稳定后等待多久开始翻译（降低延迟）
+        private const val MIN_TEXT_LENGTH = 2         // 最少多少个字符才翻译（英文短句如 "Hi"=2）
     }
 
     private val ttsEngine = SherpaTtsEngine()
     private var aiEngine: AIEngine? = null
 
+    @Volatile
     private var isInitialized = false
+    @Volatile
     private var isRunning = false
 
     // 翻译队列：识别结果 → 翻译 → TTS 串行执行
@@ -50,30 +51,42 @@ class SimulTranslateManager(private val context: Context) {
     var onError: ((String) -> Unit)? = null
 
     /**
-     * 初始化：加载 TTS 引擎（使用 Android 系统 TTS，无需下载模型）
+     * 初始化：TTS + AI 引擎
+     * 注意：TTS 初始化是异步的，在 IO 线程等待回调完成
      */
-    suspend fun initialize(engine: AIEngine? = null): Boolean = withContext(Dispatchers.Main) {
-        Log.i(TAG, "initialize: 使用系统 TTS")
+    suspend fun initialize(engine: AIEngine? = null): Boolean = withContext(Dispatchers.IO) {
+        Log.i(TAG, "initialize: 开始初始化同传引擎")
 
         if (!SherpaOnnxEngine.isLibraryLoaded()) {
             val err = SherpaOnnxEngine.getLibraryLoadError() ?: "未知错误"
-            onError?.invoke("Sherpa-onnx 库未加载: $err")
+            Log.e(TAG, "initialize: Sherpa-onnx 库未加载: $err")
+            onError?.invoke("语音引擎库未加载: $err")
             return@withContext false
         }
 
         aiEngine = engine
 
-        // 初始化系统 TTS
+        // 检查 AI 模型是否已加载
+        if (engine == null || !engine.isModelLoaded()) {
+            Log.e(TAG, "initialize: AI 模型未加载")
+            onError?.invoke("AI 模型未加载，请先下载并加载 AI 模型")
+            return@withContext false
+        }
+
+        // 初始化系统 TTS（在 IO 线程等待回调）
         val ttsOk = ttsEngine.create(context)
 
         if (!ttsOk) {
-            onError?.invoke("TTS 引擎初始化失败，请检查系统语音引擎是否可用")
+            Log.e(TAG, "initialize: TTS 引擎初始化失败")
+            onError?.invoke("语音播放引擎初始化失败，请检查系统语音引擎是否可用")
             return@withContext false
         }
 
         isInitialized = true
-        onStatusUpdate?.invoke("同传就绪")
-        Log.i(TAG, "initialize: 同传初始化完成")
+        Log.i(TAG, "initialize: 同传初始化完成 ✓")
+        withContext(Dispatchers.Main) {
+            onStatusUpdate?.invoke("同传就绪")
+        }
         true
     }
 
@@ -82,6 +95,7 @@ class SimulTranslateManager(private val context: Context) {
      */
     fun start() {
         if (!isInitialized) {
+            Log.e(TAG, "start: 同传未初始化")
             onError?.invoke("同传未初始化，请先调用 initialize()")
             return
         }
@@ -96,17 +110,20 @@ class SimulTranslateManager(private val context: Context) {
 
         // 启动翻译消费协程
         translateJob = scope.launch(Dispatchers.IO) {
+            Log.i(TAG, "translateJob: 翻译消费协程启动")
             for (text in translateChannel) {
                 translateAndPlay(text)
             }
+            Log.i(TAG, "translateJob: 翻译消费协程结束")
         }
 
+        Log.i(TAG, "start: 同传开始 ✓")
         onStatusUpdate?.invoke("同传中...")
-        Log.i(TAG, "start: 同传开始")
     }
 
     /**
      * 处理识别结果（从 VoiceEngine 回调）
+     * 每次识别到文本都会调用（包括中间结果和最终结果）
      */
     fun onRecognitionResult(text: String, isFinal: Boolean) {
         if (!isRunning) return
@@ -120,8 +137,8 @@ class SimulTranslateManager(private val context: Context) {
         // 条件：文本足够长 + 距离上次翻译超过间隔
         if (textLen >= MIN_TEXT_LENGTH && now - lastTranslateTime > TRANSLATE_DELAY_MS) {
             lastTranslateTime = now
-            // 发送到翻译队列（CONFLATED：只保留最新一条）
-            translateChannel.trySend(text.trim())
+            val sent = translateChannel.trySend(text.trim())
+            Log.d(TAG, "onRecognitionResult: 发送翻译请求 '$text' isFinal=$isFinal sent=${sent.isSuccess}")
         }
     }
 
@@ -138,22 +155,29 @@ class SimulTranslateManager(private val context: Context) {
             val translation = translateWithMnn(englishText)
 
             if (translation.isNullOrBlank()) {
-                Log.w(TAG, "translateAndPlay: 翻译结果为空")
+                Log.w(TAG, "translateAndPlay: 翻译结果为空，跳过 TTS")
                 return
             }
 
             Log.i(TAG, "translateAndPlay: '$englishText' → '$translation'")
-            onTranslated?.invoke(translation)
 
-            // TTS 播放
-            withContext(Dispatchers.IO) {
-                ttsEngine.speak(translation)
+            // 更新 UI（主线程）
+            withContext(Dispatchers.Main) {
+                onTranslated?.invoke(translation)
             }
+
+            // TTS 播放（speak 内部已同步等待）
+            Log.d(TAG, "translateAndPlay: 开始 TTS 播放")
+            val ttsResult = ttsEngine.speak(translation)
+            Log.d(TAG, "translateAndPlay: TTS 播放完成 result=$ttsResult")
+
         } catch (e: CancellationException) {
             throw e // 协程取消，不处理
         } catch (e: Exception) {
             Log.e(TAG, "translateAndPlay: ${e.message}", e)
-            onError?.invoke("翻译失败: ${e.message}")
+            withContext(Dispatchers.Main) {
+                onError?.invoke("翻译失败: ${e.message}")
+            }
         }
     }
 
@@ -168,8 +192,9 @@ class SimulTranslateManager(private val context: Context) {
 
         return try {
             val prompt = buildTranslatePrompt(englishText)
-            // 使用同步生成（阻塞直到完成）
+            Log.d(TAG, "translateWithMnn: 调用 syncGenerate")
             val result = engine.syncGenerate(prompt, maxTokens = 256)
+            Log.d(TAG, "translateWithMnn: syncGenerate 返回 '$result'")
             result?.trim()?.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
             Log.e(TAG, "translateWithMnn: ${e.message}", e)
@@ -204,8 +229,15 @@ class SimulTranslateManager(private val context: Context) {
         translateJob = null
         translateChannel.cancel()
 
-        onStatusUpdate?.invoke("同传已停止")
+        // 停止 TTS 播放
+        try {
+            ttsEngine.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "stop: TTS stop 异常: ${e.message}")
+        }
+
         Log.i(TAG, "stop: 同传停止")
+        onStatusUpdate?.invoke("同传已停止")
     }
 
     /**
