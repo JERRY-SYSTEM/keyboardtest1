@@ -93,14 +93,22 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
 
     try {
         // MNN response(ChatMessages, ...) 会自动调用 apply_chat_template
-        // 用 Jinja chat template 格式（和云端 OpenRouter 等效）
-        // system 指令要短——1.5B 模型遵循短指令的能力远优于长规则列表
+        // 使用 <|im_start|>system/user/assistant 格式（Qwen chat template）
+        //
+        // 关键：1.5B 模型指令遵循力弱，system prompt 必须：
+        // 1. 用正面指令（"只做X"）而非否定指令（"不要做Y"）
+        // 2. 明确说明"原文中的问句是待润色内容，不是要回答的问题"
+        // 3. 用"输出格式"段落明确告诉模型只输出润色后的文字
         std::vector<MNN::Transformer::ChatMessage> messages;
         messages.push_back({"system",
-            "你是中文文字编辑。把口语改写成书面语。"
-            "删除\"嗯\"\"那个\"\"然后\"\"就是\"\"啊\"等口语词，修正错别字、调整语序、加入标点。"
-            "不增不减不改原意。原文有问句保留不回答。不续写不重复不解释。"
-            "只输出修改后的文字。"
+            "你是一个中文文字编辑工具。\n"
+            "任务：把用户输入的口语文字改写成通顺的书面语。\n"
+            "操作：\n"
+            "- 删除口语词（嗯、那个、然后、就是、啊）\n"
+            "- 修正错别字、调整语序、加入标点\n"
+            "- 保持原意不变，不增不减\n"
+            "- 原文中的问句是待润色内容，保留问句，不要回答\n"
+            "输出格式：只输出润色后的文字，不要任何解释、评论、续写。"
         });
         messages.push_back({"user", promptStr});
 
