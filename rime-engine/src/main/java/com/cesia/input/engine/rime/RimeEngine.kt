@@ -221,21 +221,25 @@ class RimeEngine(private val context: Context) : InputEngine {
     /** 调试：获取 Rime 完整状态 */
     fun getDebugStatus(): String = RimeJni.getDebugStatus()
 
-    /**
-     * 词语联想：从词库中查询以 prefix 为前缀的词语
-     * 搜索范围：外部存储 rime/ 目录下所有 .dict.yaml 文件（包括 cn_dicts/）
-     * @param prefix 前缀词（如 "这个"）
-     * @param limit 最大返回数量（默认 20）
-     * @return 联想词语列表，按权重降序
-     */
-    fun getAssociations(prefix: String, limit: Int = 20): List<String> {
-        if (prefix.isEmpty()) return emptyList()
+    /** 联想词条目 */
+    private data class AssociationEntry(
+        val fullWord: String,    // 完整词，如 "这个问题"
+        val displayWord: String, // 显示词（去掉前缀后），如 "问题"
+        val weight: Int
+    )
+
+    // ======================== 词库索引（懒加载，按首字分桶） ========================
+    private var dictIndex: Map<String, List<AssociationEntry>>? = null
+    private var dictIndexBuilt = false
+    private var dictIndexBuildTime = 0L
+
+    /** 构建词库索引：按首字（或前2字）分桶，桶内按权重降序 */
+    private fun buildDictIndex(): Map<String, List<AssociationEntry>> {
+        val index = mutableMapOf<String, MutableList<AssociationEntry>>()
         val rimeDir = java.io.File(context.getExternalFilesDir(null), "rime")
-        if (!rimeDir.exists()) return emptyList()
+        if (!rimeDir.exists()) return index
 
-        val results = mutableListOf<Pair<String, Int>>()  // word → weight
-
-        // 遍历 rime/ 目录下所有 .dict.yaml 文件（递归，包括 cn_dicts/）
+        var entryCount = 0
         rimeDir.walkTopDown()
             .filter { it.isFile && it.name.endsWith(".dict.yaml") }
             .forEach { dictFile ->
@@ -249,21 +253,62 @@ class RimeEngine(private val context: Context) : InputEngine {
                             val parts = trimmed.split("\t")
                             if (parts.size >= 2) {
                                 val word = parts[0]
-                                if (word.startsWith(prefix) && word != prefix) {
-                                    val weight = if (parts.size >= 4) {
-                                        parts[3].toIntOrNull() ?: 0
-                                    } else 0
-                                    results.add(word to weight)
-                                }
+                                if (word.length < 2) return@forEach // 跳过单字词
+                                val weight = if (parts.size >= 4) parts[3].toIntOrNull() ?: 0 else 0
+                                // 按首字分桶
+                                val bucket = word.substring(0, 1)
+                                val entry = AssociationEntry(word, "", weight) // displayWord 在查询时计算
+                                index.getOrPut(bucket) { mutableListOf() }.add(entry)
+                                entryCount++
                             }
                         }
                     }
-                } catch (_: Exception) {
-                    // 跳过无法读取的文件
-                }
+                } catch (_: Exception) {}
             }
 
-        // 按权重降序，返回前 limit 个
-        return results.sortedByDescending { it.second }.take(limit).map { it.first }
+            // 每个桶按权重降序
+            index.forEach { (_, list) -> list.sortByDescending { it.weight } }
+            Log.d(TAG, "联想索引: ${index.size} 桶, $entryCount 词条, 耗时 ${System.currentTimeMillis() - dictIndexBuildTime}ms")
+            return index
+    }
+
+    /**
+     * 词语联想：查询以 prefix 为前缀的词语
+     * 首次调用构建索引，后续直接查（毫秒级）
+     * @return 去掉前缀后的显示词列表，按权重降序，去重
+     */
+    fun getAssociations(prefix: String, limit: Int = 20): List<String> {
+        if (prefix.isEmpty()) return emptyList()
+
+        // 懒加载索引
+        if (!dictIndexBuilt) {
+            dictIndexBuildTime = System.currentTimeMillis()
+            dictIndex = buildDictIndex()
+            dictIndexBuilt = true
+        }
+
+        val index = dictIndex ?: return emptyList()
+        val bucket = prefix.substring(0, 1)
+        val candidates = index[bucket] ?: return emptyList()
+
+        // 遍历桶内候选，找 prefix 前缀匹配的项
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<String>()
+        for (entry in candidates) {
+            if (entry.fullWord.startsWith(prefix) && entry.fullWord.length > prefix.length) {
+                val displayWord = entry.fullWord.substring(prefix.length)
+                if (seen.add(displayWord)) {
+                    result.add(displayWord)
+                    if (result.size >= limit) break
+                }
+            }
+        }
+        return result
+    }
+
+    /** 清除索引（词库更新后调用） */
+    fun clearAssociationIndex() {
+        dictIndex = null
+        dictIndexBuilt = false
     }
 }

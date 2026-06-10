@@ -854,6 +854,33 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     /** 通过全局索引选择候选词（自动翻页选中） */
     private fun selectCandidateByGlobalIndex(globalIndex: Int) {
         if (globalIndex < 0) return
+
+        // 联想模式：点击的是联想候选词
+        if (isAssociationMode && globalIndex < associationCandidates.size) {
+            val selectedDisplay = associationCandidates[globalIndex]
+            val newPrefix = associationPrefix + selectedDisplay
+            val newAssociations = rimeEngine.getAssociations(newPrefix)
+
+            // 上屏选中的词（追加到已有前缀后面）
+            commitCandidateText(selectedDisplay)
+
+            if (newAssociations.isNotEmpty()) {
+                // 继续联想模式
+                associationPrefix = newPrefix
+                associationCandidates = newAssociations
+                showAssociationCandidates()
+            } else {
+                // 没有更多联想词，退出联想模式
+                isAssociationMode = false
+                associationPrefix = ""
+                associationCandidates = emptyList()
+                if (isPanelExpanded) collapseCandidatePanel()
+                updateCandidateBar()
+            }
+            return
+        }
+
+        // 正常模式：点击的是 Rime 候选词
         val curSize = rimeEngine.candidates.size
         if (curSize <= 0) return
         val targetPage = globalIndex / curSize
@@ -864,36 +891,27 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         while (curPage > targetPage) { rimeEngine.prevPage() }
         val selected = rimeEngine.selectCandidate(idxInPage)
         if (selected.isNotEmpty()) {
-            // 联想模式：如果之前有联想前缀，把新选词追加到前缀
-            val newPrefix = if (isAssociationMode) associationPrefix + selected else selected
-            val associations = rimeEngine.getAssociations(newPrefix)
-
+            // 上屏选中的词
+            commitCandidateText(selected)
+            if (keyboardMode == KeyboardMode.NUMBER && t9InputBuffer.isNotEmpty()) {
+                t9InputBuffer.clear()
+                rimeEngine.clear()
+                rimeEngine.createSession()
+            }
+            // 查询联想词
+            val associations = rimeEngine.getAssociations(selected)
             if (associations.isNotEmpty()) {
-                // 有联想词，进入/继续联想模式
+                // 有联想词，进入联想模式
                 isAssociationMode = true
-                associationPrefix = newPrefix
+                associationPrefix = selected
                 associationCandidates = associations
-                // 先上屏选中的词
-                commitCandidateText(selected)
-                if (keyboardMode == KeyboardMode.NUMBER && t9InputBuffer.isNotEmpty()) {
-                    t9InputBuffer.clear()
-                    rimeEngine.clear()
-                    rimeEngine.createSession()
-                }
                 if (isPanelExpanded) collapseCandidatePanel()
-                // 显示联想候选词
                 showAssociationCandidates()
             } else {
-                // 没有联想词，正常上屏
+                // 没有联想词
                 isAssociationMode = false
                 associationPrefix = ""
                 associationCandidates = emptyList()
-                commitCandidateText(selected)
-                if (keyboardMode == KeyboardMode.NUMBER && t9InputBuffer.isNotEmpty()) {
-                    t9InputBuffer.clear()
-                    rimeEngine.clear()
-                    rimeEngine.createSession()
-                }
                 if (isPanelExpanded) collapseCandidatePanel()
                 updateCandidateBar()
             }
