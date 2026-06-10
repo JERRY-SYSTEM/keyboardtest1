@@ -92,23 +92,17 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
     env->ReleaseStringUTFChars(prompt, promptC);
 
     try {
-        // 使用 ChatMessages 格式，让 MNN 自动应用模型的 chat template
-        // prompt 必须极简——1.5B 模型遵循短指令的能力远优于长规则列表
+        // MNN response(ChatMessages, ...) 会自动调用 apply_chat_template
+        // 用 Jinja chat template 格式（和云端 OpenRouter 等效）
+        // system 指令要短——1.5B 模型遵循短指令的能力远优于长规则列表
         std::vector<MNN::Transformer::ChatMessage> messages;
         messages.push_back({"system",
-            "你是中文文字编辑。把用户的口语改写成通顺的书面语。"
-            "规则："
-            "1.删除\"嗯\"\"那个\"\"然后\"\"就是\"\"啊\"等口语词；"
-            "2.修正错别字、调整语序、加入标点；"
-            "3.不增不减不改原意；"
-            "4.原文有问句保留问句不回答；"
-            "5.不续写、不重复、不解释、不评论；"
+            "你是中文文字编辑。把口语改写成书面语。"
+            "删除\"嗯\"\"那个\"\"然后\"\"就是\"\"啊\"等口语词，修正错别字、调整语序、加入标点。"
+            "不增不减不改原意。原文有问句保留不回答。不续写不重复不解释。"
             "只输出修改后的文字。"
         });
-
-        // user 消息包含原文
-        std::string userPrompt = "把下面这段口语文字改写成通顺的书面语：\n" + promptStr;
-        messages.push_back({"user", userPrompt});
+        messages.push_back({"user", promptStr});
 
         std::ostringstream outputStream;
 
