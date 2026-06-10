@@ -151,7 +151,16 @@ class VoiceAISettingsHelper(
             }
             var count = 0
             count += if (downloadManager.deleteModel("sherpa-zipformer")) 1 else 0
-            count += if (downloadManager.deleteModel("qwen25-1.5b-mnn")) 1 else 0
+            // 动态卸载当前安装的 AI 模型（可能是 qwen25-1.5b-mnn 或 qwen35-2b-mnn 等）
+            val installedAiId = modelManager.installedAiModelId
+            if (installedAiId != null) {
+                count += if (downloadManager.deleteModel(installedAiId)) 1 else 0
+            } else {
+                // 兜底：尝试删除所有已知的 AI 模型目录
+                for (modelId in listOf("qwen35-2b-mnn", "qwen25-1.5b-mnn")) {
+                    count += if (downloadManager.deleteModel(modelId)) 1 else 0
+                }
+            }
             refreshModelStatus()
             Toast.makeText(activity, "已卸载 $count 个模型文件", Toast.LENGTH_SHORT).show()
         }
