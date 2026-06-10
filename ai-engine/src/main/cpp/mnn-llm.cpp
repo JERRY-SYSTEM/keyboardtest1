@@ -113,7 +113,17 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
         messages.push_back({"user", userPrompt});
 
         std::ostringstream outputStream;
-        g_llm->response(messages, &outputStream, "。", maxTokens);
+
+        // 安全包装：如果 response 抛出异常（如 OOM），捕获并返回空字符串
+        try {
+            g_llm->response(messages, &outputStream, "。", maxTokens);
+        } catch (const std::bad_alloc& e) {
+            LOGE("nativeGenerate: OOM during response - %s", e.what());
+            return env->NewStringUTF("");
+        } catch (const std::exception& e) {
+            LOGE("nativeGenerate: exception during response - %s", e.what());
+            return env->NewStringUTF("");
+        }
 
         auto context = g_llm->getContext();
         if (context->status == LlmStatus::INTERNAL_ERROR) {
@@ -126,15 +136,12 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
              (int)result.size(), (int)context->gen_seq_len);
 
         // 续写检测：如果结果中出现以下模式，截断到该位置之前
-        // 这些模式表明模型开始回答原文问题或进行解释
         const char* continuationMarkers[] = {
             "这是一个问题", "所以请", "请注意", "需要说明", "我来解释",
             "我来回答", "这个问题的", "关于这个问题", "简单来说",
             "首先", "其次", "最后", "总之", "综上",
             "如果你想", "如果你想了解", "以下是", "当然",
-            // 关键：检测模型开始推荐或给出建议
             "我会推荐", "我建议", "你可以试试", "你可以考虑", "不如试试",
-            // 检测模型给具体例子
             "比如", "例如", "举例来说", "打个比方"
         };
         for (const char* marker : continuationMarkers) {
@@ -153,7 +160,6 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
         size_t originalLen = promptStr.length() * 1.3;
         if (result.length() > originalLen && result.length() > 20) {
             std::string truncated = result.substr(0, originalLen);
-            // 在截断点找最后的句号
             std::string::size_type lastPeriod = truncated.rfind("。");
             std::string::size_type lastQmark = truncated.rfind("？");
             std::string::size_type lastExclaim = truncated.rfind("！");
@@ -168,8 +174,11 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
 
         return env->NewStringUTF(result.c_str());
 
+    } catch (const std::bad_alloc& e) {
+        LOGE("nativeGenerate: OOM - %s", e.what());
+        return env->NewStringUTF("");
     } catch (const std::exception& e) {
-        LOGE("Exception during generate: %s", e.what());
+        LOGE("nativeGenerate: exception - %s", e.what());
         return env->NewStringUTF("");
     }
 }
