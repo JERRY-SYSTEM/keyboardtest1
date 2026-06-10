@@ -137,6 +137,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
 
         localModeEnabled = !localModeEnabled
+
+        // 同步写入 SharedPreferences，确保 polishRecognizedText() 读到正确模式
+        val modePrefs = getSharedPreferences("cesia_local_mode", Context.MODE_PRIVATE)
+        val newMode = if (localModeEnabled) LocalModeManager.RunMode.LOCAL.name
+                      else LocalModeManager.RunMode.CLOUD_FREE.name
+        modePrefs.edit().putString("run_mode", newMode).apply()
+        Log.i("Cesia", "toggleLocalCloudMode: localModeEnabled=$localModeEnabled, run_mode=$newMode")
+
         updateVoiceBackend()
         updateMicButtonAppearance()
 
@@ -620,6 +628,14 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         modelManager = ModelManager(this)
         voiceEngine = VoiceEngine(this)
         aiEngine = AIEngine(this)
+
+        // 从 SharedPreferences 恢复本地/云端模式（确保与 polishRecognizedText 读取同一数据源）
+        val modePrefs = getSharedPreferences("cesia_local_mode", Context.MODE_PRIVATE)
+        val savedMode = modePrefs.getString("run_mode", LocalModeManager.RunMode.CLOUD_FREE.name)
+            ?: LocalModeManager.RunMode.CLOUD_FREE.name
+        localModeEnabled = (savedMode == LocalModeManager.RunMode.LOCAL.name)
+        Log.i("Cesia", "初始化: 从 SharedPreferences 恢复 localModeEnabled=$localModeEnabled (run_mode=$savedMode)")
+
         // 根据模式和模型可用性设置默认语音后端
         updateVoiceBackend()
 

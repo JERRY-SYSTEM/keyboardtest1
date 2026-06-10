@@ -98,11 +98,13 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
         messages.push_back({"system",
             "你是一个中文文本编辑工具。你的唯一职责是：将输入的口语文字修改为通顺规范的书面表达。\n"
             "规则（必须严格执行，无一例外）：\n"
-            "1. 只修改文字表达：修正错别字、修正口语化用词、调整语序、添加或修正标点符号\n"
-            "2. 保持原文原意不变：不增加任何新信息、不删除任何原文内容\n"
-            "3. 严禁回答原文中的任何问题：如果原文包含问句，保留问句原样只改文字，绝对不要给出答案\n"
-            "4. 严禁续写：不要在原文之后添加任何新句子\n"
-            "5. 严禁解释或评论：不要添加任何说明文字\n"
+            "1. 去除口语填充词：删除\"嗯\"、\"那个\"、\"然后\"、\"就是\"、\"啊\"等无意义的口语词\n"
+            "2. 只修改文字表达：修正错别字、调整语序、添加或修正标点符号\n"
+            "3. 保持原文原意不变：不增加任何新信息、不删除任何原文内容\n"
+            "4. 严禁回答原文中的任何问题：如果原文包含问句，保留问句原样只改文字，绝对不要给出答案\n"
+            "5. 严禁续写：不要在原文之后添加任何新句子\n"
+            "6. 严禁重复：不要重复原文中的任何句子或片段\n"
+            "7. 严禁解释或评论：不要添加任何说明文字\n"
             "只输出修改后的文本，不要任何其他内容。"
         });
 
@@ -157,6 +159,80 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
             }
         }
 
+        // 重复检测：查找是否有句子重复出现（如"XXX。XXX。XXX。"）
+        // 按句号/问号/感叹号分句，如果有句子出现超过1次，只保留第一次
+        // 注意：中文标点是 UTF-8 multibyte，用 memcmp 比较 3 字节
+        {
+            std::vector<std::string> sentences;
+            std::string current;
+            for (size_t i = 0; i < result.size(); ) {
+                unsigned char c = (unsigned char)result[i];
+                // UTF-8 中文标点：句(0xe38082) 问(0xe388b7) 叹(0xe38081) — 3字节
+                bool isChinesePunct = false;
+                if (i + 2 < result.size() && c == 0xe3) {
+                    unsigned char c2 = (unsigned char)result[i+1];
+                    unsigned char c3 = (unsigned char)result[i+2];
+                    if ((c2 == 0x80 && c3 == 0x82) ||  // 。
+                        (c2 == 0x80 && c3 == 0x81) ||  // ！
+                        (c2 == 0x88 && c3 == 0xb7)) {   // ？
+                        isChinesePunct = true;
+                    }
+                }
+                if (isChinesePunct || c == '\n') {
+                    current += result.substr(i, isChinesePunct ? 3 : 1);
+                    // 去掉首尾空白
+                    while (!current.empty() && (current.front() == ' ' || current.front() == '\n' || current.front() == '\t'))
+                        current.erase(current.begin());
+                    while (!current.empty() && (current.back() == ' ' || current.back() == '\n' || current.back() == '\t'))
+                        current.pop_back();
+                    if (!current.empty()) sentences.push_back(current);
+                    current.clear();
+                    i += isChinesePunct ? 3 : 1;
+                } else {
+                    current += result[i];
+                    i++;
+                }
+            }
+            if (!current.empty()) {
+                while (!current.empty() && (current.front() == ' ' || current.front() == '\n' || current.front() == '\t'))
+                    current.erase(current.begin());
+                while (!current.empty() && (current.back() == ' ' || current.back() == '\n' || current.back() == '\t'))
+                    current.pop_back();
+                if (!current.empty()) sentences.push_back(current);
+            }
+
+            // 去重：只保留第一次出现的句子
+            std::vector<std::string> uniqueSentences;
+            for (const auto& s : sentences) {
+                bool found = false;
+                for (const auto& u : uniqueSentences) {
+                    if (s == u) { found = true; break; }
+                }
+                if (!found) uniqueSentences.push_back(s);
+            }
+
+            if (uniqueSentences.size() < sentences.size()) {
+                LOGI("Dedup: %d sentences -> %d unique", (int)sentences.size(), (int)uniqueSentences.size());
+                result.clear();
+                for (size_t i = 0; i < uniqueSentences.size(); i++) {
+                    if (i > 0) result += "\xe3\x80\x82";  // 。
+                    // 去掉原有句末标点（3 字节）
+                    std::string s = uniqueSentences[i];
+                    while (s.size() >= 3) {
+                        unsigned char c1 = (unsigned char)s[s.size()-3];
+                        unsigned char c2 = (unsigned char)s[s.size()-2];
+                        unsigned char c3 = (unsigned char)s[s.size()-1];
+                        if ((c1 == 0xe3 && c2 == 0x80 && c3 == 0x82) ||
+                            (c1 == 0xe3 && c2 == 0x80 && c3 == 0x81) ||
+                            (c1 == 0xe3 && c2 == 0x88 && c3 == 0xb7)) {
+                            s = s.substr(0, s.size() - 3);
+                        } else break;
+                    }
+                    result += s + "\xe3\x80\x82";  // 。
+                }
+            }
+        }
+
         return env->NewStringUTF(result.c_str());
 
     } catch (const std::bad_alloc& e) {
@@ -197,8 +273,8 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerateStreaming(
 
     try {
         std::ostringstream outputStream;
-        // end_with="。"：遇到句号就停止，让润色结果在句子边界处结束
-        g_llm->response(promptStr, &outputStream, "。", maxTokens);
+        // end_with 用换行，避免输入中的句号被误判为结束
+        g_llm->response(promptStr, &outputStream, "\n", maxTokens);
 
         auto context = g_llm->getContext();
         if (context->status == LlmStatus::INTERNAL_ERROR) {
