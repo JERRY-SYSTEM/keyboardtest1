@@ -92,24 +92,21 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
     env->ReleaseStringUTFChars(prompt, promptC);
 
     try {
-        // 用纯文本 prompt（不用 ChatMessages），在 prompt 中用明确分隔符
-        // 1.5B 模型对 "原文：... 润色：" 这样的格式理解最好
-        // 关键发现：模型会输出"？"是因为原文末尾有问句，模型以为要先回答
-        // 解决：prompt 结尾用"润色后："而不是空行，让模型知道这里是输出位置
-        std::string combinedPrompt =
-            "你是中文文字编辑工具。把口语改写成书面语。\n"
-            "操作：删除嗯、那个、然后、就是、啊；修正错别字、调整语序、加入标点；保持原意不变，不增不减；原文中的问句是待润色内容，保留问句，不要回答。\n"
-            "输出：只输出润色后的文字，不要任何解释、评论、续写。\n"
-            "---\n"
-            "原文：\n" + promptStr + "\n"
-            "润色：";
+        // 使用与云端 OpenRouter 完全相同的 prompt 格式
+        // system: 短指令，只说"做什么"不说"不要做什么"
+        // user: 直接传原文
+        // 关键差异：云端用 temperature=0.3 + stop tokens，本地用 end_with="\n"
+        std::vector<MNN::Transformer::ChatMessage> messages;
+        messages.push_back({"system",
+            "你是一个文本编辑助手。根据用户指令修改原文。只输出修改后的文本，不要解释。"
+        });
+        messages.push_back({"user", promptStr});
 
         std::ostringstream outputStream;
 
-        // 安全包装：如果 response 抛出异常（如 OOM），捕获并返回空字符串
-        // end_with 用换行而非句号，避免输入中的句号被误判为结束
+        // end_with 用换行，避免输入中的句号被误判为结束
         try {
-            g_llm->response(combinedPrompt, &outputStream, "\n", maxTokens);
+            g_llm->response(messages, &outputStream, "\n", maxTokens);
         } catch (const std::bad_alloc& e) {
             LOGE("nativeGenerate: OOM during response - %s", e.what());
             return env->NewStringUTF("");
