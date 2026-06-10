@@ -90,8 +90,8 @@ class AIEngine(private val context: Context) {
                 // 重置对话历史，避免上下文污染导致重复
                 mnnEngine.nativeReset()
 
-                // 动态计算 maxTokens：原文长度 * 1.2（留 20% 余量给标点和修正），最少 32，最多 256
-                val maxTokens = (text.length * 1.2).toInt().coerceIn(32, 256)
+                // 动态计算 maxTokens：原文长度 * 2.5（留足余量），最少 64，最多 512
+                val maxTokens = (text.length * 2.5).toInt().coerceIn(64, 512)
                 Log.d(TAG, "Polish: textLen=${text.length}, maxTokens=$maxTokens")
 
                 val prompt = buildPolishPrompt(text, instruction)
@@ -112,25 +112,79 @@ class AIEngine(private val context: Context) {
         }
 
     /**
-     * 润色结果后处理：检测并去除续写内容
+     * 润色结果后处理：
+     * 1. 截断续写内容（黑名单匹配）
+     * 2. 截断重复句子
+     * 3. 截断到原文长度的 120%
      */
     private fun postProcessPolishResult(original: String, raw: String): String {
         if (raw.isBlank()) return ""
 
         var text = raw.trim()
 
-        // 续写检测
+        // 1. 续写检测——黑名单截断
         val continuationPatterns = listOf(
+            // 解释/评论类
             "这是一个问题", "所以请", "请注意", "需要说明", "我来解释",
             "我来回答", "这个问题的", "关于这个问题", "简单来说",
-            "首先，", "其次，", "最后，", "总之，", "综上，"
+            "首先，", "其次，", "最后，", "总之，", "综上，",
+            "如果你想", "如果你想了解", "以下是", "当然，",
+            "我会推荐", "我建议", "你可以试试", "你可以考虑", "不如试试",
+            "比如", "例如", "举例来说", "打个比方",
+            // 评价原文类（新增）
+            "这个句子", "已经很", "不需要做", "不需要修改",
+            "已经很好", "已经很通顺", "已经很流畅", "已经很规范",
+            "这段话", "这段文字", "这段文本",
+            "修改后", "润色后", "改写后", "处理后",
+            // 续写开头类（新增）
+            "接下来", "另外", "此外", "除此之外", "补充一下",
+            "如果你想了解", "如果你想学习", "如果你想尝试",
+            "作为", "关于", "对于",
+            // 推荐/建议类（新增）
+            "我推荐", "我建议", "你可以", "你不妨", "你可以尝试",
+            "推荐", "建议", "试试", "不妨"
         )
         for (pattern in continuationPatterns) {
             val idx = text.indexOf(pattern)
             if (idx > 0) {
-                Log.d(TAG, "postProcess: 检测到续写标志 '$pattern'，截断到位置 $idx")
+                Log.d(TAG, "postProcess: 截断续写 '$pattern' at $idx")
                 text = text.substring(0, idx).trim()
                 break
+            }
+        }
+
+        // 2. 重复句子检测（Java 层兜底）
+        val sentences = text.split(Regex("[。！？\\n]+")).filter { it.trim().isNotEmpty() }
+        if (sentences.size > 1) {
+            val seen = mutableSetOf<String>()
+            val unique = mutableListOf<String>()
+            for (s in sentences) {
+                val trimmed = s.trim()
+                if (trimmed !in seen) {
+                    seen.add(trimmed)
+                    unique.add(trimmed)
+                } else {
+                    Log.d(TAG, "postProcess: 去除重复句子 '$trimmed'")
+                }
+            }
+            if (unique.size < sentences.size) {
+                text = unique.joinToString("。") + "。"
+            }
+        }
+
+        // 3. 长度截断：不超过原文 120%
+        val maxLen = (original.length * 1.2).toInt().coerceAtLeast(original.length)
+        if (text.length > maxLen) {
+            Log.d(TAG, "postProcess: 长度截断 ${text.length} -> $maxLen")
+            text = text.substring(0, maxLen)
+            // 在截断点找最后一个句末标点
+            val lastPunct = maxOf(
+                text.lastIndexOf('。'),
+                text.lastIndexOf('？'),
+                text.lastIndexOf('！')
+            )
+            if (lastPunct > maxLen * 0.5) {
+                text = text.substring(0, lastPunct + 1)
             }
         }
 
