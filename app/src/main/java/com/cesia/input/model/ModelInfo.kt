@@ -26,8 +26,8 @@ object ModelRegistry {
     const val GB = MB * 1024
 
     // === MNN AI 模型文件列表 ===
-    // Qwen2.5-1.5B 和 Qwen3.5-2B 共用同一套文件列表（不含 visual）
-    val MNN_MODEL_FILES = listOf(
+    // Qwen3.5-2B 模型文件（Qwen2.5-1.5B 不含 visual 文件）
+    val MNN_MODEL_FILES_COMMON = listOf(
         "config.json",
         "llm.mnn",
         "llm.mnn.json",
@@ -35,6 +35,10 @@ object ModelRegistry {
         "llm_config.json",
         "tokenizer.txt"
     )
+    // Qwen3.5 额外需要 visual 文件
+    val MNN_MODEL_FILES_QWEN35 = MNN_MODEL_FILES_COMMON + listOf("visual.mnn", "visual.mnn.weight")
+    // 向后兼容：默认使用完整列表
+    val MNN_MODEL_FILES = MNN_MODEL_FILES_QWEN35
 
     // === Zipformer 语音模型文件列表 ===
     val ZIPFORMER_FILES = listOf(

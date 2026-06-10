@@ -51,6 +51,8 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true
+            // ai-engine 和 rime-engine 都提供 libc++_shared.so，用 pickFirsts 解决冲突
+            pickFirsts += ['lib/arm64-v8a/libc++_shared.so']
         }
     }
 
@@ -118,5 +120,17 @@ tasks.register("renameDebugApk") {
 afterEvaluate {
     tasks.matching { it.name == 'assembleDebug' }.configureEach {
         finalizedBy 'renameDebugApk'
+    }
+    // 用 MNN 3.5.0 的 libc++_shared.so 替换 NDK 自动打包的版本
+    // MNN 的版本包含 verbose_abort 等新版 C++ 符号
+    tasks.matching { it.name == 'mergeDebugNativeLibs' }.configureEach {
+        doLast {
+            def cppShared = file("${buildDir}/intermediates/merged_native_libs/debug/out/lib/arm64-v8a/libc++_shared.so")
+            def mnnCppShared = file("${project(':ai-engine').projectDir}/src/main/jniLibs/arm64-v8a/libc++_shared.so")
+            if (mnnCppShared.exists()) {
+                ant.copy(file: mnnCppShared, tofile: cppShared, overwrite: true)
+                println "✅ Replaced libc++_shared.so with MNN 3.5.0 version"
+            }
+        }
     }
 }

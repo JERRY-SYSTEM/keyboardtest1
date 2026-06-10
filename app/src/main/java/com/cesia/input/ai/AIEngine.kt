@@ -5,6 +5,7 @@ import android.util.Log
 import com.cesia.input.engine.ai.MNNEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * 本地 AI 润色引擎 — 基于 MNN + Qwen 3.5
@@ -51,6 +52,23 @@ class AIEngine(private val context: Context) {
     suspend fun loadLocalModel(configPath: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
+                // 修改 config.json：移除 mllm 配置，避免加载 visual.mnn
+                // Qwen3.5-2B 纯文本推理不需要 visual 模型
+                try {
+                    val configFile = File(configPath)
+                    if (configFile.exists()) {
+                        val json = configFile.readText()
+                        val m = Regex("\"mllm\"\\s*:\\s*\\{[^}]*\\}").find(json)
+                        if (m != null) {
+                            val cleaned = json.removeRange(m.range)
+                            configFile.writeText(cleaned)
+                            Log.i(TAG, "loadLocalModel: removed mllm config from config.json")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "loadLocalModel: failed to modify config.json", e)
+                }
+                Log.i(TAG, "loadLocalModel: calling nativeInit with $configPath")
                 modelLoaded = mnnEngine.nativeInit(configPath)
                 if (modelLoaded) {
                     currentModelPath = configPath

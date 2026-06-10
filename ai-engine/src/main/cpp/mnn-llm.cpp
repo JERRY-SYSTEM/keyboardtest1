@@ -8,6 +8,7 @@
 #include <memory>
 #include <sstream>
 #include <android/log.h>
+#include <dlfcn.h>
 
 #include "MNN/llm/llm.hpp"
 
@@ -21,6 +22,28 @@ static Llm* g_llm = nullptr;
 static std::string g_lastError;
 
 extern "C" {
+
+/**
+ * 预加载 APK 自带的 libc++_shared.so，使用 RTLD_GLOBAL 让符号全局可见，
+ * 解决 MNN 3.5.0 so 依赖新版 libc++ 符号在旧版 Android 上缺失的问题。
+ * 必须在任何 MNN so 加载之前调用。
+ */
+JNIEXPORT void JNICALL
+Java_com_cesia_input_engine_ai_MNNEngine_nativePreloadLibcPlusPlus(
+    JNIEnv* env,
+    jobject /*thiz*/,
+    jstring libPath
+) {
+    const char* path = env->GetStringUTFChars(libPath, nullptr);
+    LOGI("Preloading libc++_shared.so from: %s", path);
+    void* handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (handle) {
+        LOGI("libc++_shared.so preloaded successfully with RTLD_GLOBAL");
+    } else {
+        LOGE("Failed to preload libc++_shared.so: %s", dlerror());
+    }
+    env->ReleaseStringUTFChars(libPath, path);
+}
 
 JNIEXPORT jboolean JNICALL
 Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
@@ -76,8 +99,10 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
         fflush(stdout);
         if (!loaded) {
             // 检查模型文件是否存在且非空
+            // Qwen3.5 模型：llm.mnn + llm.mnn.weight + visual.mnn + visual.mnn.weight
+            // 注意：embedding.mnn 和 lm.mnn 是旧版 Qwen 模型的文件，Qwen3.5 不需要
             std::string modelDir = configStr.substr(0, configStr.rfind('/') + 1);
-            const char* checkFiles[] = {"llm.mnn", "llm.mnn.weight", "embedding.mnn", "lm.mnn"};
+            const char* checkFiles[] = {"llm.mnn", "llm.mnn.weight", "visual.mnn", "visual.mnn.weight"};
             std::string fileStatus;
             for (const char* fname : checkFiles) {
                 std::string fpath = modelDir + fname;
