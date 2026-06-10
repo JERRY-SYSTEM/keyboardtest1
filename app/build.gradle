@@ -43,8 +43,7 @@ android {
     sourceSets {
         main {
             jniLibs.srcDirs = [
-                'src/main/jniLibs',
-                '../ai-engine/src/main/jniLibs'
+                'src/main/jniLibs'
             ]
         }
     }

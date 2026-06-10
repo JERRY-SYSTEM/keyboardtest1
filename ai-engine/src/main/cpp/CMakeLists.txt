@@ -41,18 +41,22 @@ if (NOT EXISTS "${MNN_LIBS_DIR}/libMNN.so" OR NOT EXISTS "${MNN_LIBS_DIR}/libllm
         message(FATAL_ERROR "Failed to extract MNN 3.5.0 zip")
     endif()
 
-    # 复制 .so 文件到 libs 目录（按 ABI 子目录组织，供 Android jniLibs 使用）
+    # 复制所有 MNN 相关的 .so（libllm.so 依赖多个 MNN 子模块）
     set(MNN_SO_DIR "${MNN_350_EXTRACTED}/mnn_3.5.0_android_armv7_armv8_cpu_opencl_vulkan/arm64-v8a")
-    # CMake 链接用的 .so（放在 libs 根目录）
-    file(COPY "${MNN_SO_DIR}/libMNN.so" DESTINATION "${MNN_LIBS_DIR}")
-    file(COPY "${MNN_SO_DIR}/libllm.so" DESTINATION "${MNN_LIBS_DIR}")
-    # Android jniLibs 用的 .so（放在 arm64-v8a 子目录）
-    set(MNN_JNI_DIR "${MNN_DIR}/../src/main/jniLibs/arm64-v8a")
+    file(GLOB ALL_MNN_SO "${MNN_SO_DIR}/*.so")
+    # 复制到 ai-engine/libs（CMake 链接用）和 jniLibs（打包用）
+    # 注意：排除 libc++_shared.so，因为 rime-engine 已经提供了，避免 mergeDebugNativeLibs 冲突
+    set(MNN_JNI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a")
     file(MAKE_DIRECTORY "${MNN_JNI_DIR}")
-    file(COPY "${MNN_SO_DIR}/libMNN.so" DESTINATION "${MNN_JNI_DIR}")
-    file(COPY "${MNN_SO_DIR}/libllm.so" DESTINATION "${MNN_JNI_DIR}")
-    file(COPY "${MNN_SO_DIR}/libmnncore.so" DESTINATION "${MNN_JNI_DIR}")
-    file(COPY "${MNN_SO_DIR}/libc++_shared.so" DESTINATION "${MNN_JNI_DIR}")
+    foreach(SO_PATH ${ALL_MNN_SO})
+        file(COPY "${SO_PATH}" DESTINATION "${MNN_LIBS_DIR}")
+        get_filename_component(SO_NAME "${SO_PATH}" NAME)
+        if (NOT SO_NAME STREQUAL "libc++_shared.so")
+            file(COPY "${SO_PATH}" DESTINATION "${MNN_JNI_DIR}")
+        endif()
+    endforeach()
+    list(LENGTH ALL_MNN_SO SO_COUNT)
+    message(STATUS "Copied ${SO_COUNT} MNN .so files")
 
     message(STATUS "MNN 3.5.0 .so libraries extracted successfully")
 endif()
