@@ -855,6 +855,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun selectCandidateByGlobalIndex(globalIndex: Int) {
         if (globalIndex < 0) return
 
+        try {
         // 联想模式：点击的是联想候选词
         if (isAssociationMode && globalIndex < associationCandidates.size) {
             val selectedDisplay = associationCandidates[globalIndex]
@@ -915,6 +916,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 if (isPanelExpanded) collapseCandidatePanel()
                 updateCandidateBar()
             }
+        }
+        } catch (e: Exception) {
+            Log.e("Cesia", "selectCandidateByGlobalIndex crash: ${e.message}")
+            // 安全恢复：退出联想模式
+            isAssociationMode = false
+            associationPrefix = ""
+            associationCandidates = emptyList()
         }
     }
 
@@ -1906,8 +1914,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     /** 候选词选中上屏：根据当前简繁状态做转换 */
     private fun commitCandidateText(text: String) {
-        val output = if (isTraditional) toTraditional(text) else text
-        currentInputConnection?.commitText(output, 1)
+        try {
+            val output = if (isTraditional) toTraditional(text) else text
+            currentInputConnection?.commitText(output, 1)
+        } catch (e: Exception) {
+            Log.e("Cesia", "commitCandidateText failed: ${e.message}")
+        }
     }
 
     private fun updateTraditionalButton() {
