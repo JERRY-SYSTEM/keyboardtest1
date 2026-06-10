@@ -18,6 +18,7 @@
 using namespace MNN::Transformer;
 
 static Llm* g_llm = nullptr;
+static std::string g_lastError;
 
 extern "C" {
 
@@ -38,22 +39,45 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
     env->ReleaseStringUTFChars(configPath, path);
 
     LOGI("Loading MNN LLM from: %s", configStr.c_str());
+    g_lastError.clear();
 
     try {
+        // 检查 config 文件是否存在
+        {
+            FILE* f = fopen(configStr.c_str(), "r");
+            if (!f) {
+                g_lastError = "config.json not found: " + configStr;
+                LOGE("%s", g_lastError.c_str());
+                return JNI_FALSE;
+            }
+            fclose(f);
+        }
+
         g_llm = Llm::createLLM(configStr);
         if (g_llm == nullptr) {
-            LOGE("Llm::createLLM returned null");
+            g_lastError = "Llm::createLLM returned null";
+            LOGE("%s", g_lastError.c_str());
             return JNI_FALSE;
         }
 
         // 配置：纯 CPU 异步模式（兼容性最好）
         g_llm->set_config(R"({"async":true})");
-        // 关闭 thinking（Qwen2.5 默认开启，润色任务不需要推理链）
+        // 关闭 thinking（Qwen3.5 默认可能开启）
         g_llm->set_config(R"({"jinja":{"context":{"enable_thinking":false}}})");
 
+        LOGI("Calling llm->load()...");
         bool loaded = g_llm->load();
         if (!loaded) {
-            LOGE("llm->load() failed");
+            g_lastError = "llm->load() failed (model files may be corrupted or incompatible)";
+            LOGE("%s", g_lastError.c_str());
+            // 收集 MNN 内部日志
+            try {
+                std::string mnnLog = g_llm->getLog();
+                if (!mnnLog.empty()) {
+                    g_lastError += "\nMNN log: " + mnnLog;
+                    LOGE("MNN log: %s", mnnLog.c_str());
+                }
+            } catch (...) {}
             Llm::destroy(g_llm);
             g_llm = nullptr;
             return JNI_FALSE;
@@ -63,7 +87,8 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
         return JNI_TRUE;
 
     } catch (const std::exception& e) {
-        LOGE("Exception during init: %s", e.what());
+        g_lastError = std::string("Exception: ") + e.what();
+        LOGE("%s", g_lastError.c_str());
         if (g_llm) { Llm::destroy(g_llm); g_llm = nullptr; }
         return JNI_FALSE;
     }
@@ -326,8 +351,11 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGetLog(
     JNIEnv* env,
     jobject /*thiz*/
 ) {
-    if (g_llm == nullptr) return env->NewStringUTF("");
-    return env->NewStringUTF(g_llm->getLog().c_str());
+    if (g_llm != nullptr) {
+        return env->NewStringUTF(g_llm->getLog().c_str());
+    }
+    // 如果 llm 已销毁（加载失败），返回保存的错误信息
+    return env->NewStringUTF(g_lastError.c_str());
 }
 
 JNIEXPORT void JNICALL
