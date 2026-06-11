@@ -80,6 +80,47 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
             LOGI("config.json content: %s", buf);
         }
 
+        // 修复 config.json：添加 hidden_size=2048，修复多余逗号
+        {
+            std::ifstream inFile(configStr);
+            if (inFile.is_open()) {
+                std::string jsonStr((std::istreambuf_iterator<char>(inFile)),
+                                     std::istreambuf_iterator<char>());
+                inFile.close();
+
+                bool modified = false;
+
+                // 1. 添加 hidden_size=2048（如果不存在）
+                if (jsonStr.find("\"hidden_size\"") == std::string::npos) {
+                    // 在第一个 { 后面插入 hidden_size
+                    size_t pos = jsonStr.find('{');
+                    if (pos != std::string::npos) {
+                        jsonStr.insert(pos + 1, "\n    \"hidden_size\": 2048,");
+                        modified = true;
+                        LOGI("nativeInit: added hidden_size=2048");
+                    }
+                }
+
+                // 2. 修复多余逗号（如 "min_p": 0, 后面的逗号）
+                // 移除逗号后跟换行再跟逗号的模式
+                size_t commaPos = 0;
+                while ((commaPos = jsonStr.find(",\n,", commaPos)) != std::string::npos) {
+                    jsonStr.erase(commaPos, 2); // 移除 ",\n"
+                    modified = true;
+                }
+
+                // 3. 写回文件
+                if (modified) {
+                    std::ofstream outFile(configStr);
+                    if (outFile.is_open()) {
+                        outFile << jsonStr;
+                        outFile.close();
+                        LOGI("nativeInit: config.json patched successfully");
+                    }
+                }
+            }
+        }
+
         g_llm = Llm::createLLM(configStr);
         if (g_llm == nullptr) {
             g_lastError = "Llm::createLLM returned null";
