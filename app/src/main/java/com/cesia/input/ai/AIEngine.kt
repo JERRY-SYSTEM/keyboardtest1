@@ -106,6 +106,10 @@ class AIEngine(private val context: Context) {
                         json = json.replace(Regex("\"penalty\"\\s*:\\s*[\\d.]+"), "\"penalty\": 1.2")
                         Log.i(TAG, "loadLocalModel: sampler params aligned (temp=0.3, penalty=1.2)")
 
+                        // 6. 强制使用 Vulkan GPU 后端（Adreno 650 支持 Vulkan 1.1）
+                        json = json.replace(Regex("\"backend_type\"\\s*:\\s*\"[^\"]+\""), "\"backend_type\": \"vulkan\"")
+                        Log.i(TAG, "loadLocalModel: backend_type forced to vulkan")
+
                         configFile.writeText(json)
                         Log.i(TAG, "loadLocalModel: config.json patched successfully")
                     }

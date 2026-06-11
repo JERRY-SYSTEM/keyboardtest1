@@ -14,6 +14,7 @@
 
 #define LOG_TAG "MNN-LLM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 using namespace MNN::Transformer;
@@ -139,33 +140,76 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
         LOGI("llm->load() returned: %s", loaded ? "true" : "false");
         fflush(stdout);
         if (!loaded) {
-            // 检查模型文件是否存在且非空
-            // Qwen3.5 模型：llm.mnn + llm.mnn.weight + visual.mnn + visual.mnn.weight
-            // 注意：embedding.mnn 和 lm.mnn 是旧版 Qwen 模型的文件，Qwen3.5 不需要
-            std::string modelDir = configStr.substr(0, configStr.rfind('/') + 1);
-            const char* checkFiles[] = {"llm.mnn", "llm.mnn.weight", "visual.mnn", "visual.mnn.weight"};
-            std::string fileStatus;
-            for (const char* fname : checkFiles) {
-                std::string fpath = modelDir + fname;
-                FILE* f = fopen(fpath.c_str(), "r");
-                if (f) {
-                    fseek(f, 0, SEEK_END);
-                    long sz = ftell(f);
-                    fclose(f);
-                    fileStatus += fname;
-                    fileStatus += sz > 0 ? "(OK " + std::to_string(sz/1024/1024) + "MB) " : "(EMPTY!) ";
-                } else {
-                    fileStatus += fname;
-                    fileStatus += "(missing) ";
+            // Vulkan 加载失败，尝试回退到 CPU
+            LOGW("llm->load() failed with vulkan, retrying with cpu backend...");
+            Llm::destroy(g_llm);
+            g_llm = nullptr;
+
+            // 读回 CPU 版本 config
+            std::ifstream configFile(configStr);
+            if (configFile.is_open()) {
+                std::string jsonStr((std::istreambuf_iterator<char>(configFile)),
+                                     std::istreambuf_iterator<char>());
+                configFile.close();
+                // 改回 cpu
+                size_t pos = jsonStr.find("\"backend_type\"");
+                if (pos != std::string::npos) {
+                    size_t colon = jsonStr.find(':', pos);
+                    size_t quote1 = jsonStr.find('"', colon + 1);
+                    size_t quote2 = jsonStr.find('"', quote1 + 1);
+                    if (quote1 != std::string::npos && quote2 != std::string::npos) {
+                        jsonStr.replace(quote1 + 1, quote2 - quote1 - 1, "cpu");
+                        std::ofstream outFile(configStr);
+                        if (outFile.is_open()) {
+                            outFile << jsonStr;
+                            outFile.close();
+                            LOGI("nativeInit: config.json backend_type reverted to cpu");
+                        }
+                    }
                 }
             }
 
-            g_lastError = "llm->load() failed. Files: " + fileStatus;
-            LOGE("%s", g_lastError.c_str());
+            g_llm = Llm::createLLM(configStr);
+            if (g_llm == nullptr) {
+                g_lastError = "Llm::createLLM returned null (cpu fallback)";
+                LOGE("%s", g_lastError.c_str());
+                return JNI_FALSE;
+            }
+            g_llm->set_config(R"({"async":true})");
+            g_llm->set_config(R"({"jinja":{"context":{"enable_thinking":false}}})");
 
-            Llm::destroy(g_llm);
-            g_llm = nullptr;
-            return JNI_FALSE;
+            loaded = g_llm->load();
+            LOGI("llm->load() cpu fallback returned: %s", loaded ? "true" : "false");
+            fflush(stdout);
+            if (!loaded) {
+                // 检查模型文件是否存在且非空
+                std::string modelDir = configStr.substr(0, configStr.rfind('/') + 1);
+                const char* checkFiles[] = {"llm.mnn", "llm.mnn.weight", "visual.mnn", "visual.mnn.weight"};
+                std::string fileStatus;
+                for (const char* fname : checkFiles) {
+                    std::string fpath = modelDir + fname;
+                    FILE* f = fopen(fpath.c_str(), "r");
+                    if (f) {
+                        fseek(f, 0, SEEK_END);
+                        long sz = ftell(f);
+                        fclose(f);
+                        fileStatus += fname;
+                        fileStatus += sz > 0 ? "(OK " + std::to_string(sz/1024/1024) + "MB) " : "(EMPTY!) ";
+                    } else {
+                        fileStatus += fname;
+                        fileStatus += "(missing) ";
+                    }
+                }
+
+                g_lastError = "llm->load() failed (cpu fallback). Files: " + fileStatus;
+                LOGE("%s", g_lastError.c_str());
+
+                Llm::destroy(g_llm);
+                g_llm = nullptr;
+                return JNI_FALSE;
+            }
+            LOGI("MNN LLM loaded successfully with cpu fallback (vulkan -> cpu)");
+            return JNI_TRUE;
         }
 
         LOGI("MNN LLM loaded successfully");
