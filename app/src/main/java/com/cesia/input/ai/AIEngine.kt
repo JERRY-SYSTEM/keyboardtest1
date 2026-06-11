@@ -52,24 +52,42 @@ class AIEngine(private val context: Context) {
     suspend fun loadLocalModel(configPath: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
-                // 修改 config.json：移除 mllm 配置，添加 hidden_size
-                // Qwen3.5-2B 纯文本推理不需要 visual 模型
-                // hidden_size=1280 是 Qwen3.5-2B 的架构参数
+                // 修改 config.json：修复格式问题并添加必要参数
                 try {
                     val configFile = File(configPath)
                     if (configFile.exists()) {
                         var json = configFile.readText()
-                        // 移除 mllm 配置
+
+                        // 1. 移除 mllm 配置（Qwen3.5 纯文本推理不需要）
                         val mllmMatch = Regex("\"mllm\"\\s*:\\s*\\{[^}]*\\}").find(json)
                         if (mllmMatch != null) {
                             json = json.removeRange(mllmMatch.range)
+                            Log.i(TAG, "loadLocalModel: removed mllm config")
                         }
-                        // 添加 hidden_size（如果不存在）
+
+                        // 2. 修复多余逗号（如 "min_p": 0, 后面的逗号）
+                        // 先修复 ",," 模式
+                        json = json.replace(",,", ",")
+                        // 再修复逗号后跟 } 的模式
+                        json = json.replace(Regex(",\\s*\\}"), "}")
+                        // 最后修复逗号后跟 { 的模式（不应该有）
+                        json = json.replace(Regex(",\\s*\\{"), "{")
+
+                        // 3. 添加 hidden_size=1248（Qwen3.5-2B 实际架构参数，不是 1280）
                         if (!json.contains("\"hidden_size\"")) {
-                            json = json.replaceFirst("\\{", "{\\n    \"hidden_size\": 1280,")
+                            json = json.replaceFirst("\\{", "{\n    \"hidden_size\": 1248,")
+                            Log.i(TAG, "loadLocalModel: added hidden_size=1248")
+                        } else {
+                            // 如果已有 hidden_size，修正为正确的 1248
+                            json = json.replace(Regex("\"hidden_size\"\\s*:\\s*\\d+"), "\"hidden_size\": 1248")
+                            Log.i(TAG, "loadLocalModel: corrected hidden_size to 1248")
                         }
+
+                        // 4. 关闭 thinking（减少推理开销）
+                        json = json.replace(Regex("\"enable_thinking\"\\s*:\\s*true"), "\"enable_thinking\": false")
+
                         configFile.writeText(json)
-                        Log.i(TAG, "loadLocalModel: patched config.json (removed mllm, added hidden_size=1280)")
+                        Log.i(TAG, "loadLocalModel: config.json patched successfully")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "loadLocalModel: failed to modify config.json", e)
