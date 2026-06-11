@@ -1,0 +1,10 @@
+# Rime 英文词典 - 基于雾凇词库
+# 来源：iDvel/rime-ice (GPL-3.0)
+# 词典数据从外部存储加载（下载 full.zip 后解压到 rime/ 目录）
+
+---
+name: en
+version: "1.0.0"
+import_tables:
+  - en_dicts/en      # 雾凇英文词库主文件（下载 full.zip 后可用）
+...

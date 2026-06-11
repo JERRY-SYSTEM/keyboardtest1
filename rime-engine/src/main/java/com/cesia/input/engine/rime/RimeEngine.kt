@@ -222,7 +222,9 @@ class RimeEngine(private val context: Context) : InputEngine {
 
     /** 切换 Rime schema */
     fun selectSchema(schemaId: String): Boolean {
-        return Rime.selectRimeSchemas(arrayOf(schemaId))
+        val ok = Rime.selectRimeSchemas(arrayOf(schemaId))
+        if (ok) clearSession()
+        return ok
     }
 
     /** 清除当前 session（切换 schema 后调用，下次按键自动用新 schema 创建新 session） */

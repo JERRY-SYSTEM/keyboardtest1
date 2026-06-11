@@ -1,0 +1,92 @@
+# Rime schema — Cesia 英文输入
+# 基于雾凇词库英文词典，支持单词联想
+schema:
+  schema_id: en
+  name: 英文
+  version: "1.0.0"
+  author:
+    - Cesia
+  description: |
+    英文单词输入 - 基于雾凇英文词库
+    支持连续联想，输入 b → 显示 b 开头单词，输入 u → 显示 bu 开头单词
+
+# 开关
+switches:
+  - name: ascii_mode
+    reset: 1
+    states: [ 中, Ａ ]
+
+# 输入引擎
+engine:
+  processors:
+    - ascii_composer
+    - recognizer
+    - key_binder
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - ascii_segmentor
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - table_translator@english
+  filters:
+    - uniquifier
+
+# 英文词典翻译器
+english:
+  dictionary: en
+  enable_completion: true    # 启用联想补全
+  enable_sentence: false     # 不启用句子模式
+  enable_user_dict: false    # 不启用用户词典
+  initial_quality: 1         # 初始质量
+
+# 拼写器
+speller:
+  alphabet: "abcdefghijklmnopqrstuvwxyz"
+  delimiter: " '"
+  auto_select: false
+  auto_clear: manual
+
+# 标点 - 英文标点
+punctuator:
+  import_preset: default
+  full_shape:
+    ' ' : { commit: ' ' }
+    ',' : { commit: ',' }
+    '.' : { commit: '.' }
+    '<' : { commit: '<' }
+    '>' : { commit: '>' }
+    '/' : { commit: '/' }
+    '?' : { commit: '?' }
+    ';' : { commit: ';' }
+    ':' : { commit: ':' }
+    "'" : { commit: "'" }
+    '"' : { commit: '"' }
+    '\' : { commit: '\' }
+    '|' : { commit: '|' }
+    '`' : { commit: '`' }
+    '~' : { commit: '~' }
+    '!' : { commit: '!' }
+    '@' : { commit: '@' }
+    '#' : { commit: '#' }
+    '$' : { commit: '$' }
+    '%' : { commit: '%' }
+    '^' : { commit: '^' }
+    '&' : { commit: '&' }
+    '*' : { commit: '*' }
+    '(' : { commit: '(' }
+    ')' : { commit: ')' }
+    '-' : { commit: '-' }
+    '_' : { commit: '_' }
+    '=' : { commit: '=' }
+    '+' : { commit: '+' }
+    '[' : { commit: '[' }
+    ']' : { commit: ']' }
+    '{' : { commit: '{' }
+    '}' : { commit: '}' }

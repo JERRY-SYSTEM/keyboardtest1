@@ -2849,6 +2849,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             // 进入全键盘：恢复 QWERTY shift 状态
             isAsciiMode = qwertyShiftLocked || qwertyShiftTemp
             rimeEngine.setAsciiMode(isAsciiMode)
+            // 根据 shift 状态恢复对应方案
+            if (qwertyShiftLocked || qwertyShiftTemp) {
+                rimeEngine.selectSchema("en")
+            } else {
+                rimeEngine.selectSchema("pinyin")
+            }
             rimeEngine.clear()
         } else {
             // 进入符号键盘：只操作符号相关状态
@@ -2895,6 +2901,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             if (qwertyShiftLocked) {
                 isAsciiMode = true
                 rimeEngine.setAsciiMode(true)
+                rimeEngine.selectSchema("en")
             }
         } else {
             // QWERTY → T9：切换 schema 到 t9_pinyin
@@ -2961,23 +2968,26 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } else if (keyboardMode == KeyboardMode.QWERTY) {
             // 全键盘：操作 qwertyShiftLocked / qwertyShiftTemp
             if (qwertyShiftLocked) {
-                // 锁定状态 → 单击解除锁定
+                // 锁定状态 → 解除锁定，切回中文方案
                 qwertyShiftLocked = false
                 qwertyShiftTemp = false
                 isAsciiMode = false
                 rimeEngine.setAsciiMode(false)
+                rimeEngine.selectSchema("pinyin")
                 rimeEngine.clear()
             } else if (qwertyShiftTemp) {
-                // 临时shift → 退回正常
+                // 临时shift → 退回正常，切回中文方案
                 qwertyShiftTemp = false
                 isAsciiMode = false
                 rimeEngine.setAsciiMode(false)
+                rimeEngine.selectSchema("pinyin")
                 rimeEngine.clear()
             } else {
-                // 正常 → 单击临时shift
+                // 正常 → 单击临时shift，切换到英文方案
                 qwertyShiftTemp = true
                 isAsciiMode = true
                 rimeEngine.setAsciiMode(true)
+                rimeEngine.selectSchema("en")
                 rimeEngine.clear()
             }
         } else {
@@ -2996,11 +3006,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             t9ShiftLocked = true
             t9ShiftTemp = true
         } else if (keyboardMode == KeyboardMode.QWERTY) {
-            // 全键盘：锁定大写
+            // 全键盘：锁定大写，切换到英文方案
             qwertyShiftLocked = true
             qwertyShiftTemp = false
             isAsciiMode = true
             rimeEngine.setAsciiMode(true)
+            // 切换到英文方案
+            rimeEngine.selectSchema("en")
             rimeEngine.clear()
         } else {
             // 符号键盘：锁定符号 shift
@@ -3029,6 +3041,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             isAsciiMode = false
             rimeEngine.setAsciiMode(false)
+            // QWERTY 模式下切回中文方案
+            if (keyboardMode == KeyboardMode.QWERTY) {
+                rimeEngine.selectSchema("pinyin")
+            }
             updateShiftIndicator()
             keyboardView.invalidateAllKeys()
         }
@@ -3259,7 +3275,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
             showClipboardManagerPopup()
         }.also {
-            sendKeyHandler.postDelayed(it, 600)
+            sendKeyHandler.postDelayed(it, 800)
         }
     }
 
@@ -3912,25 +3928,42 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 functionalLongPressRunnable = null
                 shortPressHandled = true
                 if (isAsciiMode) {
-                    // Shift模式：短按输出大写字母
+                    // Shift模式：走英文词典联想（en schema 的 table_translator）
                     val shiftActive = if (keyboardMode == KeyboardMode.NUMBER) {
                         t9ShiftTemp || t9ShiftLocked
                     } else if (keyboardMode == KeyboardMode.QWERTY) {
-                        isAsciiMode  // QWERTY 临时 shift 或锁定都是 isAsciiMode=true
+                        isAsciiMode
                     } else {
                         symbolShiftLocked
                     }
-                    val out = if (shiftActive) {
-                        primaryCode.toChar().uppercaseChar().toString()
+                    val keyChar = if (shiftActive) {
+                        primaryCode.toChar().uppercaseChar()
                     } else {
-                        primaryCode.toChar().toString()
+                        primaryCode.toChar()
                     }
-                    ic?.commitText(out, 1)
+                    // 走 Rime 英文方案，获取联想候选词
+                    val accepted = rimeEngine.processKey(keyChar)
+                    if (accepted) {
+                        updateCandidateBar()
+                        // 如果 Rime 没有 composing（直接上屏了），commit 结果
+                        if (!rimeEngine.isComposing) {
+                            val result = rimeEngine.commit()
+                            if (result.isNotEmpty()) {
+                                ic?.commitText(result, 1)
+                            } else {
+                                ic?.commitText(keyChar.toString(), 1)
+                            }
+                        }
+                    } else {
+                        // Rime 不接受，直接上屏
+                        ic?.commitText(keyChar.toString(), 1)
+                    }
                     // QWERTY临时shift：输入一个字母后自动退回中文（锁定不退出）
                     if (!qwertyShiftLocked && keyboardMode == KeyboardMode.QWERTY && qwertyShiftTemp) {
                         qwertyShiftTemp = false
                         isAsciiMode = false
                         rimeEngine.setAsciiMode(false)
+                        rimeEngine.selectSchema("pinyin")
                         updateShiftIndicator()
                         keyboardView.invalidateAllKeys()
                     }
@@ -4263,7 +4296,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                     currentLongPressKey = null
                 }
-                Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 600)
+                Handler(Looper.getMainLooper()).postDelayed(functionalLongPressRunnable!!, 800)
             }
         }
         // popupCharacters 长按检测（功能键不注册，避免与功能长按冲突）
@@ -4282,7 +4315,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     handleShiftLongPress()
                 }
             }.also {
-                Handler(Looper.getMainLooper()).postDelayed(it, 600)
+                Handler(Looper.getMainLooper()).postDelayed(it, 800)
             }
         }
         // 剪贴板键长按：-108=粘贴，-109=剪切
