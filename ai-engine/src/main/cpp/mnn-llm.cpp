@@ -7,6 +7,7 @@
 #include <string>
 #include <memory>
 #include <sstream>
+#include <chrono>
 #include <android/log.h>
 #include <dlfcn.h>
 
@@ -139,6 +140,15 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeInit(
         bool loaded = g_llm->load();
         LOGI("llm->load() returned: %s", loaded ? "true" : "false");
         fflush(stdout);
+        if (loaded) {
+            // 打印实际使用的 backend 信息
+            auto context = g_llm->getContext();
+            LOGI("LLM loaded: prompt_len=%d, gen_seq_len=%d, status=%d",
+                 context->prompt_len, context->gen_seq_len, (int)context->status);
+            // 尝试获取 backend 信息
+            std::string config_dump = g_llm->dump_config();
+            LOGI("LLM config dump: %s", config_dump.substr(0, 200).c_str());
+        }
         if (!loaded) {
             // GPU 后端加载失败，回退到 CPU
             LOGW("llm->load() failed with GPU backend, retrying with cpu...");
@@ -259,7 +269,12 @@ Java_com_cesia_input_engine_ai_MNNEngine_nativeGenerate(
 
         // end_with 用换行，避免输入中的句号被误判为结束
         try {
+            auto start = std::chrono::steady_clock::now();
+            LOGI("nativeGenerate: starting response with maxTokens=%d", maxTokens);
             g_llm->response(messages, &outputStream, "\n", maxTokens);
+            auto end = std::chrono::steady_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+            LOGI("nativeGenerate: response completed in %lld ms", ms);
         } catch (const std::bad_alloc& e) {
             LOGE("nativeGenerate: OOM during response - %s", e.what());
             return env->NewStringUTF("");

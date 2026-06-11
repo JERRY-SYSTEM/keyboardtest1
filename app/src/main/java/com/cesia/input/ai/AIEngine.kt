@@ -106,10 +106,9 @@ class AIEngine(private val context: Context) {
                         json = json.replace(Regex("\"penalty\"\\s*:\\s*[\\d.]+"), "\"penalty\": 1.2")
                         Log.i(TAG, "loadLocalModel: sampler params aligned (temp=0.3, penalty=1.2)")
 
-                        // 6. 使用 Vulkan GPU 后端
-                        // MNN 3.5.0 源码编译的 libMNN_Vulkan.so 支持 Qwen3.5 LinearAttention
-                        json = json.replace(Regex("\"backend_type\"\\s*:\\s*\"[^\"]+\""), "\"backend_type\": \"vulkan\"")
-                        Log.i(TAG, "loadLocalModel: backend_type set to vulkan")
+                        // 6. 使用 CPU 后端（Vulkan 后端对 Qwen3.5 算子支持不完整，推理时 fallback 到 CPU）
+                        json = json.replace(Regex("\"backend_type\"\\s*:\\s*\"[^\"]+\""), "\"backend_type\": \"cpu\"")
+                        Log.i(TAG, "loadLocalModel: backend_type set to cpu")
 
                         configFile.writeText(json)
                         Log.i(TAG, "loadLocalModel: config.json patched successfully")
