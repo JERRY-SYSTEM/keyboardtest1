@@ -332,7 +332,8 @@ class VoiceEngine(private val context: Context) {
     suspend fun recordInSegments(
         maxDurationMs: Int = 30000,
         segmentDurationMs: Int = 3000,
-        onSegmentResult: suspend (text: String, isFinal: Boolean) -> Unit
+        onSegmentResult: suspend (text: String, isFinal: Boolean) -> Unit,
+        onCommandWordDetected: suspend (text: String, command: String) -> Unit = { _, _ -> }
     ) {
         Log.i(TAG, "recordInSegments: max=${maxDurationMs}ms, segment=${segmentDurationMs}ms")
 
@@ -348,7 +349,7 @@ class VoiceEngine(private val context: Context) {
         }
 
         if (isZipformerModel(modelDir) || isParaformerModel(modelDir)) {
-            recordStreaming(modelDir, maxDurationMs, onSegmentResult)
+            recordStreaming(modelDir, maxDurationMs, onSegmentResult, onCommandWordDetected)
         } else {
             recordInSegmentsOffline(modelDir, maxDurationMs, segmentDurationMs, onSegmentResult)
         }
@@ -374,7 +375,8 @@ class VoiceEngine(private val context: Context) {
     private suspend fun recordStreaming(
         modelDir: File,
         maxDurationMs: Int,
-        onSegmentResult: suspend (text: String, isFinal: Boolean) -> Unit
+        onSegmentResult: suspend (text: String, isFinal: Boolean) -> Unit,
+        onCommandWordDetected: suspend (text: String, command: String) -> Unit = { _, _ -> }
     ) {
         Log.i(TAG, "recordStreaming: 使用 OnlineRecognizer 流式识别, maxDuration=${maxDurationMs}ms")
 
@@ -413,11 +415,25 @@ class VoiceEngine(private val context: Context) {
         val SILENCE_TIMEOUT_MS = 2000L
         val MAX_EMPTY_READS = 20
 
+        // 命令词检测状态
+        var pendingCommand: String? = null
+        var pendingText: String = ""
+        var commandDetectedTime: Long = 0L
+        val COMMAND_CONFIRM_MS = 1000L  // 命令词后等待 1 秒静音确认
+
         try {
             var totalSamples = 0
             var nonEmptyResults = 0
             var endpointCount = 0
             while (coroutineContext.isActive && System.currentTimeMillis() - startTime[0] < maxDurationMs) {
+                // 如果有待触发的命令词，超时后自动触发
+                if (pendingCommand != null && System.currentTimeMillis() - commandDetectedTime >= COMMAND_CONFIRM_MS) {
+                    Log.i(TAG, "recordStreaming: 命令词 '$pendingCommand' 超时确认, 文本='${pendingText.take(50)}'")
+                    try { recorder.stop() } catch (_: Exception) {}
+                    onCommandWordDetected(pendingText, pendingCommand)
+                    return
+                }
+
                 val read = recorder.readChunk(readBuffer.size) ?: break
                 if (read.isEmpty()) {
                     consecutiveEmptyReads++
@@ -472,8 +488,32 @@ class VoiceEngine(private val context: Context) {
                     currentResult
                 }
 
+                // 如果有待触发的命令词，且用户继续说了新内容，取消触发
+                if (pendingCommand != null && delta.isNotEmpty()) {
+                    val newEnd = currentResult.takeLast(20).lowercase()
+                    // 如果新内容不包含命令词，说明用户在继续说话，取消触发
+                    if (!newEnd.contains("over") && !newEnd.contains("ai")) {
+                        Log.i(TAG, "recordStreaming: 用户继续说话，取消命令词 '$pendingCommand' 触发")
+                        pendingCommand = null
+                        pendingText = ""
+                    }
+                }
+
                 // 更新 lastResult 为当前完整文本（去重后）
                 lastResult = currentResult
+
+                // 命令词检测：检查当前完整文本末尾是否包含命令词
+                // 支持 "aiover"、"ai over"、"over"（兼容空格）
+                val commandResult = checkCommandWord(currentResult)
+                if (commandResult != null) {
+                    val (textBefore, command) = commandResult
+                    Log.i(TAG, "recordStreaming: 检测到命令词 '$command', 文本='${textBefore.take(50)}', 等待 ${COMMAND_CONFIRM_MS}ms 确认")
+                    // 不立即触发，记录待触发状态，等 1 秒静音确认
+                    pendingCommand = command
+                    pendingText = textBefore
+                    commandDetectedTime = System.currentTimeMillis()
+                    // 继续录音，等待超时或新内容取消
+                }
 
                 if (delta.isNotEmpty()) {
                     Log.d(TAG, "recordStreaming: delta='$delta', full='$currentResult', samples=$totalSamples")
@@ -865,6 +905,34 @@ class VoiceEngine(private val context: Context) {
             return result
         } catch (_: Exception) {
             return null
+        }
+    }
+
+    /**
+     * 命令词检测
+     * 检查文本末尾是否包含 "aiover"、"ai over" 或 "over"
+     * 返回 Pair(命令词前的文本, 命令词类型) 或 null
+     * 命令词类型: "ai" 表示 aiover/ai over, "plain" 表示 over
+     */
+    private fun checkCommandWord(text: String): Pair<String, String>? {
+        val lower = text.lowercase().trimEnd()
+        // 按优先级检测：先检测长的 "aiover" / "ai over"，再检测 "over"
+        return when {
+            // "aiover" 或 "ai over"（兼容空格）
+            lower.endsWith("aiover") -> {
+                val before = text.dropLast(7).trimEnd()
+                Pair(before, "ai")
+            }
+            lower.endsWith("ai over") -> {
+                val before = text.dropLast(7).trimEnd()
+                Pair(before, "ai")
+            }
+            // "over"（确保不是 "aiover" 的一部分）
+            lower.endsWith("over") && !lower.endsWith("aiover") -> {
+                val before = text.dropLast(4).trimEnd()
+                Pair(before, "plain")
+            }
+            else -> null
         }
     }
 

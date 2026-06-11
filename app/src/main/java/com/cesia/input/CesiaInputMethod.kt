@@ -681,6 +681,37 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
             engine.onRecognitionComplete = { text ->
                 Handler(Looper.getMainLooper()).post {
+                    // 命令词检测（Google 识别结果走这里）
+                    val commandResult = checkVoiceCommandWord(text)
+                    if (commandResult != null) {
+                        val (textBefore, command) = commandResult
+                        Log.i("Cesia", "命令词检测(Google): command='$command', text='${textBefore.take(50)}'")
+                        recognizedText = textBefore
+                        isRecording = false
+                        stopVoiceWave()
+                        setStatusDot("idle")
+                        isWaitingForChoice = false
+                        hideAiChoiceButtons()
+
+                        if (textBefore.isEmpty()) {
+                            updateStatus("⚠️ 未识别到文字")
+                            resetToIdle()
+                            return@post
+                        }
+
+                        if (command == "ai") {
+                            updateStatus("✨ 语音润色中...")
+                            setStatusDot("processing")
+                            isProcessingResult = true
+                            polishRecognizedText(textBefore)
+                        } else {
+                            currentInputConnection?.commitText(textBefore, 1)
+                            updateStatus("✅ 已上屏")
+                            resetToIdle()
+                        }
+                        return@post
+                    }
+
                     recognizedText = text
                     isRecording = false
                     stopVoiceWave()
@@ -2294,6 +2325,37 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                                 } else {
                                     Log.w("Cesia", "onSegmentResult: isFinal but text is empty!")
                                 }
+                            }
+                        }
+                    },
+                    onCommandWordDetected = { text: String, command: String ->
+                        Log.i("Cesia", "命令词检测: command='$command', text='${text.take(50)}'")
+                        withContext(Dispatchers.Main) {
+                            isRecording = false
+                            stopVoiceWave()
+                            setStatusDot("idle")
+                            recognizedText = text
+
+                            if (text.isEmpty()) {
+                                updateStatus("⚠️ 未识别到文字")
+                                resetToIdle()
+                                return@withContext
+                            }
+
+                            isWaitingForChoice = false
+                            hideAiChoiceButtons()
+
+                            if (command == "ai") {
+                                // aiover / ai over → 润色上屏
+                                updateStatus("✨ 语音润色中...")
+                                setStatusDot("processing")
+                                isProcessingResult = true
+                                polishRecognizedText(text)
+                            } else {
+                                // over → 直接上屏
+                                currentInputConnection?.commitText(text, 1)
+                                updateStatus("✅ 已上屏")
+                                resetToIdle()
                             }
                         }
                     }
@@ -4336,6 +4398,31 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         aiEngine.release()
         voiceEngineScope.cancel()
         super.onDestroy()
+    }
+
+    /**
+     * 语音命令词检测
+     * 检查文本末尾是否包含 "aiover"、"ai over" 或 "over"
+     * 返回 Pair(命令词前的文本, 命令词类型) 或 null
+     * 命令词类型: "ai" 表示 aiover/ai over, "plain" 表示 over
+     */
+    private fun checkVoiceCommandWord(text: String): Pair<String, String>? {
+        val lower = text.lowercase().trimEnd()
+        return when {
+            lower.endsWith("aiover") -> {
+                val before = text.dropLast(7).trimEnd()
+                Pair(before, "ai")
+            }
+            lower.endsWith("ai over") -> {
+                val before = text.dropLast(7).trimEnd()
+                Pair(before, "ai")
+            }
+            lower.endsWith("over") && !lower.endsWith("aiover") -> {
+                val before = text.dropLast(4).trimEnd()
+                Pair(before, "plain")
+            }
+            else -> null
+        }
     }
 
     // ======================== UI 辅助 ========================
