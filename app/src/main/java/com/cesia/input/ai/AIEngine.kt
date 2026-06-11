@@ -106,11 +106,11 @@ class AIEngine(private val context: Context) {
                         json = json.replace(Regex("\"penalty\"\\s*:\\s*[\\d.]+"), "\"penalty\": 1.2")
                         Log.i(TAG, "loadLocalModel: sampler params aligned (temp=0.3, penalty=1.2)")
 
-                        // 6. 强制使用 CPU 后端
-                        // 注意：Vulkan 后端 (backend_type=vulkan) 在 Qwen3.5 模型上会崩溃
-                        // (libMNN_Vulkan.so 中 vector length_error)，待 MNN 官方修复后再启用
-                        json = json.replace(Regex("\"backend_type\"\\s*:\\s*\"[^\"]+\""), "\"backend_type\": \"cpu\"")
-                        Log.i(TAG, "loadLocalModel: backend_type forced to cpu (vulkan has bug with Qwen3.5)")
+                        // 6. 尝试使用 OpenCL GPU 后端
+                        // Vulkan 在 Qwen3.5 上会崩溃 (vector length_error in libMNN_Vulkan.so)
+                        // OpenCL 可能更稳定
+                        json = json.replace(Regex("\"backend_type\"\\s*:\\s*\"[^\"]+\""), "\"backend_type\": \"opencl\"")
+                        Log.i(TAG, "loadLocalModel: backend_type set to opencl")
 
                         configFile.writeText(json)
                         Log.i(TAG, "loadLocalModel: config.json patched successfully")
