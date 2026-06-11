@@ -395,8 +395,19 @@ class ModelDownloadManager(private val context: Context) {
                 }
             }
 
-            // 下载完成后不再修改 config.json
-            // MNN 3.5.0 原生支持 Qwen3.5，不需要修改配置文件
+            // 下载完成后，用 assets 中的 config.json 覆盖（确保 hidden_size 等参数正确）
+            try {
+                val configFile = File(modelDir, "config.json")
+                context.assets.open("qwen35-2b-mnn/config.json").use { input ->
+                    FileOutputStream(configFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.i(TAG, "MNN model: config.json replaced from assets")
+            } catch (e: Exception) {
+                Log.w(TAG, "MNN model: failed to copy config.json from assets", e)
+            }
+
             modelManager.markInstalled(modelId, ModelInfo.ModelType.AI)
             Log.i(TAG, "MNN model download complete: ${modelDir.absolutePath}")
             Result.success(modelDir)
