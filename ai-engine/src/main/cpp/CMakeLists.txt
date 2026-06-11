@@ -87,3 +87,7 @@ target_include_directories(mnn-llm-bridge PRIVATE
     ${MNN_INCLUDE_DIR}/MNN)
 target_link_libraries(mnn-llm-bridge mnn_llm mnn android log)
 target_compile_options(mnn-llm-bridge PRIVATE -O3 -ffast-math)
+
+# 设置输出目录为 jniLibs，避免与手动放置的 .so 冲突
+set_target_properties(mnn-llm-bridge PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a")
