@@ -93,6 +93,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 语音锁定模式
     private var isVoiceLocked: Boolean = false
 
+    // 语音键长按检测（参考魔法书模式）
+    private var micLongPressTriggered = false
+    private var micHandler = Handler(Looper.getMainLooper())
+    private var micLongPressRunnable: Runnable? = null
+
     // 候选词栏
     private lateinit var candidateBar: LinearLayout
     private lateinit var btnCandidateExpand: ImageButton
@@ -1054,73 +1059,27 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 录音（根据当前模式） ========================
 
     private fun setupButtonListeners() {
-        // 语音按钮：短按开始录音，长按弹出选择面板
-        longPressActive = false
-        micButton.setOnClickListener {
-            if (longPressActive) {
-                longPressActive = false
-                return@setOnClickListener
-            }
-            if (!isRecording && !isWaitingForChoice) {
-                try {
-                    val bridgeLoaded = SherpaOnnxEngine.isLibraryLoaded()
-                    val hasVoiceModel = modelManager.hasVoiceModel()
-                    Log.i("Cesia", "单击语音键: bridgeLoaded=$bridgeLoaded, hasVoiceModel=$hasVoiceModel, localMode=$localModeEnabled, simulTranslate=$simulTranslateEnabled")
-
-                    if (simulTranslateEnabled) {
-                        // 同传模式：语音识别 → 翻译 → TTS 播放
-                        if (!bridgeLoaded || !hasVoiceModel) {
-                            updateStatus("⚠️ 同传模式需要语音识别模型，请先到设置中下载")
-                            return@setOnClickListener
-                        }
-                        if (!modelManager.hasAiModel()) {
-                            updateStatus("⚠️ 同传模式需要 Qwen 模型，请先到设置中下载")
-                            return@setOnClickListener
-                        }
-                        startSimulTranslateRecording()
-                    } else if (localModeEnabled) {
-                        // 本地模式：必须 Sherpa + 语音模型 + Qwen 都安装
-                        if (!bridgeLoaded || !hasVoiceModel || !modelManager.hasAiModel()) {
-                            updateStatus("⚠️ 本地模式需要语音识别 + Qwen 模型，请先到设置中下载")
-                            return@setOnClickListener
-                        }
-                        startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.LOCAL_AI)
-                    } else {
-                        // 云端模式：本地模型可用时用本地识别 + 云端润色，否则 Google + 云端润色
-                        if (bridgeLoaded && hasVoiceModel) {
-                            startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.CLOUD_OPENROUTER)
-                        } else {
-                            Log.i("Cesia", "单击语音键: 使用 Google 语音识别")
-                            startRecordingWithChoice(VoiceChoice.GOOGLE, PolishChoice.CLOUD_OPENROUTER)
-                        }
-                    }
-                } catch (e: Throwable) {
-                    Log.e("Cesia", "单击语音键异常", e)
-                    updateStatus("❌ 语音启动失败: ${e.javaClass.simpleName}")
+        // 语音按钮：参考魔法书模式，OnTouchListener 统一处理单击和长按
+        micButton.setOnClickListener { micOnClickListener() }
+        micButton.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    micLongPressTriggered = false
+                    startMicLongPressDetection()
+                    true
                 }
-            } else if (isWaitingForChoice) {
-                updateStatus("请点击 AI+ 或 AI× 选择处理方式")
-            } else if (isRecording) {
-                if (magicMode) {
-                    typelessEngine?.stopListening()
-                    setStatusDot("processing")
-                    updateStatus("⏳ 正在识别指令...")
-                } else {
-                    if (simulTranslateEnabled) {
-                        stopSimulTranslateRecording()
-                    } else {
-                        stopRecording()
+                android.view.MotionEvent.ACTION_UP -> {
+                    cancelMicLongPressDetection()
+                    if (!micLongPressTriggered) {
+                        v.performClick()
                     }
+                    true
                 }
-            }
-        }
-        micButton.setOnLongClickListener {
-            if (isRecording || isWaitingForChoice) {
-                resetToIdle()
-                true
-            } else {
-                toggleVoiceLockMode()
-                true
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    cancelMicLongPressDetection()
+                    true
+                }
+                else -> false
             }
         }
 
@@ -1229,6 +1188,92 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 else -> false
             }
         }
+    }
+
+    // ======================== 语音键单击/长按处理 ========================
+
+    /**
+     * 语音键单击处理
+     * - 锁定模式：退出锁定
+     * - 非录音状态：开始录音
+     * - 录音状态：停止录音
+     */
+    private fun micOnClickListener() {
+        if (isVoiceLocked) {
+            // 锁定模式下单击 → 退出锁定
+            isVoiceLocked = false
+            updateMicButtonLockedState()
+            updateStatus("🔓 已退出语音锁定模式")
+            resetToIdle()
+            return
+        }
+        if (!isRecording && !isWaitingForChoice) {
+            try {
+                val bridgeLoaded = SherpaOnnxEngine.isLibraryLoaded()
+                val hasVoiceModel = modelManager.hasVoiceModel()
+                Log.i("Cesia", "单击语音键: bridgeLoaded=$bridgeLoaded, hasVoiceModel=$hasVoiceModel, localMode=$localModeEnabled, simulTranslate=$simulTranslateEnabled")
+
+                if (simulTranslateEnabled) {
+                    if (!bridgeLoaded || !hasVoiceModel) {
+                        updateStatus("⚠️ 同传模式需要语音识别模型，请先到设置中下载")
+                        return
+                    }
+                    if (!modelManager.hasAiModel()) {
+                        updateStatus("⚠️ 同传模式需要 Qwen 模型，请先到设置中下载")
+                        return
+                    }
+                    startSimulTranslateRecording()
+                } else if (localModeEnabled) {
+                    if (!bridgeLoaded || !hasVoiceModel || !modelManager.hasAiModel()) {
+                        updateStatus("⚠️ 本地模式需要语音识别 + Qwen 模型，请先到设置中下载")
+                        return
+                    }
+                    startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.LOCAL_AI)
+                } else {
+                    if (bridgeLoaded && hasVoiceModel) {
+                        startRecordingWithChoice(VoiceChoice.LOCAL_SHERPA, PolishChoice.CLOUD_OPENROUTER)
+                    } else {
+                        Log.i("Cesia", "单击语音键: 使用 Google 语音识别")
+                        startRecordingWithChoice(VoiceChoice.GOOGLE, PolishChoice.CLOUD_OPENROUTER)
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.e("Cesia", "单击语音键异常", e)
+                updateStatus("❌ 语音启动失败: ${e.javaClass.simpleName}")
+            }
+        } else if (isWaitingForChoice) {
+            updateStatus("请点击 AI+ 或 AI× 选择处理方式")
+        } else if (isRecording) {
+            if (magicMode) {
+                typelessEngine?.stopListening()
+                setStatusDot("processing")
+                updateStatus("⏳ 正在识别指令...")
+            } else {
+                if (simulTranslateEnabled) {
+                    stopSimulTranslateRecording()
+                } else {
+                    stopRecording()
+                }
+            }
+        }
+    }
+
+    /** 开始语音键长按检测 */
+    private fun startMicLongPressDetection() {
+        cancelMicLongPressDetection()
+        micLongPressRunnable = Runnable {
+            micLongPressTriggered = true
+            keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            toggleVoiceLockMode()
+        }.also {
+            micHandler.postDelayed(it, 800)
+        }
+    }
+
+    /** 取消语音键长按检测 */
+    private fun cancelMicLongPressDetection() {
+        micLongPressRunnable?.let { micHandler.removeCallbacks(it) }
+        micLongPressRunnable = null
     }
 
     // ======================== 魔法修改 ========================

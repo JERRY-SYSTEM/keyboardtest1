@@ -917,16 +917,11 @@ class VoiceEngine(private val context: Context) {
      */
     private fun checkCommandWord(text: String): Pair<String, String>? {
         val lower = text.lowercase().trimEnd()
-        // 按优先级检测：先检测"退出锁定"，再检测"aiover"/"ai over"，最后检测"over"
+        // 按优先级检测：先检测"unlock"退出锁定，再检测"aiover"/"ai over"，最后检测"over"
         return when {
-            // "退出锁定 over" - 最高优先级（中文4字+空格+英文4字=9个码点）
-            lower.endsWith("退出锁定 over") -> {
-                val before = text.dropLast(9).trimEnd()
-                Pair(before, "unlock")
-            }
-            // "退出锁定over"（无空格，8个码点）
-            lower.endsWith("退出锁定over") -> {
-                val before = text.dropLast(8).trimEnd()
+            // "unlock" - 退出锁定模式（最高优先级）
+            lower.endsWith("unlock") -> {
+                val before = text.dropLast(6).trimEnd()
                 Pair(before, "unlock")
             }
             // "aiover" 或 "ai over"（兼容空格）
@@ -938,7 +933,7 @@ class VoiceEngine(private val context: Context) {
                 val before = text.dropLast(7).trimEnd()
                 Pair(before, "ai")
             }
-            // "over"（确保不是 "aiover" 或 "退出锁定 over" 的一部分）
+            // "over"（确保不是 "aiover" 或 "unlock" 的一部分）
             lower.endsWith("over") && !lower.endsWith("aiover") -> {
                 val before = text.dropLast(4).trimEnd()
                 Pair(before, "plain")
