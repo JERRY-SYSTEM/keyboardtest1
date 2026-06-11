@@ -4,7 +4,7 @@
     "llm_model": "llm.mnn",
     "llm_weight": "llm.mnn.weight",
     "backend_type": "cpu",
-    "thread_num": 2,
+    "thread_num": 4,
     "precision": "low",
     "memory": "low",
     "sampler_type": "mixed",
