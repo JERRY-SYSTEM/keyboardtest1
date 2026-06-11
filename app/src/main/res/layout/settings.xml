@@ -484,15 +484,6 @@
                 android:layout_marginStart="4dp" />
         </LinearLayout>
 
-        <Button
-            android:id="@+id/btn_uninstall"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="🗑 卸载本地模型"
-            android:textSize="12sp"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_marginBottom="8dp" />
-
         <!-- 下载进度 -->
         <TextView
             android:id="@+id/tv_download_progress"

@@ -42,33 +42,33 @@ if (NOT EXISTS "${MNN_LIBS_DIR}/libMNN.so" OR NOT EXISTS "${MNN_LIBS_DIR}/libllm
     endif()
 
     # 复制所有 MNN 相关的 .so（libllm.so 依赖多个 MNN 子模块）
+    # NOTE: 已手动替换为从 MNN 源码编译的新版本，不再从官方包复制
+    # 官方包的 .so 是预编译的，不支持 Qwen3.5 的 partial_rotary_factor
     set(MNN_SO_DIR "${MNN_350_EXTRACTED}/mnn_3.5.0_android_armv7_armv8_cpu_opencl_vulkan/arm64-v8a")
-    file(GLOB ALL_MNN_SO "${MNN_SO_DIR}/*.so")
-    # 复制到 ai-engine/libs（CMake 链接用）和 jniLibs（打包用）
-    # 注意：MNN 3.5.0 的 libc++_shared.so 必须打包，因为它包含新版 C++ 符号
-    # rime-engine 的旧版 libc++_shared.so 缺少这些符号会导致 MNN so 加载失败
-    set(MNN_JNI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a")
-    file(MAKE_DIRECTORY "${MNN_JNI_DIR}")
-    foreach(SO_PATH ${ALL_MNN_SO})
-        file(COPY "${SO_PATH}" DESTINATION "${MNN_LIBS_DIR}")
-        file(COPY "${SO_PATH}" DESTINATION "${MNN_JNI_DIR}")
-    endforeach()
-    list(LENGTH ALL_MNN_SO SO_COUNT)
-    message(STATUS "Copied ${SO_COUNT} MNN .so files")
+    # file(GLOB ALL_MNN_SO "${MNN_SO_DIR}/*.so")
+    # file(MAKE_DIRECTORY "${MNN_JNI_DIR}")
+    # foreach(SO_PATH ${ALL_MNN_SO})
+    #     file(COPY "${SO_PATH}" DESTINATION "${MNN_LIBS_DIR}")
+    #     file(COPY "${SO_PATH}" DESTINATION "${MNN_JNI_DIR}")
+    # endforeach()
+    # list(LENGTH ALL_MNN_SO SO_COUNT)
+    # message(STATUS "Copied ${SO_COUNT} MNN .so files")
+    message(STATUS "Using manually compiled MNN .so files (skipping official package copy)")
 
     message(STATUS "MNN 3.5.0 .so libraries extracted successfully")
 endif()
 
 # 确保 MNN 3.5.0 的 libc++_shared.so 被复制到 jniLibs
 # 这个版本包含新版 C++ 符号（如 verbose_abort），NDK 自带的版本太旧
-set(MNN_JNI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a")
-set(MNN_SO_DIR "${MNN_350_EXTRACTED}/mnn_3.5.0_android_armv7_armv8_cpu_opencl_vulkan/arm64-v8a")
-if (EXISTS "${MNN_SO_DIR}/libc++_shared.so")
-    file(COPY "${MNN_SO_DIR}/libc++_shared.so" DESTINATION "${MNN_JNI_DIR}")
-    message(STATUS "Copied MNN 3.5.0 libc++_shared.so to jniLibs")
-else()
-    message(WARNING "MNN 3.5.0 libc++_shared.so not found at ${MNN_SO_DIR}")
-endif()
+# NOTE: 已手动替换为从 MNN 源码编译的新版本
+# set(MNN_JNI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a")
+# set(MNN_SO_DIR "${MNN_350_EXTRACTED}/mnn_3.5.0_android_armv7_armv8_cpu_opencl_vulkan/arm64-v8a")
+# if (EXISTS "${MNN_SO_DIR}/libc++_shared.so")
+#     file(COPY "${MNN_SO_DIR}/libc++_shared.so" DESTINATION "${MNN_JNI_DIR}")
+#     message(STATUS "Copied MNN 3.5.0 libc++_shared.so to jniLibs")
+# else()
+#     message(WARNING "MNN 3.5.0 libc++_shared.so not found at ${MNN_SO_DIR}")
+# endif()
 
 # MNN 核心库（动态链接）
 add_library(mnn SHARED IMPORTED)

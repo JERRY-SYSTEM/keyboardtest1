@@ -1,6 +1,7 @@
 package com.cesia.input.ai
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
@@ -43,7 +44,6 @@ class VoiceAISettingsHelper(
     var tvAiModelStatus: TextView? = null
     var btnDownloadVoice: Button? = null
     var btnDownloadAi: Button? = null
-    var btnUninstall: Button? = null
     var tvDownloadProgress: TextView? = null
     var pbDownload: ProgressBar? = null
 
@@ -60,7 +60,6 @@ class VoiceAISettingsHelper(
         tvAiModelStatus: TextView?,
         btnDownloadVoice: Button?,
         btnDownloadAi: Button?,
-        btnUninstall: Button?,
         tvDownloadProgress: TextView?,
         pbDownload: ProgressBar?
     ) {
@@ -70,7 +69,6 @@ class VoiceAISettingsHelper(
         this.tvAiModelStatus = tvAiModelStatus
         this.btnDownloadVoice = btnDownloadVoice
         this.btnDownloadAi = btnDownloadAi
-        this.btnUninstall = btnUninstall
         this.tvDownloadProgress = tvDownloadProgress
         this.pbDownload = pbDownload
     }
@@ -141,28 +139,57 @@ class VoiceAISettingsHelper(
             downloadAiModel(model)
         }
 
-        // 卸载本地模型
-        btnUninstall?.setOnClickListener {
+        // 语音识别下载按钮：已安装时长按卸载
+        btnDownloadVoice?.setOnLongClickListener {
             val voiceInstalled = modelManager.getInstalledVoiceModelFile()
-            val aiInstalled = modelManager.getInstalledAiModelFile()
-            if (voiceInstalled == null && aiInstalled == null) {
-                Toast.makeText(activity, "没有已安装的本地模型", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            var count = 0
-            count += if (downloadManager.deleteModel("sherpa-zipformer")) 1 else 0
-            // 动态卸载当前安装的 AI 模型（可能是 qwen25-1.5b-mnn 或 qwen35-2b-mnn 等）
-            val installedAiId = modelManager.installedAiModelId
-            if (installedAiId != null) {
-                count += if (downloadManager.deleteModel(installedAiId)) 1 else 0
+            if (voiceInstalled != null) {
+                AlertDialog.Builder(activity)
+                    .setTitle("卸载语音识别模型")
+                    .setMessage("确定要卸载已安装的语音识别模型吗？")
+                    .setPositiveButton("卸载") { _, _ ->
+                        val deleted = downloadManager.deleteModel("sherpa-zipformer")
+                        refreshModelStatus()
+                        Toast.makeText(
+                            activity,
+                            if (deleted) "已卸载语音识别模型" else "卸载失败",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+                true
             } else {
-                // 兜底：尝试删除所有已知的 AI 模型目录
-                for (modelId in listOf("qwen35-2b-mnn", "qwen25-1.5b-mnn")) {
-                    count += if (downloadManager.deleteModel(modelId)) 1 else 0
-                }
+                false
             }
-            refreshModelStatus()
-            Toast.makeText(activity, "已卸载 $count 个模型文件", Toast.LENGTH_SHORT).show()
+        }
+
+        // AI 润色下载按钮：已安装时长按卸载
+        btnDownloadAi?.setOnLongClickListener {
+            val aiInstalled = modelManager.getInstalledAiModelFile()
+            if (aiInstalled != null) {
+                AlertDialog.Builder(activity)
+                    .setTitle("卸载 AI 润色模型")
+                    .setMessage("确定要卸载已安装的 AI 润色模型吗？")
+                    .setPositiveButton("卸载") { _, _ ->
+                        val installedAiId = modelManager.installedAiModelId
+                        val deleted = if (installedAiId != null) {
+                            downloadManager.deleteModel(installedAiId)
+                        } else {
+                            listOf("qwen35-2b-mnn", "qwen25-1.5b-mnn").any { downloadManager.deleteModel(it) }
+                        }
+                        refreshModelStatus()
+                        Toast.makeText(
+                            activity,
+                            if (deleted) "已卸载 AI 润色模型" else "卸载失败",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+                true
+            } else {
+                false
+            }
         }
     }
 
@@ -214,8 +241,6 @@ class VoiceAISettingsHelper(
             btnDownloadAi?.isEnabled = !isDownloading
         }
 
-        // 卸载按钮：任一已安装则可卸载
-        btnUninstall?.isEnabled = voiceInstalled != null || aiInstalled != null
     }
 
     /** 刷新桥梁状态（显示框架+模型的完整连接信息） */

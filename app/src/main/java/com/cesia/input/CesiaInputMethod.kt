@@ -3762,6 +3762,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             Log.d("Cesia", "空格键: composing=$composing hasCands=$hasCands cands=${cands.size} isAscii=$isAsciiMode mode=$keyboardMode")
         }
 
+        // 任何新按键（除空格键外）清除联想状态，确保旧联想词不会残留
+        if (primaryCode != 32) {
+            exitAssociationMode()
+        }
+
         when (primaryCode) {
 
             // ======================== 字母键 a-z ========================

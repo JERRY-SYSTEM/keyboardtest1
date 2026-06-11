@@ -52,18 +52,24 @@ class AIEngine(private val context: Context) {
     suspend fun loadLocalModel(configPath: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
-                // 修改 config.json：移除 mllm 配置，避免加载 visual.mnn
+                // 修改 config.json：移除 mllm 配置，添加 hidden_size
                 // Qwen3.5-2B 纯文本推理不需要 visual 模型
+                // hidden_size=1280 是 Qwen3.5-2B 的架构参数
                 try {
                     val configFile = File(configPath)
                     if (configFile.exists()) {
-                        val json = configFile.readText()
-                        val m = Regex("\"mllm\"\\s*:\\s*\\{[^}]*\\}").find(json)
-                        if (m != null) {
-                            val cleaned = json.removeRange(m.range)
-                            configFile.writeText(cleaned)
-                            Log.i(TAG, "loadLocalModel: removed mllm config from config.json")
+                        var json = configFile.readText()
+                        // 移除 mllm 配置
+                        val mllmMatch = Regex("\"mllm\"\\s*:\\s*\\{[^}]*\\}").find(json)
+                        if (mllmMatch != null) {
+                            json = json.removeRange(mllmMatch.range)
                         }
+                        // 添加 hidden_size（如果不存在）
+                        if (!json.contains("\"hidden_size\"")) {
+                            json = json.replaceFirst("\\{", "{\\n    \"hidden_size\": 1280,")
+                        }
+                        configFile.writeText(json)
+                        Log.i(TAG, "loadLocalModel: patched config.json (removed mllm, added hidden_size=1280)")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "loadLocalModel: failed to modify config.json", e)

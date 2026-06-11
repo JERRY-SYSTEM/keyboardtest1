@@ -40,6 +40,13 @@ android {
             version = "3.22.1"
         }
     }
+
+    packaging {
+        jniLibs {
+            pickFirsts.add("lib/arm64-v8a/libMNN.so")
+            pickFirsts.add("lib/arm64-v8a/libllm.so")
+        }
+    }
 }
 
 dependencies {

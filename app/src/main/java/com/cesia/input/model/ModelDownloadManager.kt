@@ -218,64 +218,105 @@ class ModelDownloadManager(private val context: Context) {
 
             val files = ModelRegistry.MNN_MODEL_FILES
 
-            // 计算总大小（用于进度百分比）
-            val totalBytes = modelInfo.sizeBytes
-            var downloadedBytes = 0L
-
-            // 先统计已下载的文件大小
-            for (file in files) {
-                val destFile = File(modelDir, file)
-                if (destFile.exists() && destFile.length() > 100) {
-                    downloadedBytes += destFile.length()
-                }
-            }
+            // === 第一阶段：HEAD 请求获取每个文件的真实大小 ===
+            data class FileSpec(val name: String, val destFile: File, val url: String, val totalSize: Long)
+            val fileSpecs = mutableListOf<FileSpec>()
+            var grandTotal = 0L
 
             for (file in files) {
                 val destFile = File(modelDir, file)
+                val url = ModelRegistry.getMnnFileUrl(file, modelId)
 
-                // 文件已存在且大小合理则跳过
-                if (destFile.exists() && destFile.length() > 100) {
-                    Log.i(TAG, "MNN file already exists: $file (${destFile.length()} bytes)")
-                    val pct = downloadedBytes.toDouble() / totalBytes * 100
-                    onProgress?.invoke(file, Math.round(pct * 10.0) / 10.0, downloadedBytes, totalBytes)
+                // 已存在的文件直接计入进度
+                if (destFile.exists() && destFile.length() > 0) {
+                    grandTotal += destFile.length()
                     continue
                 }
 
-                // 下载（使用 modelId 对应的仓库 URL）
-                val url = ModelRegistry.getMnnFileUrl(file, modelId)
+                // HEAD 请求获取真实文件大小
+                var fileSize = 0L
                 try {
-                    val request = Request.Builder().url(url).build()
-                    val response = client.newCall(request).execute()
-                    if (!response.isSuccessful) {
-                        return@withContext Result.failure(
-                            Exception("下载失败 HTTP ${response.code}: $file")
-                        )
+                    val headReq = Request.Builder().url(url).head().build()
+                    val headResp = client.newCall(headReq).execute()
+                    if (headResp.isSuccessful) {
+                        fileSize = headResp.header("Content-Length")?.toLongOrNull() ?: 0L
                     }
-                    val body = response.body ?: return@withContext Result.failure(
-                        Exception("下载失败: 空响应 $file")
-                    )
-                    // 先写到临时文件，成功后再重命名
-                    val tempFile = File(destFile.parentFile, "${destFile.name}.tmp")
-                    body.byteStream().use { input ->
-                        FileOutputStream(tempFile).use { output ->
-                            input.copyTo(output)
+                } catch (_: Exception) { }
+
+                // HEAD 失败时用估算值
+                if (fileSize == 0L) {
+                    fileSize = when {
+                        file == "visual.mnn.weight" -> 196L * 1024 * 1024
+                        file == "llm.mnn.weight" -> 1000L * 1024 * 1024
+                        file == "visual.mnn" -> 500L * 1024
+                        file == "llm.mnn" -> 50L * 1024 * 1024
+                        file.endsWith(".json") -> 10L * 1024
+                        file == "tokenizer.txt" -> 2L * 1024 * 1024
+                        else -> 1024L
+                    }
+                }
+                fileSpecs.add(FileSpec(file, destFile, url, fileSize))
+                grandTotal += fileSize
+            }
+
+            var downloadedBytes = grandTotal - fileSpecs.sumOf { it.totalSize }
+
+            // === 第二阶段：逐文件下载，流式进度 ===
+            for (spec in fileSpecs) {
+                // 下载（使用 modelId 对应的仓库 URL）
+                var success = false
+                val mirrors = listOf(
+                    spec.url,
+                    spec.url.replace("hf-mirror.com", "huggingface.co"),
+                    spec.url.replace("huggingface.co", "hf-mirror.com")
+                ).distinct()
+
+                for (mirrorUrl in mirrors) {
+                    try {
+                        val request = Request.Builder().url(mirrorUrl).build()
+                        val response = client.newCall(request).execute()
+                        if (!response.isSuccessful) continue
+                        val body = response.body ?: continue
+
+                        val tempFile = File(spec.destFile.parentFile, "${spec.destFile.name}.tmp")
+                        var fileDownloaded = 0L
+                        body.byteStream().use { input ->
+                            FileOutputStream(tempFile).use { output ->
+                                val buffer = ByteArray(BUFFER_SIZE)
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    if (!coroutineContext.isActive) {
+                                        tempFile.delete()
+                                        return@withContext Result.failure(Exception("下载已取消"))
+                                    }
+                                    output.write(buffer, 0, bytesRead)
+                                    fileDownloaded += bytesRead
+                                    val overallDownloaded = downloadedBytes + fileDownloaded
+                                    val pct = if (grandTotal > 0) overallDownloaded.toDouble() / grandTotal * 100 else 0.0
+                                    onProgress?.invoke(spec.name, Math.round(pct * 10.0) / 10.0, overallDownloaded, grandTotal)
+                                }
+                            }
                         }
+
+                        if (spec.destFile.exists()) spec.destFile.delete()
+                        tempFile.renameTo(spec.destFile)
+                        downloadedBytes += spec.destFile.length()
+                        success = true
+                        Log.i(TAG, "MNN file downloaded: ${spec.name} (${spec.destFile.length()} bytes)")
+                        break
+                    } catch (e: Exception) {
+                        Log.w(TAG, "镜像下载失败 ($mirrorUrl): ${spec.name}: ${e.message}")
                     }
-                    if (destFile.exists()) destFile.delete()
-                    tempFile.renameTo(destFile)
-                    downloadedBytes += destFile.length()
-                } catch (e: Exception) {
-                    return@withContext Result.failure(
-                        Exception("下载失败 $file: ${e.message}")
-                    )
                 }
 
-                val pct = downloadedBytes.toDouble() / totalBytes * 100
-                val pctRounded = Math.round(pct * 10.0) / 10.0
-                onProgress?.invoke(file, pctRounded, downloadedBytes, totalBytes)
-                Log.i(TAG, "MNN file downloaded: $file (${destFile.length()} bytes, $pctRounded%)")
+                if (!success) {
+                    return@withContext Result.failure(
+                        Exception("所有镜像均下载失败: ${spec.name}")
+                    )
+                }
             }
-        // 下载完成后不再修改 config.json
+
+            // 下载完成后不再修改 config.json
             // MNN 3.5.0 原生支持 Qwen3.5，不需要修改配置文件
             modelManager.markInstalled(modelId, ModelInfo.ModelType.AI)
             Log.i(TAG, "MNN model download complete: ${modelDir.absolutePath}")

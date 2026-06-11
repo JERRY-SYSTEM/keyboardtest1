@@ -82,7 +82,6 @@ class SettingsActivity : AppCompatActivity() {
     private var pbDownload: android.widget.ProgressBar? = null
     private var btnDownloadVoice: Button? = null
     private var btnDownloadAi: Button? = null
-    private var btnUninstall: Button? = null
     private var isDownloading = false
 
     // 语音与 AI 本地化设置 helper
@@ -142,7 +141,6 @@ class SettingsActivity : AppCompatActivity() {
             etGroqKey, tvHardwareInfo,
             tvVoiceModelStatus, tvAiModelStatus,
             btnDownloadVoice, btnDownloadAi,
-            btnUninstall,
             tvDownloadProgress, pbDownload
         )
         // 绑定桥梁状态视图（仅显示状态，不下载）
@@ -230,7 +228,6 @@ class SettingsActivity : AppCompatActivity() {
             pbDownload = findViewById(R.id.pb_download)
             btnDownloadVoice = findViewById(R.id.btn_download_voice)
             btnDownloadAi = findViewById(R.id.btn_download_ai)
-            btnUninstall = findViewById(R.id.btn_uninstall)
         } catch (_: Exception) {}
 
     }
@@ -366,8 +363,7 @@ class SettingsActivity : AppCompatActivity() {
         // === 语音与 AI 本地化 ===
         btnDownloadVoice?.setOnClickListener { downloadVoiceModel() }
         btnDownloadAi?.setOnClickListener { downloadAiModel() }
-        // TTS 使用系统自带语音引擎，无需下载
-        btnUninstall?.setOnClickListener { uninstallModels() }
+        // 卸载按钮已在 VoiceAISettingsHelper 中绑定
     }
 
     // ======================== 模型下载 ========================
@@ -455,38 +451,6 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }.start()
-    }
-
-    private fun uninstallModels() {
-        var count = 0
-        // 删除 AI 模型
-        val aiFile = modelManager.getInstalledAiModelFile()
-        appendLog("DEBUG: aiFile=$aiFile, exists=${aiFile?.exists()}, installedAiModelId=${modelManager.installedAiModelId}")
-        if (aiFile != null && aiFile.exists()) {
-            val deleted = aiFile.delete()
-            if (deleted) {
-                modelManager.installedAiModelId = null
-                count++
-                appendLog("🗑 已删除 AI 模型: ${aiFile.name}")
-            } else {
-                appendLog("❌ 删除失败: ${aiFile.absolutePath}")
-            }
-        } else {
-            appendLog("⚠️ AI 模型文件不存在: ${aiFile?.absolutePath ?: "null"}")
-        }
-        // 删除语音模型
-        val voiceDir = java.io.File(filesDir, "local_models/zipformer")
-        if (voiceDir.exists()) {
-            val deleted = voiceDir.deleteRecursively()
-            if (deleted) {
-                modelManager.installedVoiceModelId = null
-                count++
-                appendLog("🗑 已删除语音模型")
-            }
-        }
-        tvStatus.text = "✅ 已卸载 $count 个模型"
-        appendLog("卸载完成: $count 个模型")
-        Toast.makeText(this, "已卸载 $count 个模型", Toast.LENGTH_SHORT).show()
     }
 
     // ======================== 主题切换 ========================
