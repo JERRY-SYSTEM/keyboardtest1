@@ -3,6 +3,17 @@ ai-engine/.cxx/
 ai-engine/build/
 app/build/
 *.so
+# 以下 .so 文件通过 git LFS 追踪，例外处理
+!ai-engine/src/main/jniLibs/arm64-v8a/libMNN.so
+!ai-engine/src/main/jniLibs/arm64-v8a/libMNN_Express.so
+!ai-engine/src/main/jniLibs/arm64-v8a/libc++_shared.so
+!ai-engine/src/main/jniLibs/arm64-v8a/libMNN_CL.so
+!ai-engine/src/main/jniLibs/arm64-v8a/libMNN_Vulkan.so
+!ai-engine/src/main/jniLibs/arm64-v8a/libMNNAudio.so
+!ai-engine/src/main/jniLibs/arm64-v8a/libMNNOpenCV.so
+!ai-engine/src/main/jniLibs/arm64-v8a/libmnncore.so
+!# ai-engine/src/main/cpp/mnn/libs/ (部分文件通过 LFS 追踪)libMNN.so
+!ai-engine/src/main/cpp/mnn/libs/libMNN_Express.so
 
 # Gradle
 .gradle/
