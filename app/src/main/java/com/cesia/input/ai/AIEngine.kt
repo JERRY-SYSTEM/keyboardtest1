@@ -52,6 +52,21 @@ class AIEngine(private val context: Context) {
     suspend fun loadLocalModel(configPath: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
+                // 0. 用 APK assets 中的 config.json 覆盖本地版本（确保参数如 temperature 等是最新的）
+                try {
+                    val configFile = File(configPath)
+                    val modelDir = configFile.parentFile
+                    // 确定 assets 中的 config 路径：模型目录名即为 assets 子目录名
+                    val assetsConfigName = if (modelDir != null) "${modelDir.name}/config.json" else "qwen35-2b-mnn/config.json"
+                    context.assets.open(assetsConfigName).use { input ->
+                        val content = input.readBytes().toString(Charsets.UTF_8)
+                        configFile.writeText(content)
+                        Log.i(TAG, "loadLocalModel: config.json replaced from assets ($assetsConfigName)")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "loadLocalModel: failed to copy config.json from assets, using existing file", e)
+                }
+
                 // 修改 config.json：修复格式问题并添加必要参数
                 try {
                     val configFile = File(configPath)
@@ -85,6 +100,11 @@ class AIEngine(private val context: Context) {
 
                         // 4. 关闭 thinking（减少推理开销）
                         json = json.replace(Regex("\"enable_thinking\"\\s*:\\s*true"), "\"enable_thinking\": false")
+
+                        // 5. 对齐云端采样参数：temperature 1.0 -> 0.3，penalty 1.1 -> 1.2
+                        json = json.replace(Regex("\"temperature\"\\s*:\\s*[\\d.]+"), "\"temperature\": 0.3")
+                        json = json.replace(Regex("\"penalty\"\\s*:\\s*[\\d.]+"), "\"penalty\": 1.2")
+                        Log.i(TAG, "loadLocalModel: sampler params aligned (temp=0.3, penalty=1.2)")
 
                         configFile.writeText(json)
                         Log.i(TAG, "loadLocalModel: config.json patched successfully")
