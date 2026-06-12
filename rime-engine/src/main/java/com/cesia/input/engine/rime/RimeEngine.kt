@@ -286,14 +286,26 @@ class RimeEngine(private val context: Context) : InputEngine {
 
     /**
      * 词语联想：查询以 prefix 为前缀的词语
-     * 索引在后台线程预构建，首次调用时若未就绪则返回空（不阻塞主线程）
-     * 单字 prefix 不联想（至少两个字才启动联想）
+     * 首次调用时主线程构建索引（词库加载），单字不联想减少触发
+     * 如果索引构建时间超过 timeoutMs，返回空列表避免长时间卡住
      * @return 去掉前缀后的显示词列表，按权重降序，去重
      */
-    fun getAssociations(prefix: String, limit: Int = 20): List<String> {
+    fun getAssociations(prefix: String, limit: Int = 20, timeoutMs: Long = 500): List<String> {
         if (prefix.length < 2) return emptyList() // 至少两个字才联想
 
-        val index = dictIndex ?: return emptyList() // 索引未就绪则返回空，不阻塞
+        if (!dictIndexBuilt) {
+            dictIndexBuildTime = System.currentTimeMillis()
+            dictIndex = buildDictIndex()
+            dictIndexBuilt = true
+            // 如果构建时间太长，说明词库很大，返回空避免卡顿
+            val elapsed = System.currentTimeMillis() - dictIndexBuildTime
+            if (elapsed > timeoutMs) {
+                Log.w(TAG, "联想索引构建耗时 ${elapsed}ms 超过 ${timeoutMs}ms，放弃本次联想")
+                return emptyList()
+            }
+        }
+
+        val index = dictIndex ?: return emptyList()
         val bucket = prefix.substring(0, 1)
         val candidates = index[bucket] ?: return emptyList()
 
@@ -316,16 +328,6 @@ class RimeEngine(private val context: Context) : InputEngine {
         return (singleChar.sortedByDescending { w ->
             candidates.firstOrNull { it.fullWord == prefix + w && it.fullWord.length == prefix.length + 1 }?.weight ?: 0
         } + sortedMulti).take(limit)
-    }
-
-    /** 在后台线程预构建联想索引（不阻塞主线程） */
-    fun prebuildAssociationIndex() {
-        if (dictIndexBuilt) return
-        Thread {
-            dictIndexBuildTime = System.currentTimeMillis()
-            dictIndex = buildDictIndex()
-            dictIndexBuilt = true
-        }.start()
     }
 
     /** 清除索引（词库更新后调用） */

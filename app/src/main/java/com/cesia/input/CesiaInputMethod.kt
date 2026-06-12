@@ -672,8 +672,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         rimeEngine = RimeEngine(this)
         val rimeOk = rimeEngine.initialize()
         Log.i("Cesia", "Rime 引擎初始化: ok=$rimeOk")
-        // 后台预构建联想索引（不阻塞主线程，首次使用时若未就绪则不显示联想）
-        rimeEngine.prebuildAssociationIndex()
         val rimeErrorMsg = if (!rimeOk) rimeEngine.lastError() ?: "未知" else null
 
         // 初始化语音引擎和模型管理器
