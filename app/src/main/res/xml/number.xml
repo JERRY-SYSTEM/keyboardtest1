@@ -14,7 +14,7 @@
     <Row android:keyHeight="52dp">
         <Key android:codes="65292" android:keyLabel="，" android:popupCharacters="&#x201C;" android:keyEdgeFlags="left"
             android:keyWidth="20%p" />
-        <Key android:codes="49" android:keyLabel="" android:popupCharacters="！" />
+        <Key android:codes="49" android:keyLabel="" android:popupCharacters="1" />
         <Key android:codes="50" android:keyLabel="" android:popupCharacters="2" />
         <Key android:codes="51" android:keyLabel="" android:popupCharacters="3" />
         <Key android:codes="-5" android:keyLabel="⌫" android:isRepeatable="true" android:keyEdgeFlags="right"

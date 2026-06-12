@@ -309,7 +309,7 @@ class CesiaKeyboardView @JvmOverloads constructor(
                 val cx = key.x + key.width / 2f
                 val cy = key.y + key.height / 2f + grayPaint.textSize * 0.35f
                 val label = when (code) {
-                    49 -> "1"
+                    49 -> "Tab"
                     -108 -> "全选"
                     -109 -> "复制"
                     else -> ""

@@ -357,7 +357,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             118 -> { { currentInputConnection?.performContextMenuAction(android.R.id.paste) } }  // v=粘贴
             98  -> { { toggleUpperCase() } }  // b=大写转换
             122 -> { { sendCtrlKey(KeyEvent.KEYCODE_Z) } }  // z=撤销
-            110 -> { { sendControlKey(KeyEvent.KEYCODE_INSERT) } }  // n=Insert
+            110 -> { { sendCtrlKey(KeyEvent.KEYCODE_Y) } }  // n=Redo（前进）
             109 -> { { sendControlKey(KeyEvent.KEYCODE_FORWARD_DEL) } }  // m=Delete
             else -> null
         }
@@ -391,9 +391,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         updateStatus("✅ 已转换 ${selectedText.length} 字")
     }
 
-    /** 英文转大写，数字转中文大写 */
+    /** 英文转大写，数字转中文小写数字（一二三四五六七八九零） */
     private fun toUpperCaseText(text: String): String {
-        val chineseNumbers = charArrayOf('零','壹','贰','叁','肆','伍','陆','柒','捌','玖')
+        val chineseNumbers = charArrayOf('一','二','三','四','五','六','七','八','九','零')
         return text.map { ch ->
             when {
                 ch in 'a'..'z' -> ch.uppercaseChar()
@@ -630,9 +630,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             120 to "剪切", // x
             99 to "复制",  // c
             118 to "粘贴", // v
-            98 to "大写",  // b
+            98 to "大小写",  // b
             122 to "撤销", // z
-            110 to "Ins",  // n
+            110 to "前进",  // n
             109 to "Del",  // m
             -108 to "粘贴", // 剪贴板键：副字符
             -109 to "剪切", // 复制键：副字符
@@ -3228,8 +3228,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             } else {
                 when (primaryCode) {
                     49 -> {
-                        // 1键：输入数字 1
-                        currentInputConnection?.commitText("1", 1)
+                        // 1键：Tab
+                        sendTabKey()
                     }
                     65292 -> {
                         currentInputConnection?.commitText("，", 1)
