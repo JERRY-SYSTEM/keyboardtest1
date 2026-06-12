@@ -328,6 +328,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 清屏键长按标志
     private var deleteLongPressTriggered = false
 
+    // 清空按钮发光状态
+    private var deleteButtonGlowing = false
+    private var deleteButtonGlowRunnable: Runnable? = null
+    private var deleteGlowHandler = Handler(Looper.getMainLooper())
+
+    // 语音按钮发光状态（锁定模式）
+    private var micButtonGlowing = false
+    private var micButtonGlowRunnable: Runnable? = null
+    private var micGlowHandler = Handler(Looper.getMainLooper())
+
     // ======================== 魔法编辑模式 ========================
     // 当用户点击"➕ 新增"后进入此模式，键盘输入直接写入魔法指令缓冲区
     private var magicEditMode = false
@@ -1169,22 +1179,53 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 } catch (_: Exception) { /* 安全忽略 */ }
             }
         }
-        btnDelete.setOnLongClickListener {
-            try {
-                if (rimeEngine.isComposing) {
-                    rimeEngine.processKey("BackSpace")
-                    updateCandidateBar()
-                } else {
-                    // 安全删除：分段删除光标后文本，避免某些App崩溃
-                    val ic = currentInputConnection ?: return@setOnLongClickListener true
-                    val afterCursor = ic.getTextAfterCursor(10000, 0)
-                    if (afterCursor != null && afterCursor.isNotEmpty()) {
-                        val deleteLen = minOf(afterCursor.length, 1000)
-                        ic.deleteSurroundingText(0, deleteLen)
+        // 清空键：长按高亮动态效果（无锁定，手指移开解除）
+        btnDelete.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    deleteLongPressTriggered = false
+                    // 立即高亮清空按钮
+                    btnDelete.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF81D8D0.toInt())
+                    btnDelete.elevation = 6f
+                    startDeleteButtonGlow()
+                    deleteButtonGlowRunnable = Runnable {
+                        deleteLongPressTriggered = true
+                        keyboardView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                        try {
+                            if (rimeEngine.isComposing) {
+                                rimeEngine.processKey("BackSpace")
+                                updateCandidateBar()
+                            } else {
+                                val ic = currentInputConnection ?: return@Runnable
+                                val afterCursor = ic.getTextAfterCursor(10000, 0)
+                                if (afterCursor != null && afterCursor.isNotEmpty()) {
+                                    val deleteLen = minOf(afterCursor.length, 1000)
+                                    ic.deleteSurroundingText(0, deleteLen)
+                                }
+                            }
+                        } catch (_: Exception) { /* 安全忽略 */ }
+                    }.also {
+                        deleteGlowHandler.postDelayed(it, 800)
                     }
+                    true
                 }
-            } catch (_: Exception) { /* 安全忽略 */ }
-            true
+                android.view.MotionEvent.ACTION_UP -> {
+                    deleteButtonGlowRunnable?.let { deleteGlowHandler.removeCallbacks(it) }
+                    deleteButtonGlowRunnable = null
+                    stopDeleteButtonGlow()
+                    if (!deleteLongPressTriggered) {
+                        v.performClick()
+                    }
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    deleteButtonGlowRunnable?.let { deleteGlowHandler.removeCallbacks(it) }
+                    deleteButtonGlowRunnable = null
+                    stopDeleteButtonGlow()
+                    true
+                }
+                else -> false
+            }
         }
 
         btnClipboard.setOnClickListener { executeMagicOrAiReply() }
@@ -1196,7 +1237,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
-                    cancelMagicBookLongPress()
+                    // 取消长按检测runnable，但保留高光（锁定状态持续到popup关闭）
+                    magicBookRunnable?.let { magicBookHandler.removeCallbacks(it) }
+                    magicBookRunnable = null
                     if (!magicBookLongPressTriggered) {
                         v.performClick()
                     }
@@ -1241,7 +1284,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     true
                 }
                 android.view.MotionEvent.ACTION_UP -> {
-                    cancelSendKeyLongPress()
+                    // 取消长按检测runnable，但保留高光（锁定状态持续到popup关闭）
+                    sendKeyRunnable?.let { sendKeyHandler.removeCallbacks(it) }
+                    sendKeyRunnable = null
                     if (!sendKeyLongPressTriggered) {
                         v.performClick()
                     }
@@ -1816,7 +1861,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         popup.showAtLocation(keyboardView, Gravity.TOP or Gravity.START, 0, -totalHeight)
 
         popup.setOnDismissListener {
-            cancelSendKeyLongPress()
             cancelMagicBookLongPress()
         }
     }
@@ -2911,6 +2955,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 取消所有语音识别协程
         voiceEngineScope.coroutineContext.cancelChildren()
         resetMagicHighlight()
+        // 清理清空按钮发光
+        deleteButtonGlowRunnable?.let { deleteGlowHandler.removeCallbacks(it) }
+        deleteButtonGlowRunnable = null
+        stopDeleteButtonGlow()
         setStatusDot("idle")
         hideAiChoiceButtons()
         keyboardView.visibility = View.VISIBLE
@@ -3561,6 +3609,48 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnClipboard.elevation = 0f
     }
 
+    // ====== 语音按钮发光（锁定模式） ======
+    private fun startMicButtonGlow() {
+        micButtonGlowing = true
+        val pulse = ScaleAnimation(
+            1.0f, 1.15f, 1.0f, 1.15f,
+            ScaleAnimation.RELATIVE_TO_SELF, 0.5f,
+            ScaleAnimation.RELATIVE_TO_SELF, 0.5f
+        ).apply {
+            duration = 600
+            repeatMode = ScaleAnimation.REVERSE
+            repeatCount = ScaleAnimation.INFINITE
+        }
+        micButton.startAnimation(pulse)
+    }
+
+    private fun stopMicButtonGlow() {
+        micButtonGlowing = false
+        micButton.clearAnimation()
+    }
+
+    // ====== 清空按钮发光（长按） ======
+    private fun startDeleteButtonGlow() {
+        deleteButtonGlowing = true
+        val pulse = ScaleAnimation(
+            1.0f, 1.15f, 1.0f, 1.15f,
+            ScaleAnimation.RELATIVE_TO_SELF, 0.5f,
+            ScaleAnimation.RELATIVE_TO_SELF, 0.5f
+        ).apply {
+            duration = 600
+            repeatMode = ScaleAnimation.REVERSE
+            repeatCount = ScaleAnimation.INFINITE
+        }
+        btnDelete.startAnimation(pulse)
+    }
+
+    private fun stopDeleteButtonGlow() {
+        deleteButtonGlowing = false
+        btnDelete.clearAnimation()
+        btnDelete.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFE0E0E0.toInt())
+        btnDelete.elevation = 0f
+    }
+
     private fun cancelSendKeyLongPress() {
         sendKeyRunnable?.let { sendKeyHandler.removeCallbacks(it) }
         sendKeyRunnable = null
@@ -3728,7 +3818,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
             popup.setOnDismissListener {
                 cancelSendKeyLongPress()
-                cancelMagicBookLongPress()
             }
 
             // 持久化保存
@@ -5058,13 +5147,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun updateMicButtonLockedState() {
         micButton?.let { btn ->
             if (isVoiceLocked) {
-                // 锁定状态：高亮显示
+                // 锁定状态：高亮显示 + 脉冲发光动画
                 btn.setBackgroundColor(0xFF81D8D0.toInt()) // 青色背景
                 btn.setTextColor(0xFFFFFFFF.toInt()) // 白色文字
+                btn.elevation = 6f
+                startMicButtonGlow()
             } else {
                 // 正常状态
                 btn.setBackgroundColor(0x00000000.toInt()) // 透明背景
                 btn.setTextColor(0xFF555555.toInt()) // 灰色文字
+                btn.elevation = 0f
+                stopMicButtonGlow()
             }
         }
     }
