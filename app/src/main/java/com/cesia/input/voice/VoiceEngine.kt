@@ -916,27 +916,24 @@ class VoiceEngine(private val context: Context) {
      * 命令词类型: "ai" 表示 aiover/ai over, "plain" 表示 over
      */
     private fun checkCommandWord(text: String): Pair<String, String>? {
-        val lower = text.lowercase().trimEnd()
-        // 按优先级检测：先检测"unlock"退出锁定，再检测"aiover"/"ai over"，最后检测"over"
+        val trimmed = text.trimEnd()
+        // 按优先级检测：退出 > 发送 > ai > 结束（长的先匹配）
         return when {
-            // "unlock" - 退出锁定模式（最高优先级）
-            lower.endsWith("unlock") -> {
-                val before = text.dropLast(6).trimEnd()
-                Pair(before, "unlock")
+            // "退出" - 退出语音输入状态
+            trimmed.endsWith("退出") -> {
+                Pair(trimmed.dropLast(2).trimEnd(), "exit")
             }
-            // "aiover" 或 "ai over"（兼容空格）
-            lower.endsWith("aiover") -> {
-                val before = text.dropLast(7).trimEnd()
-                Pair(before, "ai")
+            // "发送" - 结束识别并发送
+            trimmed.endsWith("发送") -> {
+                Pair(trimmed.dropLast(2).trimEnd(), "send")
             }
-            lower.endsWith("ai over") -> {
-                val before = text.dropLast(7).trimEnd()
-                Pair(before, "ai")
+            // "ai" - 语音润色
+            trimmed.endsWith("ai") -> {
+                Pair(trimmed.dropLast(2).trimEnd(), "ai")
             }
-            // "over"（确保不是 "aiover" 或 "unlock" 的一部分）
-            lower.endsWith("over") && !lower.endsWith("aiover") -> {
-                val before = text.dropLast(4).trimEnd()
-                Pair(before, "plain")
+            // "结束" - 结束语音识别
+            trimmed.endsWith("结束") -> {
+                Pair(trimmed.dropLast(2).trimEnd(), "finish")
             }
             else -> null
         }

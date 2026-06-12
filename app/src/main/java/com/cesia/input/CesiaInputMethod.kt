@@ -2418,51 +2418,79 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     onCommandWordDetected = { text: String, command: String ->
                         Log.i("Cesia", "命令词检测: command='$command', text='${text.take(50)}'")
                         withContext(Dispatchers.Main) {
-                            // 先确认组合文本
-                            currentInputConnection?.finishComposingText()
                             isRecording = false
                             stopVoiceWave()
                             setStatusDot("idle")
-                            recognizedText = text
 
-                            if (command == "unlock") {
-                                // 退出锁定模式
-                                isVoiceLocked = false
-                                updateMicButtonLockedState()
-                                updateStatus("🔓 已退出语音锁定模式")
+                            val ic = currentInputConnection ?: run {
                                 resetToIdle()
                                 return@withContext
                             }
 
-                            if (text.isEmpty()) {
-                                updateStatus("⚠️ 未识别到文字")
-                                // 锁定模式下自动重新开始
-                                if (isVoiceLocked) {
-                                    startRecordingLocked()
-                                } else {
+                            // 1. 先 finishComposingText 确认当前组合文本
+                            ic.finishComposingText()
+
+                            // 2. 删除末尾 2 个字符（命令词）
+                            ic.deleteSurroundingText(2, 0)
+
+                            // 3. 更新 recognizedText（去掉命令词后的文本）
+                            recognizedText = text
+
+                            when (command) {
+                                "exit" -> {
+                                    // 退出：结束识别 + 退出语音输入状态
+                                    isVoiceLocked = false
+                                    updateMicButtonLockedState()
+                                    updateStatus("🔓 已退出语音输入")
                                     resetToIdle()
                                 }
-                                return@withContext
-                            }
-
-                            isWaitingForChoice = false
-                            hideAiChoiceButtons()
-
-                            if (command == "ai") {
-                                // aiover / ai over → 润色上屏
-                                updateStatus("✨ 语音润色中...")
-                                setStatusDot("processing")
-                                isProcessingResult = true
-                                polishRecognizedText(text)
-                                // 注意：polishRecognizedText 内部已处理锁定模式重启
-                            } else {
-                                // over → 原文已上屏（finishComposingText），直接结束
-                                updateStatus("✅ 已上屏")
-                                // 锁定模式下自动重新开始录音
-                                if (isVoiceLocked) {
-                                    startRecordingLocked()
-                                } else {
+                                "send" -> {
+                                    // 发送：确认文本 + 发送
+                                    updateStatus("📤 已发送")
+                                    // 尝试执行发送动作，不支持则 fallback 到结束
+                                    val sent = try {
+                                        ic.performEditorAction(EditorInfo.IME_ACTION_SEND)
+                                    } catch (_: Exception) {
+                                        false
+                                    }
+                                    if (!sent) {
+                                        // 当前输入框不支持发送动作，仅结束识别
+                                        updateStatus("✅ 已上屏（当前输入框不支持自动发送）")
+                                    }
+                                    // 锁定模式退出
+                                    if (isVoiceLocked) {
+                                        isVoiceLocked = false
+                                        updateMicButtonLockedState()
+                                    }
                                     resetToIdle()
+                                }
+                                "ai" -> {
+                                    // 润色：对删除命令词后的文本润色
+                                    if (text.isEmpty()) {
+                                        updateStatus("⚠️ 没有需要润色的文字")
+                                        if (isVoiceLocked) {
+                                            startRecordingLocked()
+                                        } else {
+                                            resetToIdle()
+                                        }
+                                    } else {
+                                        updateStatus("✨ 语音润色中...")
+                                        setStatusDot("processing")
+                                        isProcessingResult = true
+                                        isWaitingForChoice = false
+                                        hideAiChoiceButtons()
+                                        polishRecognizedText(text)
+                                    }
+                                }
+                                "finish" -> {
+                                    // 结束：原文已上屏，直接结束识别
+                                    updateStatus("✅ 已上屏")
+                                    if (isVoiceLocked) {
+                                        // 锁定模式下继续录音
+                                        startRecordingLocked()
+                                    } else {
+                                        resetToIdle()
+                                    }
                                 }
                             }
                         }
