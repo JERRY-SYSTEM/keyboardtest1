@@ -927,8 +927,8 @@ class VoiceEngine(private val context: Context) {
             trimmed.endsWith("发送") -> {
                 Pair(trimmed.dropLast(2).trimEnd(), "send")
             }
-            // "ai" - 语音润色
-            trimmed.endsWith("ai") -> {
+            // "魔法" - 语音润色
+            trimmed.endsWith("魔法") -> {
                 Pair(trimmed.dropLast(2).trimEnd(), "ai")
             }
             // "结束" - 结束语音识别

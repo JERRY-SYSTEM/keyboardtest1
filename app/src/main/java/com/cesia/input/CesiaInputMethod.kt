@@ -2447,14 +2447,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                                 "send" -> {
                                     // 发送：确认文本 + 发送
                                     updateStatus("📤 已发送")
-                                    // 尝试执行发送动作，不支持则 fallback 到结束
-                                    val sent = try {
+                                    // 检查当前输入框是否支持发送动作
+                                    val editorInfo = currentInputEditorInfo
+                                    val canSend = editorInfo != null &&
+                                        (editorInfo.imeOptions and EditorInfo.IME_ACTION_SEND) != 0
+                                    if (canSend) {
                                         ic.performEditorAction(EditorInfo.IME_ACTION_SEND)
-                                    } catch (_: Exception) {
-                                        false
-                                    }
-                                    if (!sent) {
-                                        // 当前输入框不支持发送动作，仅结束识别
+                                    } else {
+                                        // 不支持 IME_ACTION_SEND，尝试 commitText + 换行
+                                        // Telegram 等应用需要特殊处理
+                                        Log.w("Cesia", "当前输入框不支持 IME_ACTION_SEND，imeOptions=${editorInfo?.imeOptions}")
                                         updateStatus("✅ 已上屏（当前输入框不支持自动发送）")
                                     }
                                     // 锁定模式退出
