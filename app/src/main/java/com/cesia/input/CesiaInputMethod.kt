@@ -57,6 +57,8 @@ import kotlinx.coroutines.*
  * - 底部功能栏：魔法修改、魔法书、语音、清空、发送
  * - 语音润色：TypelessEngine（OpenRouter API）
  */
+
+// region 视图与UI
 class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionListener {
 
     // ======================== 视图 ========================
@@ -112,6 +114,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var panelAdapter: ArrayAdapter<String>? = null
     private var isPanelExpanded = false
 
+// endregion 视图与UI
+
+// region 核心组件与引擎
     // ======================== 核心组件 ========================
     private var typelessEngine: TypelessEngine? = null
     private lateinit var statsManager: PolishStatsManager
@@ -186,6 +191,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
     private var longPressActive = false
 
+// endregion 核心组件与引擎
+
+// region 状态变量
     // ======================== 状态 ========================
     private var isRecording = false
     private var keyboardMode = KeyboardMode.NUMBER  // 默认 T9 数字键盘
@@ -333,6 +341,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 键盘模式枚举 ========================
     enum class KeyboardMode { QWERTY, SYMBOL_CN, SYMBOL_EN, NUMBER }
 
+// endregion 状态变量
+
+// region 简繁切换
     // ======================== 简繁切换 ========================
     private var isTraditional = false
     private lateinit var btnTraditional: TextView
@@ -494,6 +505,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
 
+// endregion 简繁切换
+
+// region 常量配置
     companion object {
         const val PREF_API_URL = "api_url"
         const val PREF_MODEL_ID = "model_id"
@@ -514,6 +528,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         const val THEME_DARK = 1
     }
 
+// endregion 常量配置
+
+// region 生命周期
     // ======================== 生命周期 ========================
 
     override fun onCreate() {
@@ -812,6 +829,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         return view
     }
 
+// endregion 生命周期
+
+// region 主题
     // ======================== 主题 ========================
 
     private fun applyKeyboardTheme() {
@@ -851,6 +871,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             private val minTextSp = 10f
             private val maxTextSp = 14f
 
+// endregion 主题
+
+// region 候选栏
             override fun getView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
                 val tv = super.getView(position, convertView, parent) as TextView
                 tv.gravity = Gravity.CENTER
@@ -1074,6 +1097,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 候选栏
+
+// region 录音控制
     // ======================== 识别后端可用性检测 ========================
 
     /**
@@ -1215,6 +1241,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 录音控制
+
+// region 语音键处理
     // ======================== 语音键单击/长按处理 ========================
 
     /**
@@ -1301,6 +1330,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         micLongPressRunnable = null
     }
 
+// endregion 语音键处理
+
+// region 魔法修改
     // ======================== 魔法修改 ========================
 
     private fun toggleMagicMode() {
@@ -1431,6 +1463,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         return "原文：$original\n\n用户指令：$instruction\n\n请根据用户指令修改原文，输出修改后的完整文本。只输出修改后的文本，不要输出任何解释。"
     }
 
+// endregion 魔法修改
+
+// region 魔法历史菜单
     // ======================== 魔法历史 & 菜单 ========================
 
     private fun executeMagicOrAiReply() {
@@ -1604,6 +1639,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
 
         gridView.adapter = object : android.widget.BaseAdapter() {
+// endregion 魔法历史菜单
+
+// region 候选适配器
             override fun getCount() = items.size
             override fun getItem(p: Int) = items[p]
             override fun getItemId(p: Int) = items[p].id
@@ -1783,6 +1821,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 候选适配器
+
+// region 魔法编辑
     // ======================== 魔法编辑模式 ========================
 
     /** 更新魔法编辑模式状态栏：显示已输入内容 + Rime 当前拼音 */
@@ -1864,6 +1905,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } catch (_: Exception) { /* fallback */ }
     }
 
+// endregion 魔法编辑
+
+// region AI自动回复
     // ======================== AI自动回复 ========================
 
     private fun showAiStylePicker() {
@@ -2080,6 +2124,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion AI自动回复
+
+// region 语音后端
     // ======================== 语音后端自动切换 ========================
 
     /**
@@ -2150,6 +2197,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 语音后端
+
+// region 长按选择
     // ======================== 长按选择面板 ========================
 
     /**
@@ -2170,6 +2220,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         startRecordingWithChoice(VoiceChoice.GOOGLE, PolishChoice.CLOUD_OPENROUTER)
     }
 
+// endregion 长按选择
+
+// region 同声传译
     // ======================== 同声传译 ========================
 
     /** 开始同传录音 */
@@ -2624,6 +2677,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         btnMicNoAi.visibility = View.VISIBLE
     }
 
+// endregion 同声传译
+
+// region 录音选择后端
     // ======================== 录音（根据选择的后端） ========================
 
     private fun startRecordingImmediately() {
@@ -2887,6 +2943,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 录音选择后端
+
+// region 声波动画
     // ======================== 声波动画 ========================
 
     private var waveAnim: AnimationDrawable? = null
@@ -2921,6 +2980,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } catch (_: Exception) {}
     }
 
+// endregion 声波动画
+
+// region 麦克风动画
     // ======================== 麦克风按钮动画 ========================
 
     private fun animateMicSplit() {
@@ -3080,6 +3142,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 麦克风动画
+
+// region 数字键盘
     // ======================== 数字键盘核心逻辑 ========================
 
     private fun resetT9State() {
@@ -3370,6 +3435,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         updateCandidateBar()
     }
 
+// endregion 数字键盘
+
+// region 长按检测
     // ======================== 长按检测 ========================
 
     private fun startLongPressDetection(key: Keyboard.Key) {
@@ -3553,6 +3621,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
             etSearch.addTextChangedListener(object : android.text.TextWatcher {
+// endregion 长按检测
+
+// region 剪贴板搜索
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                 override fun afterTextChanged(s: android.text.Editable?) {
@@ -3852,6 +3923,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         prefs.edit().putString("favorites", favItems.joinToString("\n")).apply()
     }
 
+// endregion 剪贴板搜索
+
+// region 剪贴板适配器
     data class ClipboardItem(val text: String, val isPinned: Boolean = false, val isEmpty: Boolean = false)
 
     private class ClipboardAdapter(
@@ -3883,6 +3957,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 剪贴板适配器
+
+// region 键盘回调
     // ======================== KeyboardView 回调 ========================
     // 参考 Trime 的 CommonKeyboardActionListener.onKey 逻辑：
     // 1. 按键后调用 processKey，不检查返回值
@@ -4449,6 +4526,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0))
     }
 
+// endregion 键盘回调
+
+// region 按键事件
     override fun onPress(primaryCode: Int) {
         shortPressHandled = false
         // 功能键长按检测（仅 QWERTY 中文模式，且 Rime 不在 composing 状态）
@@ -4583,6 +4663,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     override fun swipeDown() {}
     override fun swipeUp() {}
 
+// endregion 按键事件
+
+// region 生命周期续
     // ======================== 生命周期 ========================
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -4680,6 +4763,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         super.onDestroy()
     }
 
+// endregion 生命周期续
+
+// region 云按钮
     // ======================== 云按钮逻辑 ========================
 
     /**
@@ -4884,6 +4970,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         return cloudMode == CloudMode.LOCAL || cloudMode == CloudMode.LOCAL_LOCKED
     }
 
+// endregion 云按钮
+
+// region 语音锁定
     // ======================== 语音锁定模式 ========================
 
     /**
@@ -4953,6 +5042,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         }
     }
 
+// endregion 语音锁定
+
+// region UI辅助
     // ======================== UI 辅助 ========================
 
     private fun setStatusDot(state: String) {
@@ -5001,3 +5093,4 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         } catch (_: Exception) {}
     }
 }
+// endregion UI辅助
