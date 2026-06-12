@@ -1503,42 +1503,27 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         isAiProcessing = true
         updateStatus("✨ 正在施展魔法...")
         setStatusDot("processing")
-        val prompt = buildMagicPrompt(fullText, instruction)
-        val polishService = typelessEngine?.getPolishService()
-
-        Thread {
-            try {
-                val result = polishService?.polishWithPrompt(prompt)
-                Handler(Looper.getMainLooper()).post {
-                    isAiProcessing = false
-                    if (result != null && result.isNotEmpty()) {
-                        if (result == fullText) {
-                            updateStatus("⚠️ 修改结果与原文相同，可能指令不够明确")
-                        } else {
-                            magicHistoryManager?.addRecord(instruction)
-                            saveUndoHistory(fullText, instruction)
-                            try {
-                                val ic2 = currentInputConnection
-                                ic2?.performContextMenuAction(android.R.id.selectAll)
-                                ic2?.commitText(result, 1)
-                                resetToIdle()
-                            } catch (e2: Exception) {
-                                Log.e("Cesia", "replaceInputText 异常", e2)
-                                updateStatus("❌ 上屏失败: ${e2.message}")
-                                return@post
-                            }
-                        }
-                    } else {
-                        updateStatus("⚠️ API返回为空，请检查网络或稍后重试")
-                    }
+        // 使用统一润色入口（自动适配本地/云端）
+        executePolish(fullText, instruction) { result, success ->
+            isAiProcessing = false
+            if (success && result.isNotEmpty() && result != fullText) {
+                magicHistoryManager?.addRecord(instruction)
+                saveUndoHistory(fullText, instruction)
+                try {
+                    val ic2 = currentInputConnection
+                    ic2?.performContextMenuAction(android.R.id.selectAll)
+                    ic2?.commitText(result, 1)
+                    resetToIdle()
+                } catch (e2: Exception) {
+                    Log.e("Cesia", "replaceInputText 异常", e2)
+                    updateStatus("❌ 上屏失败: ${e2.message}")
                 }
-            } catch (e: Exception) {
-                Handler(Looper.getMainLooper()).post {
-                    isAiProcessing = false
-                    updateStatus("❌ 修改失败: ${e.message}")
-                }
+            } else if (result == fullText) {
+                updateStatus("⚠️ 修改结果与原文相同，可能指令不够明确")
+            } else {
+                updateStatus("⚠️ AI未返回有效结果，请重试")
             }
-        }.start()
+        }
     }
 
     private fun saveUndoHistory(originalText: String, instruction: String) {
@@ -2017,28 +2002,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     private fun executeAiPrompt(prompt: String, ic: android.view.inputmethod.InputConnection) {
-        val polishService = typelessEngine?.getPolishService()
-        Thread {
-            try {
-                val result = polishService?.polishWithPrompt(prompt)
-                Handler(Looper.getMainLooper()).post {
-                    isAiProcessing = false
-                    setStatusDot("idle")
-                    if (result != null && result.isNotEmpty()) {
-                        ic.commitText(result, 1)
-                        updateStatus("✅ AI已生成建议内容（$aiReplyStyle 风格）")
-                    } else {
-                        updateStatus("⚠️ AI未生成有效内容，请重试")
-                    }
-                }
-            } catch (e: Exception) {
-                Handler(Looper.getMainLooper()).post {
-                    isAiProcessing = false
-                    setStatusDot("idle")
-                    updateStatus("❌ AI生成失败: ${e.message}")
-                }
+        // 使用统一润色入口（自动适配本地/云端），prompt 已包含完整上下文
+        executePolish(prompt, "AI回复") { result, success ->
+            isAiProcessing = false
+            setStatusDot("idle")
+            if (success && result.isNotEmpty()) {
+                ic.commitText(result, 1)
+                updateStatus("✅ AI已生成建议内容")
+            } else {
+                updateStatus("⚠️ AI未生成有效内容，请重试")
             }
-        }.start()
+        }
     }
 
     private fun buildAiReplyPrompt(context: String, style: String): String {
@@ -4968,6 +4942,73 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      */
     fun isLocalPolishMode(): Boolean {
         return cloudMode == CloudMode.LOCAL || cloudMode == CloudMode.LOCAL_LOCKED
+    }
+
+    /**
+     * 统一 AI 润色入口（语音命令词、魔法书、AI回复共用）
+     * 根据当前模式自动选择本地 MNN 或云端 OpenRouter
+     * @param text 原文
+     * @param instruction 润色指令（如"润色"、"改成正式语气"等）
+     * @param callback 回调 (润色结果, 是否成功)
+     */
+    fun executePolish(text: String, instruction: String, callback: (String, Boolean) -> Unit) {
+        if (text.isBlank()) {
+            callback("", false)
+            return
+        }
+        val useLocal = isLocalPolishMode() && modelManager.hasAiModel()
+        Log.i("Cesia", "executePolish: text='${text.take(50)}', instruction='$instruction', useLocal=$useLocal")
+        if (useLocal) {
+            // 本地 MNN 润色
+            voiceEngineScope.launch {
+                try {
+                    val modelFile = modelManager.getInstalledAiModelFile()
+                    if (modelFile == null || !modelFile.exists()) {
+                        withContext(Dispatchers.Main) { callback(text, false) }
+                        return@launch
+                    }
+                    if (!aiEngine.isModelLoaded()) {
+                        val configPath = if (modelFile.isDirectory) {
+                            File(modelFile, "config.json").absolutePath
+                        } else {
+                            modelFile.absolutePath
+                        }
+                        val loaded = aiEngine.loadLocalModel(configPath)
+                        if (!loaded) {
+                            withContext(Dispatchers.Main) { callback(text, false) }
+                            return@launch
+                        }
+                    }
+                    val prompt = buildPolishPrompt(text, instruction)
+                    val result = aiEngine.polish(prompt, instruction)
+                    withContext(Dispatchers.Main) {
+                        callback(result ?: text, result != null)
+                    }
+                } catch (e: Exception) {
+                    Log.e("Cesia", "本地润色失败", e)
+                    withContext(Dispatchers.Main) { callback(text, false) }
+                }
+            }
+        } else {
+            // 云端 OpenRouter 润色（同步 API，需在后台线程调用）
+            val prompt = buildPolishPrompt(text, instruction)
+            voiceEngineScope.launch(Dispatchers.IO) {
+                try {
+                    val result = typelessEngine?.getPolishService()?.polishWithPrompt(prompt)
+                    withContext(Dispatchers.Main) {
+                        callback(result ?: text, !result.isNullOrEmpty())
+                    }
+                } catch (e: Exception) {
+                    Log.e("Cesia", "云端润色失败", e)
+                    withContext(Dispatchers.Main) { callback(text, false) }
+                }
+            }
+        }
+    }
+
+    /** 构建润色 prompt（本地和云端统一） */
+    private fun buildPolishPrompt(text: String, instruction: String): String {
+        return "原文：$text\n\n指令：$instruction\n\n请根据指令处理原文，只输出处理后的文本，不要输出任何解释。"
     }
 
 // endregion 云按钮

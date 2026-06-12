@@ -285,7 +285,7 @@ class AIEngine(private val context: Context) {
      * C++ 层已使用 ChatMessages（system+user 分离），这里只返回原文
      */
     private fun buildPolishPrompt(text: String, instruction: String): String {
-        return text
+        return "请对以下文字进行$instruction，只输出处理后的文本，不要输出任何解释或其他内容。\n\n原文：$text\n\n处理后："
     }
 
     // ==================== 通用生成 API ====================
