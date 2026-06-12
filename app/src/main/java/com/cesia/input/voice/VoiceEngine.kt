@@ -33,6 +33,30 @@ class VoiceEngine(private val context: Context) {
     companion object {
         private const val TAG = "VoiceEngine"
         private const val GROQ_API_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+
+        // 动态命令词（可被 PersonalizationActivity 更新）
+        @Volatile
+        var cmdExit: String = "退出"
+
+        @Volatile
+        var cmdPolish: String = "魔法"
+
+        @Volatile
+        var cmdFinish: String = "结束"
+
+        @Volatile
+        var cmdSend: String = "发送"
+
+        /**
+         * 更新命令词（从设置页面调用）
+         */
+        fun updateCommandWords(exit: String, polish: String, finish: String, send: String) {
+            cmdExit = exit
+            cmdPolish = polish
+            cmdFinish = finish
+            cmdSend = send
+            Log.d(TAG, "命令词已更新: exit=$exit, polish=$polish, finish=$finish, send=$send")
+        }
     }
 
     enum class Backend {
@@ -917,23 +941,20 @@ class VoiceEngine(private val context: Context) {
      */
     private fun checkCommandWord(text: String): Pair<String, String>? {
         val trimmed = text.trimEnd()
-        // 按优先级检测：退出 > 发送 > ai > 结束（长的先匹配）
+        // 按优先级检测：退出 > 发送 > 魔法 > 结束（长的先匹配）
+        // 使用动态命令词，按实际长度删除
         return when {
-            // "退出" - 退出语音输入状态
-            trimmed.endsWith("退出") -> {
-                Pair(trimmed.dropLast(2).trimEnd(), "exit")
+            trimmed.endsWith(cmdExit) -> {
+                Pair(trimmed.dropLast(cmdExit.length).trimEnd(), "exit")
             }
-            // "发送" - 结束识别并发送
-            trimmed.endsWith("发送") -> {
-                Pair(trimmed.dropLast(2).trimEnd(), "send")
+            trimmed.endsWith(cmdSend) -> {
+                Pair(trimmed.dropLast(cmdSend.length).trimEnd(), "send")
             }
-            // "魔法" - 语音润色
-            trimmed.endsWith("魔法") -> {
-                Pair(trimmed.dropLast(2).trimEnd(), "ai")
+            trimmed.endsWith(cmdPolish) -> {
+                Pair(trimmed.dropLast(cmdPolish.length).trimEnd(), "ai")
             }
-            // "结束" - 结束语音识别
-            trimmed.endsWith("结束") -> {
-                Pair(trimmed.dropLast(2).trimEnd(), "finish")
+            trimmed.endsWith(cmdFinish) -> {
+                Pair(trimmed.dropLast(cmdFinish.length).trimEnd(), "finish")
             }
             else -> null
         }

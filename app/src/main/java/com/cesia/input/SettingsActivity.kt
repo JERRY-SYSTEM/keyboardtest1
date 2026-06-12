@@ -230,6 +230,13 @@ class SettingsActivity : AppCompatActivity() {
             btnDownloadAi = findViewById(R.id.btn_download_ai)
         } catch (_: Exception) {}
 
+        // 个性化设置入口
+        try {
+            val btnPersonalization = findViewById<Button>(R.id.btn_personalization)
+            btnPersonalization?.setOnClickListener {
+                startActivity(Intent(this, PersonalizationActivity::class.java))
+            }
+        } catch (_: Exception) {}
     }
 
     private fun showVersion() {

@@ -2430,8 +2430,16 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                             // 1. 先 finishComposingText 确认当前组合文本
                             ic.finishComposingText()
 
-                            // 2. 删除末尾 2 个字符（命令词）
-                            ic.deleteSurroundingText(2, 0)
+                            // 2. 删除末尾命令词对应字符数（动态长度）
+                            val cmdWord = when (command) {
+                                "exit" -> VoiceEngine.cmdExit
+                                "send" -> VoiceEngine.cmdSend
+                                "ai" -> VoiceEngine.cmdPolish
+                                "finish" -> VoiceEngine.cmdFinish
+                                else -> ""
+                            }
+                            val deleteLen = cmdWord.length.coerceAtLeast(1)
+                            ic.deleteSurroundingText(deleteLen, 0)
 
                             // 3. 更新 recognizedText（去掉命令词后的文本）
                             recognizedText = text
@@ -4878,19 +4886,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      * 命令词类型: "ai" 表示 aiover/ai over, "plain" 表示 over
      */
     private fun checkVoiceCommandWord(text: String): Pair<String, String>? {
-        val lower = text.lowercase().trimEnd()
+        val trimmed = text.trimEnd()
+        // 使用动态命令词（与 VoiceEngine 一致）
         return when {
-            lower.endsWith("aiover") -> {
-                val before = text.dropLast(7).trimEnd()
-                Pair(before, "ai")
+            trimmed.endsWith(VoiceEngine.cmdExit) -> {
+                Pair(trimmed.dropLast(VoiceEngine.cmdExit.length).trimEnd(), "exit")
             }
-            lower.endsWith("ai over") -> {
-                val before = text.dropLast(7).trimEnd()
-                Pair(before, "ai")
+            trimmed.endsWith(VoiceEngine.cmdSend) -> {
+                Pair(trimmed.dropLast(VoiceEngine.cmdSend.length).trimEnd(), "send")
             }
-            lower.endsWith("over") && !lower.endsWith("aiover") -> {
-                val before = text.dropLast(4).trimEnd()
-                Pair(before, "plain")
+            trimmed.endsWith(VoiceEngine.cmdPolish) -> {
+                Pair(trimmed.dropLast(VoiceEngine.cmdPolish.length).trimEnd(), "ai")
+            }
+            trimmed.endsWith(VoiceEngine.cmdFinish) -> {
+                Pair(trimmed.dropLast(VoiceEngine.cmdFinish.length).trimEnd(), "finish")
             }
             else -> null
         }
