@@ -672,6 +672,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         rimeEngine = RimeEngine(this)
         val rimeOk = rimeEngine.initialize()
         Log.i("Cesia", "Rime 引擎初始化: ok=$rimeOk")
+        // 后台预构建联想索引（不阻塞主线程，首次使用时若未就绪则不显示联想）
+        rimeEngine.prebuildAssociationIndex()
         val rimeErrorMsg = if (!rimeOk) rimeEngine.lastError() ?: "未知" else null
 
         // 初始化语音引擎和模型管理器
@@ -1299,9 +1301,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             updateStatus("请点击 AI+ 或 AI× 选择处理方式")
         } else if (isRecording) {
             if (magicMode) {
-                typelessEngine?.stopListening()
-                setStatusDot("processing")
-                updateStatus("⏳ 正在识别指令...")
+                // 魔法修改模式：停止录音并完整清理
+                stopRecordingAndWait()
+                resetMagicHighlight()
             } else {
                 if (simulTranslateEnabled) {
                     stopSimulTranslateRecording()

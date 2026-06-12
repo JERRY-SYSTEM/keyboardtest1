@@ -247,7 +247,7 @@ class RimeEngine(private val context: Context) : InputEngine {
     private var dictIndexBuilt = false
     private var dictIndexBuildTime = 0L
 
-    /** 构建词库索引：按首字（或前2字）分桶，桶内按权重降序 */
+    /** 构建词库索引：按首字分桶，桶内按权重降序（在后台线程执行） */
     private fun buildDictIndex(): Map<String, List<AssociationEntry>> {
         val index = mutableMapOf<String, MutableList<AssociationEntry>>()
         val rimeDir = java.io.File(context.getExternalFilesDir(null), "rime")
@@ -269,9 +269,8 @@ class RimeEngine(private val context: Context) : InputEngine {
                                 val word = parts[0]
                                 if (word.length < 2) return@forEach // 跳过单字词
                                 val weight = if (parts.size >= 4) parts[3].toIntOrNull() ?: 0 else 0
-                                // 按首字分桶
                                 val bucket = word.substring(0, 1)
-                                val entry = AssociationEntry(word, "", weight) // displayWord 在查询时计算
+                                val entry = AssociationEntry(word, "", weight)
                                 index.getOrPut(bucket) { mutableListOf() }.add(entry)
                                 entryCount++
                             }
@@ -280,35 +279,27 @@ class RimeEngine(private val context: Context) : InputEngine {
                 } catch (_: Exception) {}
             }
 
-            // 每个桶按权重降序
-            index.forEach { (_, list) -> list.sortByDescending { it.weight } }
-            Log.d(TAG, "联想索引: ${index.size} 桶, $entryCount 词条, 耗时 ${System.currentTimeMillis() - dictIndexBuildTime}ms")
-            return index
+        index.forEach { (_, list) -> list.sortByDescending { it.weight } }
+        Log.d(TAG, "联想索引: ${index.size} 桶, $entryCount 词条, 耗时 ${System.currentTimeMillis() - dictIndexBuildTime}ms")
+        return index
     }
 
     /**
      * 词语联想：查询以 prefix 为前缀的词语
-     * 首次调用构建索引，后续直接查（毫秒级）
+     * 索引在后台线程预构建，首次调用时若未就绪则返回空（不阻塞主线程）
+     * 单字 prefix 不联想（至少两个字才启动联想）
      * @return 去掉前缀后的显示词列表，按权重降序，去重
      */
     fun getAssociations(prefix: String, limit: Int = 20): List<String> {
-        if (prefix.isEmpty()) return emptyList()
+        if (prefix.length < 2) return emptyList() // 至少两个字才联想
 
-        // 懒加载索引
-        if (!dictIndexBuilt) {
-            dictIndexBuildTime = System.currentTimeMillis()
-            dictIndex = buildDictIndex()
-            dictIndexBuilt = true
-        }
-
-        val index = dictIndex ?: return emptyList()
+        val index = dictIndex ?: return emptyList() // 索引未就绪则返回空，不阻塞
         val bucket = prefix.substring(0, 1)
         val candidates = index[bucket] ?: return emptyList()
 
-        // 遍历桶内候选，找 prefix 前缀匹配的项
         val seen = mutableSetOf<String>()
-        val singleChar = mutableListOf<String>()   // 单字优先
-        val multiChar = mutableListOf<Pair<String, Int>>()  // 多字词按权重
+        val singleChar = mutableListOf<String>()
+        val multiChar = mutableListOf<Pair<String, Int>>()
         for (entry in candidates) {
             if (entry.fullWord.startsWith(prefix) && entry.fullWord.length > prefix.length) {
                 val displayWord = entry.fullWord.substring(prefix.length)
@@ -321,12 +312,20 @@ class RimeEngine(private val context: Context) : InputEngine {
                 }
             }
         }
-        // 单字在前（按权重降序），多字在后（按权重降序）
         val sortedMulti = multiChar.sortedByDescending { it.second }.map { it.first }
         return (singleChar.sortedByDescending { w ->
-            // 单字也按权重排序：从桶里找对应权重
             candidates.firstOrNull { it.fullWord == prefix + w && it.fullWord.length == prefix.length + 1 }?.weight ?: 0
         } + sortedMulti).take(limit)
+    }
+
+    /** 在后台线程预构建联想索引（不阻塞主线程） */
+    fun prebuildAssociationIndex() {
+        if (dictIndexBuilt) return
+        Thread {
+            dictIndexBuildTime = System.currentTimeMillis()
+            dictIndex = buildDictIndex()
+            dictIndexBuilt = true
+        }.start()
     }
 
     /** 清除索引（词库更新后调用） */
