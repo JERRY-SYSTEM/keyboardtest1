@@ -391,14 +391,20 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         updateStatus("✅ 已转换 ${selectedText.length} 字")
     }
 
-    /** 大小写切换：英文小写↔大写，数字↔中文小写数字（一二三四五六七八九零） */
+    /** 大小写/数字切换：英文小写↔大写，阿拉伯数字↔中文小写数字（一二三四五六七八九零） */
     private fun toUpperCaseText(text: String): String {
         val chineseNumbers = charArrayOf('零','一','二','三','四','五','六','七','八','九')
+        // 中文数字→阿拉伯数字的反向映射
+        val chineseToArabic = mapOf(
+            '零' to '0', '一' to '1', '二' to '2', '三' to '3', '四' to '4',
+            '五' to '5', '六' to '6', '七' to '7', '八' to '8', '九' to '9'
+        )
         return text.map { ch ->
             when {
                 ch in 'a'..'z' -> ch.uppercaseChar()
                 ch in 'A'..'Z' -> ch.lowercaseChar()
                 ch in '0'..'9' -> chineseNumbers[ch - '0']
+                ch in chineseToArabic -> chineseToArabic[ch]!!
                 else -> ch
             }
         }.joinToString("")
@@ -2727,22 +2733,39 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     private fun polishRecognizedText(text: String) {
         isProcessingResult = true
-        // 根据云按钮状态决定润色方式
         val useLocalPolish = isLocalPolishMode() && modelManager.hasAiModel()
         Log.d("Cesia", "polishRecognizedText: text='${text.take(50)}', useLocalPolish=$useLocalPolish, cloudMode=$cloudMode, isVoiceLocked=$isVoiceLocked")
 
         if (useLocalPolish) {
             Log.d("Cesia", "polishRecognizedText: 走本地润色 (MNN)")
             polishWithLocalAi(text)
-        } else {
+        } else if (cloudMode == CloudMode.CLOUD) {
             // 云端润色（OpenRouter）
             Log.d("Cesia", "polishRecognizedText: 走云端润色 (OpenRouter)")
-            typelessEngine?.polishTextAsync(text) { finalText ->
-                Log.d("Cesia", "polishRecognizedText: 云端润色回调 finalText='${finalText.take(50)}'")
-                isProcessingResult = false
-                // 替换光标处的原文为润色结果
-                replaceTextWithPolish(text, finalText)
+            polishWithCloud(text)
+        } else {
+            // LOCAL 模式但没有安装 MNN 模型 → 尝试 fallback 云端
+            if (!modelManager.hasAiModel()) {
+                Log.d("Cesia", "polishRecognizedText: 本地模型未安装，尝试云端 fallback")
+                polishWithCloud(text)
+            } else {
+                Log.d("Cesia", "polishRecognizedText: 走本地润色 (MNN)")
+                polishWithLocalAi(text)
             }
+        }
+    }
+
+    /** 云端润色封装 */
+    private fun polishWithCloud(text: String) {
+        typelessEngine?.polishTextAsync(text) { finalText ->
+            Log.d("Cesia", "polishRecognizedText: 云端润色回调 finalText='${finalText.take(50)}'")
+            isProcessingResult = false
+            replaceTextWithPolish(text, finalText)
+        } ?: run {
+            Log.w("Cesia", "polishRecognizedText: typelessEngine 为 null，无法云端润色")
+            isProcessingResult = false
+            // 原文已上屏，直接结束
+            if (isVoiceLocked) startRecordingLocked() else resetToIdle()
         }
     }
 
