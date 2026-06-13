@@ -604,8 +604,15 @@ class VoiceEngine(private val context: Context) {
             // 协程被取消（用户停止录音）：处理最终识别结果
             // 注意：不在此处调用 onCommandWordDetected（suspend 函数，协程已取消无法挂起）
             // 而是通过 onSegmentResult(true) 让上层处理（显示 AI+/AI× 按钮或自动处理命令词）
-            Log.i(TAG, "recordStreaming: 协程被取消，pendingCommand=$pendingCommand, accumulated='${accumulatedText.toString().take(50)}'")
-            val totalText = accumulatedText.toString()
+            Log.i(TAG, "recordStreaming: 协程被取消，pendingCommand=$pendingCommand, accumulated='${accumulatedText.toString().take(50)}', lastResult='$lastResult'")
+            // 优先用 accumulatedText（端点检测累积的完整文本），否则用 lastResult（最后流式结果）
+            val totalText = if (accumulatedText.isNotEmpty()) {
+                accumulatedText.toString()
+            } else if (lastResult.isNotEmpty()) {
+                lastResult
+            } else {
+                ""
+            }
             if (totalText.isNotEmpty()) {
                 val converted = convertChineseDigitsToArabic(totalText)
                 onSegmentResult(converted, true)
