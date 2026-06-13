@@ -1636,6 +1636,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val inflater = android.view.LayoutInflater.from(this)
         val popupView = inflater.inflate(R.layout.popup_magic_menu, null)
         val gridView = popupView.findViewById<GridView>(R.id.gv_magic_items)
+        // 设置标题（可从 SharedPreferences 读取自定义标题）
+        val tvTitle = popupView.findViewById<android.widget.TextView>(R.id.tv_magic_title)
+        val customTitle = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+            .getString("magic_book_title", "芙莉莲的魔法书")
+        tvTitle?.text = customTitle
 
         val keyboardWidth = keyboardView.width
         val popupWidth = if (keyboardWidth > 0) keyboardWidth else resources.displayMetrics.widthPixels

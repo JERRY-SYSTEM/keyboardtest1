@@ -31,48 +31,21 @@ class MagicHistoryManager(context: Context) {
     }
 
     init {
-        // 首次使用时注入全部标准指令
-        val initialized = listPrefs.getBoolean("initialized", false)
-        if (!initialized) {
-            val records = getRecords()
-            if (records.isEmpty()) {
-                val now = System.currentTimeMillis()
-                val defaultRecords = defaultInstructions.mapIndexed { index, instruction ->
-                    MagicRecord(
-                        id = index.toLong() + 1,
-                        instruction = instruction,
-                        isPinned = false,
-                        timestamp = now - (defaultInstructions.size - index).toLong() * 1000
-                    )
-                }
-                saveRecords(defaultRecords)
-            }
-            listPrefs.edit().putBoolean("initialized", true).apply()
-        }
-        // 每次启动：同步 InstructionSet 中新增的指令到历史记录
-        syncInstructionSet()
-    }
-
-    /** 将 InstructionSet 中有但历史记录中没有的指令追加进去 */
-    private fun syncInstructionSet() {
-        val existing = getRecords()
-        val existingNames = existing.map { it.instruction }.toSet()
-        val allStdNames = defaultInstructions.toSet()
-        // 找出有但历史记录中没有的指令
-        val missing = allStdNames - existingNames
-        if (missing.isNotEmpty()) {
-            val maxId = existing.maxOfOrNull { it.id } ?: 0L
+        // 每次启动都重新同步：清空旧数据，注入全部60条标准指令
+        val allStdNames = defaultInstructions
+        if (allStdNames.isNotEmpty()) {
             val now = System.currentTimeMillis()
-            val newRecords = missing.mapIndexed { index, name ->
+            val records = allStdNames.mapIndexed { index, name ->
                 MagicRecord(
-                    id = maxId + index + 1,
+                    id = index.toLong() + 1,
                     instruction = name,
                     isPinned = false,
-                    timestamp = now - index.toLong() * 1000
+                    timestamp = now - (allStdNames.size - index).toLong() * 1000
                 )
             }
-            saveRecords(existing + newRecords)
-            Log.i("MagicHistory", "同步了 ${newRecords.size} 条新指令到魔法书")
+            saveRecords(records)
+            listPrefs.edit().putBoolean("initialized", true).apply()
+            Log.i("MagicHistory", "魔法书已同步 ${records.size} 条标准指令")
         }
     }
 
