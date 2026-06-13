@@ -5343,6 +5343,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     /** 构建润色 prompt（本地和云端统一） */
     private fun buildPolishPrompt(text: String, instruction: String): String {
+        // 匹配到标准指令时用标准化 prompt
+        val std = com.cesia.input.instruction.InstructionSet.findByKeywords(instruction)
+        if (std != null) {
+            return com.cesia.input.instruction.InstructionSet.buildPrompt(std, text)
+        }
         return "原文：$text\n\n指令：$instruction\n\n请根据指令处理原文，只输出处理后的文本，不要输出任何解释。"
     }
 

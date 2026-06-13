@@ -26,40 +26,12 @@ class MagicHistoryManager(context: Context) {
 
     /** 默认魔法指令列表（从指令表加载） */
     private val defaultInstructions: List<String> by lazy {
-        // 从指令表加载所有指令的名称（每类取前2-3条作为默认）
-        val defaults = mutableListOf<String>()
-        // 翻译类：英文
-        defaults.add("翻译为英文")
-        // 语气类：正式
-        defaults.add("改为正式")
-        defaults.add("改为口语")
-        // 长度类：扩充
-        defaults.add("扩充内容")
-        defaults.add("压缩内容")
-        // 格式类：分段
-        defaults.add("分段排版")
-        defaults.add("添加标点")
-        defaults.add("去除语气词")
-        // 内容类：概括
-        defaults.add("概括大意")
-        defaults.add("扩写内容")
-        defaults.add("续写内容")
-        defaults.add("改写内容")
-        // 特殊类：敏感词
-        defaults.add("敏感词转拼音")
-        defaults.add("繁体转简体")
-        // 生成类
-        defaults.add("帮我想")
-        defaults.add("帮我写")
-        defaults.add("写邮件")
-        defaults.add("写诗")
-        defaults.add("编故事")
-        defaults.add("起标题")
-        defaults
+        // 从 InstructionSet 加载全部标准指令名称
+        com.cesia.input.instruction.InstructionSet.allInstructions.map { it.name }
     }
 
     init {
-        // 首次使用时注入默认魔法
+        // 首次使用时注入全部标准指令
         val initialized = listPrefs.getBoolean("initialized", false)
         if (!initialized) {
             val records = getRecords()
@@ -76,6 +48,31 @@ class MagicHistoryManager(context: Context) {
                 saveRecords(defaultRecords)
             }
             listPrefs.edit().putBoolean("initialized", true).apply()
+        }
+        // 每次启动：同步 InstructionSet 中新增的指令到历史记录
+        syncInstructionSet()
+    }
+
+    /** 将 InstructionSet 中有但历史记录中没有的指令追加进去 */
+    private fun syncInstructionSet() {
+        val existing = getRecords()
+        val existingNames = existing.map { it.instruction }.toSet()
+        val allStdNames = defaultInstructions.toSet()
+        // 找出有但历史记录中没有的指令
+        val missing = allStdNames - existingNames
+        if (missing.isNotEmpty()) {
+            val maxId = existing.maxOfOrNull { it.id } ?: 0L
+            val now = System.currentTimeMillis()
+            val newRecords = missing.mapIndexed { index, name ->
+                MagicRecord(
+                    id = maxId + index + 1,
+                    instruction = name,
+                    isPinned = false,
+                    timestamp = now - index.toLong() * 1000
+                )
+            }
+            saveRecords(existing + newRecords)
+            Log.i("MagicHistory", "同步了 ${newRecords.size} 条新指令到魔法书")
         }
     }
 
