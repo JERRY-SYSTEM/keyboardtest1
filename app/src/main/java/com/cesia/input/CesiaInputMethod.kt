@@ -2974,16 +2974,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private fun executeVoiceCommand(commandText: String) {
         Log.i("Cesia", "executeVoiceCommand: commandText='$commandText'")
 
-        // 获取当前输入框中的文字作为操作对象
-        val currentText = getInputText()
-        Log.i("Cesia", "executeVoiceCommand: currentText='${currentText.take(80)}', length=${currentText.length}")
-
-        // 直接把完整指令+原文传给 AI，让它自己理解要做什么
-        val prompt = "用户指令：$commandText\n\n当前文字：$currentText\n\n请根据用户指令对「当前文字」执行相应操作，只输出操作后的结果，不要输出任何其他解释。如果指令不明确或无法理解，输出原文不变。"
-
-        // 发送指令也走 AI 理解（"发送"指令会由 AI 返回特殊标记）
-        // 先判断是否是发送类指令
         val cmdLower = commandText.trim()
+
+        // === 发送指令单独处理 ===
         if (cmdLower == "发送" || cmdLower == "发送指令" || cmdLower == "发送文字" || cmdLower == "发出") {
             updateStatus("📤 已发送")
             val editorInfo = currentInputEditorInfo
@@ -3003,8 +2996,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             return
         }
 
-        if (currentText.isEmpty()) {
-            updateStatus("⚠️ 输入框没有文字，无法执行指令")
+        // === 直接以魔法书 prompt 格式传给 AI ===
+        val currentText = getInputText()
+        Log.i("Cesia", "executeVoiceCommand: currentText='${currentText.take(80)}', length=${currentText.length}")
+
+        if (currentText.isEmpty() && !isGenerationMagic(cmdLower)) {
+            updateStatus("⚠️ 输入框没有文字，无法执行修改类指令")
             resetToIdle()
             return
         }
@@ -3013,7 +3010,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         setStatusDot("processing")
         isProcessingResult = true
 
-        polishWithCommandPrompt(currentText, prompt, commandText)
+        val prompt = "$cmdLower：\n\n$currentText\n\n只输出结果："
+        Log.i("Cesia", "executeVoiceCommand: 直接传给 AI, prompt='$prompt'")
+
+        polishWithCommandPrompt(currentText, prompt, cmdLower)
     }
 
     /**
@@ -3034,8 +3034,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 withContext(Dispatchers.Main) {
                     isProcessingResult = false
                     if (result != null) {
+                        // 后处理：去掉 AI 可能输出的前缀
+                        val cleaned = cleanCommandResult(result)
                         // 替换当前输入框文字为执行结果
-                        replaceInputText(text, result)
+                        replaceInputText(text, cleaned)
                         updateStatus("✅ 已执行：$cmdLabel")
                     } else {
                         updateStatus("⚠️ 润色失败，已保留原文")
@@ -3051,6 +3053,47 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                 }
             }
         }
+    }
+
+    /**
+     * 语音命令结果后处理
+     * 去掉 AI 可能输出的前缀标签和多余内容
+     */
+    private fun cleanCommandResult(raw: String): String {
+        var text = raw.trim()
+
+        // 1. 去掉常见前缀
+        val prefixes = listOf(
+            "输出：", "输出:", "结果：", "结果:",
+            "处理后：", "处理后:", "处理结果：", "处理结果:",
+            "翻译：", "翻译:", "译文：", "译文:",
+            "润色后：", "润色后:", "润色结果：",
+            "简化后：", "简化后:", "摘要：", "摘要:",
+            "以下是处理后的文本：", "处理后的文本：",
+            "根据您的要求，"
+        )
+        for (prefix in prefixes) {
+            if (text.startsWith(prefix)) {
+                text = text.substring(prefix.length).trim()
+                break
+            }
+        }
+
+        // 2. 如果 AI 重复了"输出："之后的内容，取第一段有意义的文本
+        val lines = text.lines().filter { it.isNotBlank() }
+        if (lines.size > 1) {
+            // 找到第一个非空且不是标签的行
+            for (line in lines) {
+                val trimmed = line.trim()
+                if (!trimmed.endsWith("：") && !trimmed.endsWith(":") &&
+                    !trimmed.startsWith("任务") && !trimmed.startsWith("规则") &&
+                    !trimmed.startsWith("输入文本")) {
+                    return trimmed
+                }
+            }
+        }
+
+        return text
     }
 
     private fun stopRecording() {
