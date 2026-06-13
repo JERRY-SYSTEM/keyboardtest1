@@ -767,8 +767,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         }
 
                         if (command == "ai") {
-                            // 先上屏原文，再调用润色
-                            currentInputConnection?.commitText(textBefore, 1)
                             updateStatus("✨ 语音润色中...")
                             setStatusDot("processing")
                             isProcessingResult = true
@@ -2542,26 +2540,26 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                                 return@withContext
                             }
 
-                            // 更新 recognizedText（去掉命令词后的文本）
+                            // 1. 先 finishComposingText 确认当前组合文本
+                            ic.finishComposingText()
+
+                            // 2. 删除末尾 2 个字符（命令词）
+                            ic.deleteSurroundingText(2, 0)
+
+                            // 3. 更新 recognizedText（去掉命令词后的文本）
                             recognizedText = text
 
                             when (command) {
                                 "exit" -> {
-                                    // 退出：清除组合文本 + 退出语音输入状态
-                                    ic.finishComposingText()
+                                    // 退出：结束识别 + 退出语音输入状态
                                     isVoiceLocked = false
                                     updateMicButtonLockedState()
                                     updateStatus("🔓 已退出语音输入")
                                     resetToIdle()
                                 }
                                 "send" -> {
-                                    // 发送：先清除组合文本，再 commitText + 发送
+                                    // 发送：确认文本 + 发送
                                     updateStatus("📤 已发送")
-                                    ic.finishComposingText()
-                                    if (text.isNotEmpty()) {
-                                        ic.deleteSurroundingText(text.length, 0)
-                                        ic.commitText(text, 1)
-                                    }
                                     // 检查当前输入框是否支持发送动作
                                     val editorInfo = currentInputEditorInfo
                                     val canSend = editorInfo != null &&
@@ -2572,29 +2570,23 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                                         Log.w("Cesia", "当前输入框不支持 IME_ACTION_SEND，imeOptions=${editorInfo?.imeOptions}")
                                         updateStatus("✅ 已上屏（当前输入框不支持自动发送）")
                                     }
+                                    // 锁定模式退出
                                     if (isVoiceLocked) {
-                                        startRecordingLocked()
-                                    } else {
-                                        resetToIdle()
+                                        isVoiceLocked = false
+                                        updateMicButtonLockedState()
                                     }
+                                    resetToIdle()
                                 }
                                 "ai" -> {
-                                    // 润色：finishComposingText 上屏完整文本（含命令词），然后删除命令词
-                                    ic.finishComposingText()
-                                    // 获取上屏文本，计算命令词长度
-                                    val afterText = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
-                                    // 命令词在文本末尾，长度 = 总长度 - 去掉命令词后的长度
-                                    // 但 text 已经是去掉命令词后的文本，所以命令词长度需要从原始文本推算
-                                    // 简化：直接删除光标前可能的命令词（最多检查 cmdPolish 长度）
-                                    val cmdLen = VoiceEngine.cmdPolish.length
-                                    if (cmdLen > 0 && afterText.length >= cmdLen) {
-                                        ic.deleteSurroundingText(cmdLen, 0)
-                                    }
+                                    // 润色：对删除命令词后的文本润色
                                     if (text.isEmpty()) {
                                         updateStatus("⚠️ 没有需要润色的文字")
-                                        if (isVoiceLocked) startRecordingLocked() else resetToIdle()
+                                        if (isVoiceLocked) {
+                                            startRecordingLocked()
+                                        } else {
+                                            resetToIdle()
+                                        }
                                     } else {
-                                        ic.commitText(text, 1)
                                         updateStatus("✨ 语音润色中...")
                                         setStatusDot("processing")
                                         isProcessingResult = true
@@ -2604,10 +2596,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                                     }
                                 }
                                 "finish" -> {
-                                    // 结束：清除组合文本（原文上屏），直接结束
-                                    ic.finishComposingText()
+                                    // 结束：原文已上屏，直接结束识别
                                     updateStatus("✅ 已上屏")
                                     if (isVoiceLocked) {
+                                        // 锁定模式下继续录音
                                         startRecordingLocked()
                                     } else {
                                         resetToIdle()
@@ -2646,75 +2638,6 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             updateStatus("⚠️ 未识别到文字，请重试")
             resetToIdle()
             return
-        }
-
-        // 命令词检测：检查最终识别文本末尾是否包含命令词
-        // 注意：onSegmentResult(true) 已调用 finishComposingText() 将组合文本上屏
-        // 此处只需处理命令词（删除命令词文本 + 执行对应操作）
-        val commandResult = checkVoiceCommandWord(text)
-        if (commandResult != null) {
-            val (textBefore, command) = commandResult
-            Log.i("Cesia", "handleCloudVoiceResult: 命令词检测 command='$command', textBefore='${textBefore.take(50)}'")
-            recognizedText = textBefore
-            val cmdLen = text.length - textBefore.length  // 命令词长度
-            when (command) {
-                "exit" -> {
-                    // 退出：删除上屏的命令词 + 退出语音输入状态
-                    val ic = currentInputConnection ?: run { resetToIdle(); return }
-                    if (cmdLen > 0) ic.deleteSurroundingText(cmdLen, 0)
-                    isVoiceLocked = false
-                    updateMicButtonLockedState()
-                    updateStatus("🔓 已退出语音输入")
-                    resetToIdle()
-                    return
-                }
-                "send" -> {
-                    // 发送：删除命令词，上屏原文 + 发送
-                    val ic = currentInputConnection ?: run { resetToIdle(); return }
-                    if (cmdLen > 0) ic.deleteSurroundingText(cmdLen, 0)
-                    if (textBefore.isNotEmpty()) {
-                        ic.commitText(textBefore, 1)
-                    }
-                    val editorInfo = currentInputEditorInfo
-                    val canSend = editorInfo != null &&
-                        (editorInfo.imeOptions and EditorInfo.IME_ACTION_SEND) != 0
-                    if (canSend) {
-                        ic.performEditorAction(EditorInfo.IME_ACTION_SEND)
-                    }
-                    updateStatus("📤 已发送")
-                    if (isVoiceLocked) startRecordingLocked() else resetToIdle()
-                    return
-                }
-                "ai" -> {
-                    // 润色：删除命令词，上屏原文，再调用 AI 润色
-                    val ic = currentInputConnection ?: run { resetToIdle(); return }
-                    if (cmdLen > 0) ic.deleteSurroundingText(cmdLen, 0)
-                    if (textBefore.isEmpty()) {
-                        updateStatus("⚠️ 没有需要润色的文字")
-                        if (isVoiceLocked) startRecordingLocked() else resetToIdle()
-                    } else {
-                        ic.commitText(textBefore, 1)
-                        updateStatus("✨ 语音润色中...")
-                        setStatusDot("processing")
-                        isProcessingResult = true
-                        isWaitingForChoice = false
-                        hideAiChoiceButtons()
-                        polishRecognizedText(textBefore)
-                    }
-                    return
-                }
-                "finish" -> {
-                    // 结束：删除命令词，上屏原文，直接结束
-                    val ic = currentInputConnection ?: run { resetToIdle(); return }
-                    if (cmdLen > 0) ic.deleteSurroundingText(cmdLen, 0)
-                    if (textBefore.isNotEmpty()) {
-                        ic.commitText(textBefore, 1)
-                    }
-                    updateStatus("✅ 已上屏")
-                    if (isVoiceLocked) startRecordingLocked() else resetToIdle()
-                    return
-                }
-            }
         }
 
         // 锁定模式：自动根据云按钮状态处理，不显示 AI+/AI× 按钮
