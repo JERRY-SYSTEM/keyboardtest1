@@ -84,6 +84,16 @@ class SettingsActivity : AppCompatActivity() {
     private var btnDownloadAi: Button? = null
     private var isDownloading = false
 
+    // 语音命令词
+    private var etCmdExit: TextInputEditText? = null
+    private var etCmdPolish: TextInputEditText? = null
+    private var etCmdFinish: TextInputEditText? = null
+    private var etCmdSend: TextInputEditText? = null
+    private var etCmdCommand: TextInputEditText? = null
+    private var btnSaveCommands: Button? = null
+    private var btnResetCommands: Button? = null
+    private var tvCommandStatus: TextView? = null
+
     // 语音与 AI 本地化设置 helper
     private lateinit var aiSettingsHelper: VoiceAISettingsHelper
 
@@ -152,6 +162,17 @@ class SettingsActivity : AppCompatActivity() {
         dictManager = PinyinDictManager(this)
         loadSettings()
         aiSettingsHelper.loadSettings()
+        // 初始化 VoiceEngine 命令词
+        try {
+            val cmdPrefs = getSharedPreferences("cesia_commands", MODE_PRIVATE)
+            com.cesia.input.voice.VoiceEngine.updateCommandWords(
+                cmdPrefs.getString("cmd_exit", "退出") ?: "退出",
+                cmdPrefs.getString("cmd_polish", "魔法") ?: "魔法",
+                cmdPrefs.getString("cmd_finish", "结束") ?: "结束",
+                cmdPrefs.getString("cmd_send", "发送") ?: "发送",
+                cmdPrefs.getString("cmd_command", "指令") ?: "指令"
+            )
+        } catch (_: Exception) {}
         setupListeners()
         aiSettingsHelper.setupListeners()
         showVersion()
@@ -230,12 +251,16 @@ class SettingsActivity : AppCompatActivity() {
             btnDownloadAi = findViewById(R.id.btn_download_ai)
         } catch (_: Exception) {}
 
-        // 个性化设置入口
+        // 语音命令词设置（原个性化设置内容）
         try {
-            val btnPersonalization = findViewById<Button>(R.id.btn_personalization)
-            btnPersonalization?.setOnClickListener {
-                startActivity(Intent(this, PersonalizationActivity::class.java))
-            }
+            etCmdExit = findViewById(R.id.et_cmd_exit)
+            etCmdPolish = findViewById(R.id.et_cmd_polish)
+            etCmdFinish = findViewById(R.id.et_cmd_finish)
+            etCmdSend = findViewById(R.id.et_cmd_send)
+            etCmdCommand = findViewById(R.id.et_cmd_command)
+            btnSaveCommands = findViewById(R.id.btn_save_commands)
+            btnResetCommands = findViewById(R.id.btn_reset_commands)
+            tvCommandStatus = findViewById(R.id.tv_command_status)
         } catch (_: Exception) {}
     }
 
@@ -310,6 +335,13 @@ class SettingsActivity : AppCompatActivity() {
         etApiKey.setText(prefs.getString(PREF_OPENROUTER_KEY, ""))
         etModelId.setText(prefs.getString(PREF_MODEL_ID, DEFAULT_MODEL_ID))
         etPolishPrompt.setText(prefs.getString(PREF_POLISH_PROMPT, PolishService.DEFAULT_POLISH_PROMPT))
+        // 加载语音命令词
+        val cmdPrefs = getSharedPreferences("cesia_commands", MODE_PRIVATE)
+        etCmdExit?.setText(cmdPrefs.getString("cmd_exit", "退出"))
+        etCmdPolish?.setText(cmdPrefs.getString("cmd_polish", "魔法"))
+        etCmdFinish?.setText(cmdPrefs.getString("cmd_finish", "结束"))
+        etCmdSend?.setText(cmdPrefs.getString("cmd_send", "发送"))
+        etCmdCommand?.setText(cmdPrefs.getString("cmd_command", "指令"))
         appendLog("已加载设置")
     }
 
@@ -371,6 +403,10 @@ class SettingsActivity : AppCompatActivity() {
         btnDownloadVoice?.setOnClickListener { downloadVoiceModel() }
         btnDownloadAi?.setOnClickListener { downloadAiModel() }
         // 卸载按钮已在 VoiceAISettingsHelper 中绑定
+
+        // === 语音命令词 ===
+        btnSaveCommands?.setOnClickListener { saveCommandWords() }
+        btnResetCommands?.setOnClickListener { resetCommandWords() }
     }
 
     // ======================== 模型下载 ========================
@@ -1244,5 +1280,60 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    // ======================== 语音命令词 ========================
+
+    private fun saveCommandWords() {
+        val exit = etCmdExit?.text?.toString()?.trim() ?: ""
+        val polish = etCmdPolish?.text?.toString()?.trim() ?: ""
+        val finish = etCmdFinish?.text?.toString()?.trim() ?: ""
+        val send = etCmdSend?.text?.toString()?.trim() ?: ""
+        val command = etCmdCommand?.text?.toString()?.trim() ?: ""
+
+        val errors = mutableListOf<String>()
+        if (exit.isEmpty()) errors.add("退出命令词不能为空")
+        if (polish.isEmpty()) errors.add("润色命令词不能为空")
+        if (finish.isEmpty()) errors.add("结束命令词不能为空")
+        if (send.isEmpty()) errors.add("发送命令词不能为空")
+        if (command.isEmpty()) errors.add("指令模式词不能为空")
+
+        val words = listOf(exit, polish, finish, send, command)
+        val duplicates = words.groupBy { it }.filter { it.value.size > 1 }.keys
+        if (duplicates.isNotEmpty()) errors.add("命令词不能重复：${duplicates.joinToString("、")}")
+
+        if (errors.isNotEmpty()) {
+            tvCommandStatus?.text = "❌ ${errors.joinToString("\n")}"
+            tvCommandStatus?.setBackgroundColor(0xFFFFEBEE.toInt())
+            return
+        }
+
+        val cmdPrefs = getSharedPreferences("cesia_commands", MODE_PRIVATE)
+        cmdPrefs.edit()
+            .putString("cmd_exit", exit)
+            .putString("cmd_polish", polish)
+            .putString("cmd_finish", finish)
+            .putString("cmd_send", send)
+            .putString("cmd_command", command)
+            .apply()
+
+        // 立即更新 VoiceEngine
+        try {
+            com.cesia.input.voice.VoiceEngine.updateCommandWords(exit, polish, finish, send, command)
+        } catch (_: Exception) {}
+
+        tvCommandStatus?.text = "✅ 已保存：退出=$exit, 润色=$polish, 结束=$finish, 发送=$send, 指令=$command"
+        tvCommandStatus?.setBackgroundColor(0xFFE8F5E9.toInt())
+        Toast.makeText(this, "命令词已保存", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun resetCommandWords() {
+        etCmdExit?.setText("退出")
+        etCmdPolish?.setText("魔法")
+        etCmdFinish?.setText("结束")
+        etCmdSend?.setText("发送")
+        etCmdCommand?.setText("指令")
+        tvCommandStatus?.text = "已恢复默认值，请点击保存"
+        tvCommandStatus?.setBackgroundColor(0xFFFFF3E0.toInt())
     }
 }
