@@ -1599,6 +1599,11 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         // 读取屏幕内容作为语境（无障碍服务，如未开启则跳过）
         val screenContext = readScreenContext()
 
+        // 如果无障碍服务未开启，首次使用时弹窗引导
+        if (screenContext.isEmpty() && !isScreenReaderEnabled()) {
+            showAccessibilityGuideDialog()
+        }
+
         // 异步执行 AI，避免阻塞主线程
         isAiProcessing = true
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
@@ -1639,9 +1644,70 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
      * 如无障碍服务未开启或不可用，返回空字符串
      */
     private fun readScreenContext(): String {
-        // TODO: 接入无障碍服务后实现
-        // 当前版本返回空字符串，后续实现 ScreenReaderService 后替换
-        return ""
+        return try {
+            // 检查无障碍服务是否已开启
+            if (!isScreenReaderEnabled()) {
+                return ""
+            }
+            val text = ScreenReaderService.getScreenText()
+            if (text.isNotEmpty()) {
+                Log.d("Cesia", "readScreenContext: 读取到 ${text.length} 字符屏幕内容")
+            }
+            text
+        } catch (e: Exception) {
+            Log.e("Cesia", "readScreenContext: 读取屏幕内容失败", e)
+            ""
+        }
+    }
+
+    /**
+     * 检查无障碍屏幕读取服务是否已开启
+     */
+    private fun isScreenReaderEnabled(): Boolean {
+        return try {
+            val enabledServices = android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            val colonSplitter = enabledServices.split(':')
+            colonSplitter.any { svc ->
+                svc.startsWith("$packageName/") && svc.contains("ScreenReaderService")
+            }
+        } catch (e: Exception) {
+            Log.e("Cesia", "检查无障碍服务状态失败", e)
+            false
+        }
+    }
+
+    /**
+     * 弹窗引导用户开启无障碍服务
+     */
+    private fun showAccessibilityGuideDialog() {
+        try {
+            AlertDialog.Builder(this)
+                .setTitle("📖 需要开启无障碍服务")
+                .setMessage(
+                    "星星按钮的 AI 回复功能需要读取屏幕内容作为语境。\n\n" +
+                    "请按以下步骤操作：\n" +
+                    "1. 点击「去开启」\n" +
+                    "2. 找到「Cesia输入法」\n" +
+                    "3. 开启无障碍服务\n\n" +
+                    "开启后，星星按钮将能自动读取当前聊天内容，AI 回复会更智能。"
+                )
+                .setPositiveButton("去开启") { _, _ ->
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        updateStatus("❌ 无法打开系统设置")
+                    }
+                }
+                .setNegativeButton("稍后再说", null)
+                .show()
+        } catch (_: Exception) {
+            // IME context 可能不支持 AlertDialog，静默失败
+        }
     }
 
     /**
