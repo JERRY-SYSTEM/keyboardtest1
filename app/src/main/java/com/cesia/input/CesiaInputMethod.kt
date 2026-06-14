@@ -1442,11 +1442,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         val extractedAfter = ic.getTextAfterCursor(10000, 0)?.toString() ?: ""
         val fullText = extracted + extractedAfter
 
-        if (fullText.isEmpty()) {
-            updateStatus("⚠️ 输入框无文字，无法修改")
-            return
-        }
-
+        // 空文本也允许启动——AI 可以生成新内容
         magicOriginalText = fullText
         magicMode = true
         typelessEngine?.magicMode = true
