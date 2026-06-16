@@ -1598,13 +1598,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
         // 读取剪贴板非置顶首条内容作为语境
         val clipboardContext = getClipboardFirstNonPinned()
+        Log.d("Cesia", "handleMagicResult: instruction='$instruction', original='${magicOriginalText.take(50)}', clipboard='${clipboardContext.take(50)}'")
 
         // 异步执行 AI，避免阻塞主线程
         isAiProcessing = true
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
                 val prompt = buildMagicPrompt(magicOriginalText, instruction, clipboardContext)
-                val result = typelessEngine?.getPolishService()?.polishWithPrompt(prompt)
+                Log.d("Cesia", "handleMagicResult: prompt长度=${prompt.length}")
+                val polishService = typelessEngine?.getPolishService()
+                Log.d("Cesia", "handleMagicResult: polishService=${polishService != null}, apiKey=${polishService?.getApiKey()?.take(10) ?: "null"}")
+                val result = polishService?.polishWithPrompt(prompt)
+                Log.d("Cesia", "handleMagicResult: result=${result?.take(50) ?: "null"}, isNullOrEmpty=${result.isNullOrEmpty()}")
                 withContext(Dispatchers.Main) {
                     isAiProcessing = false
                     if (result != null && result.isNotEmpty()) {
@@ -1634,8 +1639,9 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     }
 
     /**
-     * 读取剪贴板非置顶首条内容作为语境
-     * 返回剪贴板列表中第一条非置顶且非空的文本，如果没有则返回空字符串
+     * 读取系统剪贴板第一条非空内容作为语境
+     * 只读系统剪贴板，不读持久化历史
+     * 如系统剪贴板为空或不可用，返回空字符串
      */
     private fun getClipboardFirstNonPinned(): String {
         return try {
@@ -1646,25 +1652,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     for (i in 0 until clip.itemCount) {
                         val text = clip.getItemAt(i).text?.toString()?.trim() ?: ""
                         if (text.isNotEmpty()) {
-                            Log.d("Cesia", "getClipboardFirstNonPinned: 读取到 ${text.length} 字符剪贴板内容")
+                            Log.d("Cesia", "getClipboardFirstNonPinned: 读取到 ${text.length} 字符: ${text.take(50)}")
                             return text
                         }
                     }
                 }
             }
-            // 系统剪贴板为空，尝试从持久化历史读取
-            val prefs = getSharedPreferences("cesia_clipboard", MODE_PRIVATE)
-            val historyStr = prefs.getString("history", "") ?: ""
-            if (historyStr.isNotEmpty()) {
-                val favStr = prefs.getString("favorites", "") ?: ""
-                val favSet = if (favStr.isNotEmpty()) favStr.split("\n").toSet() else emptySet()
-                for (text in historyStr.split("\n")) {
-                    if (text.isNotEmpty() && !favSet.contains(text)) {
-                        Log.d("Cesia", "getClipboardFirstNonPinned: 从历史读取到非置顶内容 ${text.length} 字符")
-                        return text
-                    }
-                }
-            }
+            Log.d("Cesia", "getClipboardFirstNonPinned: 系统剪贴板为空")
             ""
         } catch (e: Exception) {
             Log.e("Cesia", "getClipboardFirstNonPinned: 读取剪贴板失败", e)
@@ -4265,7 +4259,8 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             val historyStr = prefs.getString("history", "") ?: ""
             val favStr = prefs.getString("favorites", "") ?: ""
             val favSet = if (favStr.isNotEmpty()) favStr.split("\n").toSet() else emptySet()
-            
+            val historyTexts = if (historyStr.isNotEmpty()) historyStr.split("\n").filter { it.isNotEmpty() }.toSet() else emptySet()
+
             // 2. 先加载持久化历史（置顶在前）
             if (historyStr.isNotEmpty()) {
                 for (text in historyStr.split("\n")) {
@@ -4274,13 +4269,13 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                     }
                 }
             }
-            
-            // 3. 再加载系统剪贴板（去重追加）
+
+            // 3. 再加载系统剪贴板（仅追加不在持久化历史中的内容，避免重复）
             if (clipboardMgr?.hasPrimaryClip() == true) {
                 val clip = clipboardMgr.primaryClip ?: return
                 for (i in 0 until clip.itemCount) {
                     val text = clip.getItemAt(i).text?.toString()?.trim() ?: ""
-                    if (text.isNotEmpty() && text.length <= 500 && clipboardItems.none { it.text == text }) {
+                    if (text.isNotEmpty() && text.length <= 500 && text !in historyTexts) {
                         clipboardItems.add(0, ClipboardItem(text = text, isPinned = favSet.contains(text)))
                     }
                 }
