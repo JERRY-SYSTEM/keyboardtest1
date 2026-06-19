@@ -2316,6 +2316,17 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             if (records.isNotEmpty()) {
                 list.clear()
                 list.addAll(records.split("\n").filter { it.isNotEmpty() })
+            } else {
+                // 首次使用：添加5条示范命令
+                list.clear()
+                list.addAll(listOf(
+                    "请以今天发生的国际新闻为主题，写一篇200字的简短报道",
+                    "请将以下文字改写成正式商务风格，适合邮件使用",
+                    "请帮我写一条周末出游的朋友社文案，语气轻松活泼",
+                    "请用简洁的语言总结当前科技发展趋势，不超过100字",
+                    "请根据上下文续写一段话，内容与原文风格保持一致"
+                ))
+                saveSmartRecords(list)
             }
         } catch (e: Exception) {
             Log.e("Cesia", "loadSmartRecords 异常", e)
@@ -5012,7 +5023,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                     exitSmartEditMode(save = false)
                     return
                 }
-                // 退格键
+                // 退格键：优先删除 Rime composition，其次删除缓冲区
                 -5, Keyboard.KEYCODE_DELETE -> {
                     if (rimeEngine.isComposing) {
                         rimeEngine.processKey("BackSpace")
@@ -5023,36 +5034,57 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                     }
                     return
                 }
-                // 字母键 a-z
+                // 字母键 a-z：走 Rime 引擎，让候选栏正常显示
                 in 97..122 -> {
                     rimeEngine.processKey(primaryCode.toChar())
                     updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
                     return
                 }
-                // 数字键 0-9
+                // 数字键 0-9：T9模式走T9拼音引擎，全键盘模式选词或追加
                 in 48..57 -> {
-                    if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
+                    if (keyboardMode == KeyboardMode.NUMBER) {
+                        rimeEngine.processKey(primaryCode.toChar())
+                        updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    } else if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
                         val index = if (primaryCode == 48) 9 else (primaryCode - 49)
                         val cands = rimeEngine.candidates
                         if (index < cands.size) {
                             val selected = rimeEngine.selectCandidate(index)
-                            smartEditBuffer.append(selected)
-                            updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                            if (selected.isNotEmpty()) {
+                                smartEditBuffer.append(selected)
+                                rimeEngine.clear()
+                            }
                         }
                     } else {
                         smartEditBuffer.append(primaryCode.toChar())
-                        updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
                     }
-                    return
-                }
-                // 空格
-                32 -> {
-                    smartEditBuffer.append(' ')
                     updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
                     return
                 }
-                // 标点符号
-                else -> {
+                // 空格：如果有候选词则选第一个词，否则追加空格
+                32 -> {
+                    if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
+                        val selected = rimeEngine.selectCandidate(0)
+                        if (selected.isNotEmpty()) {
+                            smartEditBuffer.append(selected)
+                            rimeEngine.clear()
+                        }
+                    } else {
+                        smartEditBuffer.append(' ')
+                    }
+                    updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    return
+                }
+                // 标点符号直接追加
+                44, 46, 59, 33, 63, 45, 95, 43, 61, 40, 41, 123, 125, 91, 93, 47, 92, 58, 34, 39, 60, 62, 42, 38, 37, 35, 64, 36, 94, 126, 96, 124 -> {
+                    rimeEngine.clear()
+                    smartEditBuffer.append(primaryCode.toChar())
+                    updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    return
+                }
+                // 中文标点（Unicode）
+                65292, 12290, 65307, 65281, 65311, 12289, 65288, 65289, 8220, 8221, 8216, 8217 -> {
+                    rimeEngine.clear()
                     smartEditBuffer.append(primaryCode.toChar())
                     updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
                     return
