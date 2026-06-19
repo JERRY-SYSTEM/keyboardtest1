@@ -2165,12 +2165,13 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                 true
             }
 
-            // 单击：复制到输入框
+            // 单击：直接执行该命令（调用AI）
             lvRecords.setOnItemClickListener { _: android.widget.AdapterView<*>?, _: android.view.View?, position: Int, _: Long ->
                 if (position < smartRecords.size) {
-                    val ic = currentInputConnection ?: return@setOnItemClickListener
-                    ic.commitText(smartRecords[position], 1)
-                    updateStatus("✅ 已输入命令")
+                    val command = smartRecords[position]
+                    smartWritingPopup?.dismiss()
+                    smartWritingPopup = null
+                    executeSmartCommand(command)
                 }
             }
 
@@ -2306,6 +2307,127 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         smartEditMode = true
         smartEditBuffer.clear()
         updateStatus("✏️ 输入智能写作命令...（按发送键保存）")
+    }
+
+    /** 执行智能写作命令（点击列表项直接调用AI） */
+    private fun executeSmartCommand(command: String) {
+        val selectedOptions = getSmartWritingSelection()
+        val contextParts = mutableListOf<String>()
+
+        // 根据选中的选项收集语境
+        if (selectedOptions.contains("clipboard")) {
+            val clipboardText = getClipboardFirstNonPinned()
+            if (clipboardText.isNotEmpty()) {
+                contextParts.add("参考内容：\n$clipboardText")
+            }
+        }
+        if (selectedOptions.contains("grammar")) {
+            val grammarGuide = buildGrammarGuide()
+            if (grammarGuide.isNotEmpty()) {
+                contextParts.add("语法纲要：\n$grammarGuide")
+            }
+        }
+
+        isAiProcessing = true
+        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            try {
+                // 如果需要搜索，先执行 SearXNG 搜索
+                if (selectedOptions.contains("search")) {
+                    val searchResults = performSearXNGSearch(command)
+                    if (searchResults.isNotEmpty()) {
+                        contextParts.add("【网络搜索结果】\n$searchResults")
+                    }
+                }
+
+                val ic = currentInputConnection ?: run {
+                    withContext(Dispatchers.Main) {
+                        isAiProcessing = false
+                        updateStatus("❌ 无法获取输入连接")
+                    }
+                    return@launch
+                }
+
+                val textBefore = ic.getTextBeforeCursor(1000, 0)?.toString() ?: ""
+                val contextStr = if (contextParts.isNotEmpty()) "\n\n" + contextParts.joinToString("\n\n") else ""
+                val fullPrompt = "$command$contextStr\n\n当前文本：\n$textBefore"
+
+                val polishService = typelessEngine?.getPolishService()
+                val result = polishService?.polishWithPrompt(fullPrompt)
+
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    if (result != null && result.isNotEmpty()) {
+                        ic.commitText(result, 1)
+                        updateStatus("✅ 智能写作已完成")
+                    } else {
+                        updateStatus("⚠️ 无输出")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Cesia", "executeSmartCommand failed", e)
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    updateStatus("❌ 失败：${e.message}")
+                }
+            }
+        }
+    }
+
+    /** SearXNG 搜索（公共实例） */
+    private fun performSearXNGSearch(query: String): String {
+        // 公共 SearXNG 实例列表
+        val searxInstances = listOf(
+            "https://searx.org",
+            "https://searx.net",
+            "https://search.sapti.me"
+        )
+        for (instance in searxInstances) {
+            try {
+                val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+                val url = "$instance/search?q=$encoded&format=json&language=zh-CN"
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                val code = conn.responseCode
+                if (code == 200) {
+                    val json = conn.inputStream.bufferedReader().readText()
+                    val results = parseSearXNGResults(json)
+                    if (results.isNotEmpty()) {
+                        Log.d("Cesia", "SearXNG search: instance=$instance, results=${results.length}")
+                        return results
+                    }
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                Log.w("Cesia", "SearXNG instance failed: $instance", e)
+            }
+        }
+        Log.w("Cesia", "All SearXNG instances failed")
+        return ""
+    }
+
+    /** 解析 SearXNG JSON 结果 */
+    private fun parseSearXNGResults(json: String): String {
+        try {
+            val obj = org.json.JSONObject(json)
+            val results = obj.optJSONArray("results") ?: return ""
+            val sb = StringBuilder()
+            for (i in 0 until minOf(results.length(), 5)) {
+                val item = results.getJSONObject(i)
+                val title = item.optString("title", "").trim()
+                val content = item.optString("content", "").trim()
+                val url = item.optString("url", "").trim()
+                if (title.isNotEmpty()) sb.appendLine("• $title")
+                if (content.isNotEmpty()) sb.appendLine("  $content")
+                if (url.isNotEmpty()) sb.appendLine("  $url")
+                if (i < minOf(results.length(), 5) - 1) sb.appendLine()
+            }
+            return sb.toString().trim()
+        } catch (e: Exception) {
+            Log.e("Cesia", "SearXNG parse error", e)
+            return ""
+        }
     }
 
     /** 加载智能写作命令记录 */
@@ -2514,6 +2636,21 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         magicEditMode = false
         magicEditBuffer.clear()
         magicEditMgr = null
+    }
+
+    /** 更新智能写作命令编辑状态（同步候选栏） */
+    private fun updateSmartEditStatus() {
+        val comp = rimeEngine.composingText
+        val display = smartEditBuffer.toString() + comp
+        if (display.isEmpty()) {
+            updateStatus("✏️ 输入智能写作命令...（按发送键保存）")
+        } else {
+            updateStatus("✏️ $display")
+        }
+        // 同步更新候选栏
+        val allCands = rimeEngine.getAllCandidates()
+        candidateAdapter?.updateData(allCands)
+        candidateBar.visibility = if (rimeEngine.isComposing) View.VISIBLE else View.GONE
     }
 
     /** 退出智能写作命令编辑模式 */
@@ -5027,24 +5164,24 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                 -5, Keyboard.KEYCODE_DELETE -> {
                     if (rimeEngine.isComposing) {
                         rimeEngine.processKey("BackSpace")
-                        updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                        updateSmartEditStatus()
                     } else if (smartEditBuffer.isNotEmpty()) {
                         smartEditBuffer.deleteCharAt(smartEditBuffer.length - 1)
-                        updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                        updateSmartEditStatus()
                     }
                     return
                 }
                 // 字母键 a-z：走 Rime 引擎，让候选栏正常显示
                 in 97..122 -> {
                     rimeEngine.processKey(primaryCode.toChar())
-                    updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    updateSmartEditStatus()
                     return
                 }
                 // 数字键 0-9：T9模式走T9拼音引擎，全键盘模式选词或追加
                 in 48..57 -> {
                     if (keyboardMode == KeyboardMode.NUMBER) {
                         rimeEngine.processKey(primaryCode.toChar())
-                        updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                        updateSmartEditStatus()
                     } else if (rimeEngine.isComposing && rimeEngine.hasCandidates) {
                         val index = if (primaryCode == 48) 9 else (primaryCode - 49)
                         val cands = rimeEngine.candidates
@@ -5058,7 +5195,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                     } else {
                         smartEditBuffer.append(primaryCode.toChar())
                     }
-                    updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    updateSmartEditStatus()
                     return
                 }
                 // 空格：如果有候选词则选第一个词，否则追加空格
@@ -5072,21 +5209,21 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                     } else {
                         smartEditBuffer.append(' ')
                     }
-                    updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    updateSmartEditStatus()
                     return
                 }
                 // 标点符号直接追加
                 44, 46, 59, 33, 63, 45, 95, 43, 61, 40, 41, 123, 125, 91, 93, 47, 92, 58, 34, 39, 60, 62, 42, 38, 37, 35, 64, 36, 94, 126, 96, 124 -> {
                     rimeEngine.clear()
                     smartEditBuffer.append(primaryCode.toChar())
-                    updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    updateSmartEditStatus()
                     return
                 }
                 // 中文标点（Unicode）
                 65292, 12290, 65307, 65281, 65311, 12289, 65288, 65289, 8220, 8221, 8216, 8217 -> {
                     rimeEngine.clear()
                     smartEditBuffer.append(primaryCode.toChar())
-                    updateStatus("✏️ ${smartEditBuffer}${rimeEngine.composingText}")
+                    updateSmartEditStatus()
                     return
                 }
             }
