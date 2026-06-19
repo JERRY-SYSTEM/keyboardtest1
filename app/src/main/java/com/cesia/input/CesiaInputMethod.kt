@@ -1267,8 +1267,36 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
 
-        // 智能写作按钮（星星/四角星）：短按进入智能写作语音状态，长按弹出设置弹窗
+        // 智能写作按钮（星星/四角星）：短按执行第一项命令，长按弹出设置弹窗
         btnMagic.setOnClickListener { toggleMagicMode() }
+        btnMagic.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    // 开始发光（复用魔法书按钮效果）
+                    btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF81D8D0.toInt())
+                    btnMagic.setTextColor(0xFFFFFFFF.toInt())
+                    btnMagic.elevation = 6f
+                    startMagicButtonGlow()
+                    false // 不消费，让 OnLongClickListener 也能收到
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    // 松手停止发光（如果没有触发长按）
+                    stopMagicButtonGlow()
+                    btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFE0E0E0.toInt())
+                    btnMagic.setTextColor(0xFF888888.toInt())
+                    btnMagic.elevation = 0f
+                    false
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    stopMagicButtonGlow()
+                    btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFE0E0E0.toInt())
+                    btnMagic.setTextColor(0xFF888888.toInt())
+                    btnMagic.elevation = 0f
+                    false
+                }
+                else -> false
+            }
+        }
         btnMagic.setOnLongClickListener {
             showSmartWritingPopup()
             true
@@ -1416,24 +1444,13 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // ======================== 智能写作（星星按钮） ========================
 
     private fun toggleMagicMode() {
-        if (isRecording && magicMode) {
-            // 智能写作模式正在录音 → 结束录音
-            // 设置标志，阻止普通语音流程处理 Google 识别结果
-            magicStopRequested = true
-            isRecording = false
-            voiceEngine.releaseRecorder()
-            typelessEngine?.stopListening()
-            resetMagicHighlight()
-            // AI 触发交给回调：
-            // - 本地模式：startMagicLocalRecording 的 onSegmentResult(isFinal) 或 recordInSegments 结束后
-            // - 云端模式：onRecognitionComplete 中检测到 magicStopRequested 后直接触发
-            updateStatus("⏳ 正在处理...")
-        } else if (isRecording) {
-            // 普通语音录音中点智能写作键 → 忽略
-            updateStatus("⚠️ 请先停止当前录音")
+        // 短按星星：直接执行第一条智能写作命令
+        val smartRecords = mutableListOf<String>()
+        loadSmartRecords(smartRecords)
+        if (smartRecords.isNotEmpty()) {
+            executeSmartCommand(smartRecords[0])
         } else {
-            // 未录音 → 读取输入框文字 + 高亮 + 开始录音
-            startMagicMode()
+            updateStatus("⚠️ 暂无写作命令，请长按星星添加")
         }
     }
 
@@ -1598,6 +1615,18 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         if (instruction.isEmpty()) {
             updateStatus("⚠️ 未识别到指令")
             return
+        }
+
+        // 检测"写作"关键词：如果说"写作 xxx"，则作为智能写作命令执行
+        val writingMatch = Regex("^写作[：:\\s]*(.+)", RegexOption.IGNORE_CASE).find(instruction)
+        if (writingMatch != null) {
+            val command = writingMatch.groupValues[1].trim()
+            if (command.isNotEmpty()) {
+                Log.d("Cesia", "handleMagicResult: 语音写作命令=$command")
+                updateStatus("✨ 语音写作：$command")
+                executeSmartCommand(command)
+                return
+            }
         }
 
         updateStatus("✨ 正在施展魔法...")
@@ -2294,6 +2323,11 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
 
             popup.setOnDismissListener {
                 smartWritingPopup = null
+                // 弹窗关闭时停止发光
+                stopMagicButtonGlow()
+                btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFE0E0E0.toInt())
+                btnMagic.setTextColor(0xFF888888.toInt())
+                btnMagic.elevation = 0f
             }
 
             popup.showAtLocation(keyboardView, android.view.Gravity.TOP or android.view.Gravity.START, 0, -totalHeight)
@@ -2697,7 +2731,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
     }
 
     /** 退出智能写作命令编辑模式 */
-    private fun exitSmartEditMode(save: Boolean = false) {
+    private fun exitSmartEditMode(save: Boolean = false, execute: Boolean = false) {
         if (save && smartEditBuffer.isNotEmpty()) {
             val text = smartEditBuffer.toString().trim()
             if (text.isNotEmpty()) {
@@ -2707,7 +2741,14 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                 list.add(0, text)
                 if (list.size > 50) list.removeAt(list.size - 1)
                 prefs.edit().putString("records", list.joinToString("\n")).apply()
-                updateStatus("✅ 已保存智能写作命令：${text.take(20)}")
+                updateStatus("✅ 已保存并执行：${text.take(20)}")
+                // 保存后直接执行
+                if (execute) {
+                    executeSmartCommand(text)
+                    smartEditMode = false
+                    smartEditBuffer.clear()
+                    return
+                }
             }
         } else {
             if (smartEditMode) updateStatus("❌ 已取消新增命令")
@@ -5187,14 +5228,14 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         // ======================== 智能写作命令编辑模式拦截 ========================
         if (smartEditMode) {
             when (primaryCode) {
-                // 发送键/回车键：保存命令并退出编辑模式
+                // 发送键/回车键：保存命令、退出编辑模式、直接执行
                 -200, 10 -> {
                     val comp = rimeEngine.composingText
                     if (comp.isNotEmpty()) {
                         smartEditBuffer.append(comp)
                         rimeEngine.clear()
                     }
-                    exitSmartEditMode(save = true)
+                    exitSmartEditMode(save = true, execute = true)
                     return
                 }
                 // 返回键：取消并退出编辑模式

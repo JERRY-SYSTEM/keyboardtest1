@@ -226,19 +226,18 @@
             android:id="@+id/btn_magic"
             android:layout_width="0dp"
             android:layout_height="40dp"
-            android:layout_weight="0.8"
+            android:layout_weight="1"
             android:drawableTop="@drawable/ic_star_four"
             android:drawableTint="#888888"
             android:text=""
             android:textSize="0sp"
             android:backgroundTint="#E0E0E0"
-            android:contentDescription="魔法修改"
+            android:contentDescription="智能写作"
             android:stateListAnimator="@null"
             android:insetTop="0dp"
             android:insetBottom="0dp"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
-            android:layout_marginTop="5dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             app:cornerRadius="20dp" />
 
         <!-- 智能修改：笔图标 -->
@@ -246,20 +245,23 @@
             android:id="@+id/btn_magic_book"
             android:layout_width="0dp"
             android:layout_height="40dp"
-            android:layout_weight="0.8"
+            android:layout_weight="1"
             android:src="@android:drawable/ic_menu_edit"
             android:background="@drawable/button_background_gray"
             android:scaleType="centerInside"
-            android:contentDescription="魔法记忆"
-            android:layout_marginEnd="6dp"
+            android:contentDescription="魔法书"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:padding="10dp" />
 
+        <!-- 语音按钮容器：缩短长度，留出发光空间 -->
         <LinearLayout
             android:id="@+id/mic_button_container"
             android:layout_width="0dp"
-            android:layout_height="52dp"
-            android:layout_weight="2.5"
-            android:layout_marginEnd="6dp"
+            android:layout_height="44dp"
+            android:layout_weight="2"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
@@ -267,14 +269,14 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mic_ai"
                 android:layout_width="0dp"
-                android:layout_height="40dp"
+                android:layout_height="38dp"
                 android:layout_weight="1"
                 android:text="AI +"
                 android:textSize="12sp"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:backgroundTint="#81D8D0"
-                app:cornerRadius="20dp"
+                app:cornerRadius="19dp"
                 android:elevation="2dp"
                 android:stateListAnimator="@null"
                 android:insetTop="0dp"
@@ -294,62 +296,64 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mic_noai"
                 android:layout_width="0dp"
-                android:layout_height="40dp"
+                android:layout_height="38dp"
                 android:layout_weight="1"
                 android:text="AI ×"
                 android:textSize="12sp"
                 android:textColor="#81D8D0"
                 android:textStyle="bold"
                 android:backgroundTint="#FFFFFF"
-                app:cornerRadius="20dp"
+                app:cornerRadius="19dp"
                 android:elevation="2dp"
                 android:stateListAnimator="@null"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:visibility="gone" />
 
-            <!-- 语音按键：麦克风矢量图标 -->
+            <!-- 语音按键：麦克风矢量图标（高度略小于容器，留出发光空间） -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mic"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="38dp"
                 android:layout_weight="1"
                 android:drawableTop="@drawable/ic_mic"
                 android:drawableTint="#FFFFFF"
                 android:text=""
                 android:textSize="0sp"
                 android:backgroundTint="#81D8D0"
-                app:cornerRadius="20dp"
+                app:cornerRadius="19dp"
                 android:elevation="2dp"
                 android:stateListAnimator="@null"
                 android:insetTop="0dp"
                 android:insetBottom="0dp" />
         </LinearLayout>
 
+        <!-- 清空按钮 -->
         <ImageButton
             android:id="@+id/btn_delete"
             android:layout_width="0dp"
             android:layout_height="40dp"
-            android:layout_weight="0.8"
+            android:layout_weight="1"
             android:src="@android:drawable/ic_menu_delete"
             android:background="@drawable/button_background_gray"
             android:scaleType="centerInside"
             android:contentDescription="清空"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:padding="10dp" />
 
+        <!-- 发送按钮 -->
         <ImageButton
             android:id="@+id/btn_send"
             android:layout_width="0dp"
             android:layout_height="40dp"
-            android:layout_weight="0.8"
+            android:layout_weight="1"
             android:src="@android:drawable/ic_menu_send"
             android:background="@drawable/button_background_gray"
             android:scaleType="centerInside"
             android:contentDescription="发送"
-            android:layout_marginStart="6dp"
-            android:layout_marginEnd="6dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
             android:padding="10dp" />
 
     </LinearLayout>
