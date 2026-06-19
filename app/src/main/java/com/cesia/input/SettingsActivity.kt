@@ -67,6 +67,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvStatOutputChars: TextView
     private lateinit var tvStatCount: TextView
     private lateinit var btnHistory: Button
+    private lateinit var btnGrammarGuide: Button
     private lateinit var statsManager: PolishStatsManager
     private lateinit var dictManager: PinyinDictManager
 
@@ -217,6 +218,7 @@ class SettingsActivity : AppCompatActivity() {
         tvStatOutputChars = findViewById(R.id.tv_stat_output_chars)
         tvStatCount = findViewById(R.id.tv_stat_count)
         btnHistory = findViewById(R.id.btn_history)
+        btnGrammarGuide = findViewById(R.id.btn_grammar_guide)
 
         // 主题切换
         try {
@@ -383,6 +385,9 @@ class SettingsActivity : AppCompatActivity() {
         btnTestLocalAi?.setOnClickListener { testLocalAiConnection() }
         btnHistory.setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
+        }
+        btnGrammarGuide.setOnClickListener {
+            showGrammarGuideDialog()
         }
 
         // 主题切换
@@ -1088,6 +1093,42 @@ class SettingsActivity : AppCompatActivity() {
             tvStatSavedTime?.text = "${savedTimeMin}分钟"
             tvStatVoiceSpeed?.text = "${speed}字/分"
         } catch (_: Exception) {}
+    }
+
+    /**
+     * 显示语法大纲弹窗
+     */
+    private fun showGrammarGuideDialog() {
+        val guideMgr = com.cesia.input.stats.GrammarGuideManager(this)
+        val guideContent = guideMgr.content
+
+        val scrollView = android.widget.ScrollView(this)
+        val tv = android.widget.TextView(this).apply {
+            textSize = 14f
+            setPadding(32, 24, 32, 24)
+            setTextColor(0xFF333333.toInt())
+            text = if (guideContent.isEmpty()) {
+                "暂无语法大纲\n\n请先使用几次润色功能，系统会自动根据历史记录生成个人语法纲要。"
+            } else {
+                "版本: ${guideMgr.version}\n\n$guideContent"
+            }
+        }
+        scrollView.addView(tv)
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("📖 个人语法纲要")
+            .setView(scrollView)
+            .setPositiveButton("刷新") { _, _ ->
+                // 触发一次完整刷新
+                val records = statsManager.getRecords()
+                if (records.isNotEmpty()) {
+                    guideMgr.clear()
+                    guideMgr.updateRecordCount(0)
+                    Toast.makeText(this, "正在后台生成大纲...", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("关闭", null)
+            .show()
     }
 
     private fun appendLog(msg: String) {

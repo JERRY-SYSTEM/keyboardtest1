@@ -231,6 +231,14 @@
             android:layout_height="wrap_content"
             android:text="📜 查看历史记录"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_grammar_guide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📖 语法大纲"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_marginBottom="16dp" />
 
         <!-- ==================== API 设置 ==================== -->

@@ -221,7 +221,7 @@
         android:background="#E0E0E0"
         android:gravity="center_vertical">
 
-        <!-- 魔法修改：四角星矢量图标 -->
+        <!-- 智能写作：四角星矢量图标 -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_magic"
             android:layout_width="0dp"
@@ -241,7 +241,7 @@
             android:layout_marginTop="5dp"
             app:cornerRadius="20dp" />
 
-        <!-- 魔法书：小笔图标 -->
+        <!-- 智能修改：笔图标 -->
         <ImageButton
             android:id="@+id/btn_magic_book"
             android:layout_width="0dp"

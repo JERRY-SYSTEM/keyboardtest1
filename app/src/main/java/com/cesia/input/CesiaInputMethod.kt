@@ -54,7 +54,7 @@ import kotlinx.coroutines.*
  * 架构：
  * - 键盘 UI：标准 QWERTY 布局（qwerty.xml + symbols_cn.xml + symbols.xml）
  * - 输入引擎：Rime（librime JNI）处理拼音→汉字
- * - 底部功能栏：魔法修改、魔法书、语音、清空、发送
+ * - 底部功能栏：智能写作（星星/四角星）、智能修改（魔法书/笔）、语音、清空、发送
  * - 语音润色：TypelessEngine（OpenRouter API）
  */
 
@@ -75,8 +75,8 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private lateinit var btnMicNoAi: MaterialButton
     private lateinit var btnSettings: ImageButton
     private lateinit var btnDelete: ImageButton
-    private lateinit var btnClipboard: ImageButton
-    private lateinit var btnMagic: MaterialButton
+    private lateinit var btnClipboard: ImageButton // 智能修改按钮（魔法书/笔）
+    private lateinit var btnMagic: MaterialButton // 智能写作按钮（星星/四角星）
     private lateinit var btnSend: ImageButton
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
@@ -95,7 +95,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     // 语音锁定模式
     private var isVoiceLocked: Boolean = false
 
-    // 语音键长按检测（参考魔法书模式）
+    // 语音键长按检测（参考智能修改按钮模式）
     private var micLongPressTriggered = false
     private var micHandler = Handler(Looper.getMainLooper())
     private var micLongPressRunnable: Runnable? = null
@@ -253,14 +253,15 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var sendButtonGlowRunnable: Runnable? = null
     private var sendButtonGlowing = false
 
-    // 魔法书键长按检测
+    // 智能修改按钮（魔法书）长按检测
     private var magicBookLongPressTriggered = false
     private var magicBookHandler = Handler(Looper.getMainLooper())
     private var magicBookRunnable: Runnable? = null
     private var magicBookGlowRunnable: Runnable? = null
+    // 智能修改按钮（魔法书/笔）长按发光状态
     private var magicBookGlowing = false
 
-    // 魔法修改按键发光状态
+    // 智能写作按钮（星星/四角星）发光状态
     private var magicModeGlowing = false
 
     // 正体字按键发光状态
@@ -294,7 +295,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
     private var aiReplyStyle = "自然"
     private var isAiProcessing = false
 
-    // 魔法修改历史
+    // 智能修改历史（魔法书）
     private var magicHistoryManager: MagicHistoryManager? = null
     private var currentMagicPrompt: String? = null
 
@@ -1265,8 +1266,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
 
+        // 智能写作按钮（星星/四角星）：短按进入智能写作语音状态，长按弹出设置弹窗
         btnMagic.setOnClickListener { toggleMagicMode() }
-        btnMagic.setOnLongClickListener { true }
+        btnMagic.setOnLongClickListener {
+            showSmartWritingPopup()
+            true
+        }
 
         // 发送按钮
         btnSend.setOnClickListener {
@@ -1373,7 +1378,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             updateStatus("请点击 AI+ 或 AI× 选择处理方式")
         } else if (isRecording) {
             if (magicMode) {
-                // 魔法修改模式：停止录音并完整清理
+                // 智能写作模式：停止录音并完整清理
                 stopRecordingAndWait()
                 resetMagicHighlight()
             } else {
@@ -1406,12 +1411,12 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
 // endregion 语音键处理
 
-// region 魔法修改
-    // ======================== 魔法修改 ========================
+// region 智能写作（星星按钮：短按语音写作，长按设置弹窗）
+    // ======================== 智能写作（星星按钮） ========================
 
     private fun toggleMagicMode() {
         if (isRecording && magicMode) {
-            // 魔法模式正在录音 → 结束录音
+            // 智能写作模式正在录音 → 结束录音
             // 设置标志，阻止普通语音流程处理 Google 识别结果
             magicStopRequested = true
             isRecording = false
@@ -1423,7 +1428,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             // - 云端模式：onRecognitionComplete 中检测到 magicStopRequested 后直接触发
             updateStatus("⏳ 正在处理...")
         } else if (isRecording) {
-            // 普通语音录音中点魔法键 → 忽略
+            // 普通语音录音中点智能写作键 → 忽略
             updateStatus("⚠️ 请先停止当前录音")
         } else {
             // 未录音 → 读取输入框文字 + 高亮 + 开始录音
@@ -1629,7 +1634,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                 }
             } catch (e: Exception) {
-                Log.e("Cesia", "魔法修改失败", e)
+                Log.e("Cesia", "智能写作失败", e)
                 withContext(Dispatchers.Main) {
                     isAiProcessing = false
                     updateStatus("❌ 修改失败: ${e.message}")
@@ -1691,7 +1696,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             "\n请根据以上内容自由发挥，生成合适的回复或文字内容。直接输出内容本身，不要解释。"
 }
 
-// endregion 魔法修改
+// endregion 智能写作（星星按钮）
 
 // region 魔法历史菜单
     // ======================== 魔法历史 & 菜单 ========================
@@ -1781,7 +1786,11 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
     }
 
     private fun showMagicHistoryPopup() {
-        val mgr = magicHistoryManager ?: return
+        Log.d("Cesia", "showMagicHistoryPopup: called, mgr=$magicHistoryManager")
+        val mgr = magicHistoryManager ?: run {
+            Log.e("Cesia", "showMagicHistoryPopup: magicHistoryManager is null!")
+            return
+        }
 
         // 后台加载记录，避免主线程 JSON 解析卡界面
         Thread {
@@ -1818,16 +1827,21 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         val titleHeightPx = popupView.findViewById<android.widget.TextView>(R.id.tv_magic_title)?.measuredHeight
             ?: TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 40f, resources.displayMetrics).toInt()
 
-        val gridHeightPx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP, 300f, resources.displayMetrics
-        ).toInt()
         val barHeightPx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP, 44f, resources.displayMetrics
         ).toInt()
-        // 总高度 = 标题栏 + 网格列表 + 底部按钮栏，限制在屏幕高度 60% 以内
-        val totalHeight = (titleHeightPx + gridHeightPx + barHeightPx).coerceAtMost(
-            (resources.displayMetrics.heightPixels * 0.6f).toInt()
-        )
+        // 获取状态栏高度
+        val statusBarHeight = resources.getIdentifier("status_bar_height", "dimen", "android").let { id ->
+            if (id > 0) resources.getDimensionPixelSize(id) else 88
+        }
+        // 高度 = 状态栏底部到键盘顶部的可用空间
+        val keyboardLocation = IntArray(2)
+        keyboardView.getLocationOnScreen(keyboardLocation)
+        val keyboardTopScreenY = keyboardLocation[1]
+        val totalHeight = (keyboardTopScreenY - statusBarHeight).coerceAtLeast(200)
+        // Grid 高度 = 总高度 - 标题栏 - 按钮栏，填满剩余空间
+        val gridHeightPx = (totalHeight - titleHeightPx - barHeightPx).coerceAtLeast(100)
+        Log.d("Cesia", "MagicBookPopup: statusBar=$statusBarHeight keyboardTop=$keyboardTopScreenY total=$totalHeight grid=$gridHeightPx")
 
         val popup = PopupWindow(popupView, popupWidth, totalHeight, true)
         popup.isOutsideTouchable = false
@@ -1835,6 +1849,11 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         popup.inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
         popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         popup.setFocusable(false)
+
+        // 动态设置 GridView 高度，填满标题栏和按钮栏之间的空间
+        gridView.layoutParams = gridView.layoutParams.apply {
+            height = gridHeightPx
+        }
 
         // ===== 数据列表：置顶项在前，非置顶项按时间倒序 =====
         val items = mutableListOf<MagicHistoryManager.MagicRecord>()
@@ -2039,13 +2058,289 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             popupMenu.show()
         }
 
-        // 显示在键盘View正上方
+        // 显示在键盘View正上方，顶部对齐状态栏底部
+        // 弹窗顶部 = keyboardTopScreenY + yOffset = keyboardTopScreenY - totalHeight = statusBarHeight
+        val anchorLocation = IntArray(2)
+        keyboardView.getLocationOnScreen(anchorLocation)
+        Log.d("Cesia", "MagicBookPopup: anchorScreenY=${anchorLocation[1]} statusBar=$statusBarHeight total=$totalHeight yOffset=${-totalHeight}")
         popup.showAtLocation(keyboardView, Gravity.TOP or Gravity.START, 0, -totalHeight)
 
         popup.setOnDismissListener {
             cancelMagicBookLongPress()
         }
     }
+
+    // ======================== 智能写作选项弹窗 ========================
+
+    /** 智能写作选项数据类 */
+    private data class SmartOption(val label: String, val tag: String, var isChecked: Boolean = false)
+
+    // 智能写作设置弹窗中的选项标签常量
+    private val OPT_CLIPBOARD = "📋 剪贴板首条"
+    private val OPT_GRAMMAR = "📖 语法大纲"
+    private val OPT_SEARCH = "🌐 互联网搜索"
+
+    /** 显示智能写作设置弹窗 */
+    private fun showSmartWritingPopup() {
+        try {
+            val inflater = android.view.LayoutInflater.from(this)
+            val popupView = inflater.inflate(R.layout.popup_smart_writing, null)
+
+            val tvTitle = popupView.findViewById<android.widget.TextView>(R.id.tv_magic_title)
+
+            // 选项视图
+            val optClipboard = popupView.findViewById<TextView>(R.id.opt_clipboard)
+            val optGrammar = popupView.findViewById<TextView>(R.id.opt_grammar)
+            val optSearch = popupView.findViewById<TextView>(R.id.opt_search)
+
+            // 恢复上次选中状态
+            val smartPrefs = getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
+            val savedOptions = smartPrefs.getStringSet("selected_options", emptySet())
+            fun refreshOption(tv: TextView, tag: String, label: String) {
+                val checked = savedOptions.contains(tag)
+                tv.text = if (checked) "✓ $label" else "○ $label"
+                tv.setTextColor(if (checked) 0xFF81D8D0.toInt() else 0xFF333333.toInt())
+                tv.setTypeface(null, if (checked) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                tv.tag = tag
+            }
+            refreshOption(optClipboard, "clipboard", OPT_CLIPBOARD)
+            refreshOption(optGrammar, "grammar", OPT_GRAMMAR)
+            refreshOption(optSearch, "search", OPT_SEARCH)
+
+            // 点击切换
+            fun toggleOption(tv: TextView, tag: String, label: String) {
+                val current = smartPrefs.getStringSet("selected_options", emptySet()).toMutableSet()
+                if (current.contains(tag)) current.remove(tag) else current.add(tag)
+                smartPrefs.edit().putStringSet("selected_options", current).apply()
+                refreshOption(tv, tag, label)
+            }
+            optClipboard.setOnClickListener { toggleOption(it as TextView, "clipboard", OPT_CLIPBOARD) }
+            optGrammar.setOnClickListener { toggleOption(it as TextView, "grammar", OPT_GRAMMAR) }
+            optSearch.setOnClickListener { toggleOption(it as TextView, "search", OPT_SEARCH) }
+
+            // 智能写作记录列表
+            val lvRecords = popupView.findViewById<ListView>(R.id.lv_magic_records)
+            val etInput = popupView.findViewById<android.widget.EditText>(R.id.et_magic_input)
+            val btnAddRecord = popupView.findViewById<TextView>(R.id.btn_add_record)
+
+            val magicRecords = mutableListOf<String>()
+            loadMagicRecords(magicRecords)
+
+            val recordAdapter = object : android.widget.BaseAdapter() {
+                override fun getCount() = magicRecords.size
+                override fun getItem(p: Int) = magicRecords[p]
+                override fun getItemId(p: Int) = p.toLong()
+                override fun getView(p: Int, cv: android.view.View?, parent: android.view.ViewGroup?): android.view.View {
+                    val v = cv ?: android.widget.TextView(parent?.context).apply {
+                        setPadding(12, 8, 12, 8)
+                        textSize = 13f
+                        setTextColor(0xFF555555.toInt())
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    }
+                    (v as android.widget.TextView).text = "• ${magicRecords[p]}"
+                    return v
+                }
+            }
+            lvRecords.adapter = recordAdapter
+
+            btnAddRecord.setOnClickListener {
+                val text = etInput.text.toString().trim()
+                if (text.isNotEmpty()) {
+                    magicRecords.add(0, text)
+                    if (magicRecords.size > 50) magicRecords.removeAt(magicRecords.size - 1)
+                    saveMagicRecords(magicRecords)
+                    recordAdapter.notifyDataSetChanged()
+                    etInput.text.clear()
+                }
+            }
+
+            lvRecords.setOnItemClickListener { _, _, position, _ ->
+                etInput.setText(magicRecords[position])
+            }
+
+            // 底部按钮
+            val btnConfirm = popupView.findViewById<TextView>(R.id.btn_confirm)
+            val btnClose = popupView.findViewById<TextView>(R.id.btn_close_smart)
+
+            btnConfirm.setOnClickListener {
+                Log.d("Cesia", "SmartWriting: ✅ 确认, selected=${savedOptions.size}")
+                smartWritingPopup?.dismiss()
+                smartWritingPopup = null
+                updateStatus("✅ 智能写作设置已保存")
+            }
+            btnClose.setOnClickListener {
+                Log.d("Cesia", "SmartWriting: 关闭 clicked")
+                smartWritingPopup?.dismiss()
+                smartWritingPopup = null
+            }
+
+            // 弹窗尺寸和定位
+            val keyboardWidth = keyboardView.width
+            val popupWidth = if (keyboardWidth > 0) keyboardWidth else resources.displayMetrics.widthPixels
+
+            val statusBarHeight = resources.getIdentifier("status_bar_height", "dimen", "android").let { id ->
+                if (id > 0) resources.getDimensionPixelSize(id) else 88
+            }
+            val keyboardLocation = IntArray(2)
+            keyboardView.getLocationOnScreen(keyboardLocation)
+            val keyboardTopScreenY = keyboardLocation[1]
+            val totalHeight = (keyboardTopScreenY - statusBarHeight).coerceAtLeast(300)
+
+            // 列表高度 = 总高度 - 标题 - 选项区(3*40dp) - 分隔线 - 记录标题 - 输入框 - 底部按钮
+            val titleHeightPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 40f, resources.displayMetrics).toInt()
+            val optionHeightPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 40f, resources.displayMetrics).toInt()
+            val recordTitleHeightPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32f, resources.displayMetrics).toInt()
+            val inputHeightPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 52f, resources.displayMetrics).toInt()
+            val barHeightPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 44f, resources.displayMetrics).toInt()
+            val dividerPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1f, resources.displayMetrics).toInt()
+
+            val listHeightPx = (totalHeight - titleHeightPx - optionHeightPx * 3 - dividerPx - recordTitleHeightPx - inputHeightPx - barHeightPx).coerceAtLeast(80)
+
+            lvRecords.layoutParams = lvRecords.layoutParams.apply {
+                height = listHeightPx
+            }
+
+            val popup = PopupWindow(popupView, popupWidth, totalHeight, true)
+            popup.elevation = 4f
+            popup.inputMethodMode = PopupWindow.INPUT_METHOD_NEEDED
+            popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            popup.setFocusable(false)
+
+            popup.setOnDismissListener {
+                smartWritingPopup = null
+            }
+
+            popup.showAtLocation(keyboardView, Gravity.TOP or Gravity.START, 0, -totalHeight)
+            smartWritingPopup = popup
+        } catch (e: Exception) {
+            Log.e("Cesia", "showSmartWritingPopup 异常", e)
+        }
+    }
+
+    /** 加载智能写作记录 */
+    private fun loadMagicRecords(list: MutableList<String>) {
+        try {
+            val prefs = getSharedPreferences("cesia_magic_records", MODE_PRIVATE)
+            val records = prefs.getString("records", "") ?: ""
+            if (records.isNotEmpty()) {
+                list.clear()
+                list.addAll(records.split("\n").filter { it.isNotEmpty() })
+            }
+        } catch (e: Exception) {
+            Log.e("Cesia", "loadMagicRecords 异常", e)
+        }
+    }
+
+    /** 保存智能写作记录 */
+    private fun saveMagicRecords(list: List<String>) {
+        try {
+            val prefs = getSharedPreferences("cesia_magic_records", MODE_PRIVATE)
+            prefs.edit().putString("records", list.joinToString("\n")).apply()
+        } catch (e: Exception) {
+            Log.e("Cesia", "saveMagicRecords 异常", e)
+        }
+    }
+
+    /** 获取当前智能写作选中状态（供短按时使用） */
+    private fun getSmartWritingSelection(): Set<String> {
+        val prefs = getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
+        return prefs.getStringSet("selected_options", emptySet())
+    }
+
+    /** 短按星星按钮：执行智能写作 */
+    private fun executeSmartWriting() {
+        val selectedOptions = getSmartWritingSelection()
+        Log.d("Cesia", "executeSmartWriting: selected=${selectedOptions.size}")
+
+        if (selectedOptions.isEmpty()) {
+            updateStatus("⚠️ 请先长按星星按钮设置写作选项")
+            return
+        }
+
+        // 构建语境
+        val contextParts = mutableListOf<String>()
+
+        if (selectedOptions.contains("clipboard")) {
+            val clipboardText = getClipboardFirstNonPinned()
+            Log.d("Cesia", "executeSmartWriting: clipboard=${clipboardText.length} chars")
+            if (clipboardText.isNotEmpty()) {
+                contextParts.add("参考内容：\n$clipboardText")
+            }
+        }
+        if (selectedOptions.contains("grammar")) {
+            val grammarGuide = buildGrammarGuide()
+            Log.d("Cesia", "executeSmartWriting: grammar=${grammarGuide.length} chars")
+            if (grammarGuide.isNotEmpty()) {
+                contextParts.add("语法纲要：\n$grammarGuide")
+            }
+        }
+        if (selectedOptions.contains("search")) {
+            contextParts.add("搜索模式：需要联网获取相关信息")
+        }
+
+        if (contextParts.isEmpty()) {
+            updateStatus("⚠️ 未获取到有效语境内容")
+            return
+        }
+
+        // 获取当前输入框文本
+        val ic = currentInputConnection ?: run {
+            Log.e("Cesia", "executeSmartWriting: currentInputConnection is null")
+            return
+        }
+        val textBefore = ic.getTextBeforeCursor(1000, 0)?.toString() ?: ""
+
+        val fullContext = contextParts.joinToString("\n\n")
+        val prompt = "请基于以下语境进行智能写作：\n\n$fullContext\n\n当前文本：\n$textBefore\n\n请续写或优化："
+
+        Log.d("Cesia", "executeSmartWriting: prompt length=${prompt.length}")
+
+        isAiProcessing = true
+        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            try {
+                val polishService = typelessEngine?.getPolishService()
+                Log.d("Cesia", "executeSmartWriting: polishService=${polishService != null}, apiUrl=${polishService?.getApiUrl()?.take(50) ?: "null"}")
+                val result = polishService?.polishWithPrompt(prompt)
+                Log.d("Cesia", "executeSmartWriting: result=${result?.take(80) ?: "null"}, isNullOrEmpty=${result.isNullOrEmpty()}")
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    if (result != null && result.isNotEmpty()) {
+                        ic.commitText(result, 1)
+                        updateStatus("✅ 智能写作已完成")
+                    } else {
+                        updateStatus("⚠️ 智能写作无输出")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Cesia", "executeSmartWriting failed", e)
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    updateStatus("❌ 智能写作失败：${e.message}")
+                }
+            }
+        }
+    }
+
+    /** 构建语法指南 */
+    private fun buildGrammarGuide(): String {
+        return try {
+            val prefs = getSharedPreferences("cesia_clipboard", MODE_PRIVATE)
+            val historyStr = prefs.getString("history", "") ?: ""
+            val favStr = prefs.getString("favorites", "") ?: ""
+            val favSet = if (favStr.isNotEmpty()) favStr.split("\n").toSet() else emptySet()
+            val recentItems = historyStr.split("\n").filter { it.isNotEmpty() && !favSet.contains(it) }.take(10)
+            if (recentItems.isNotEmpty()) {
+                recentItems.joinToString("\n") { "• $it" }
+            } else {
+                ""
+            }
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /** 智能写作选项弹窗引用 */
+    private var smartWritingPopup: PopupWindow? = null
 
 // endregion 候选适配器
 
@@ -4147,7 +4442,16 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
 
             val keyboardWidth = keyboardView.width
             val popupWidth = if (keyboardWidth > 0) keyboardWidth else resources.displayMetrics.widthPixels
-            val totalHeight = (resources.displayMetrics.heightPixels * 0.5f).toInt()
+
+            // 获取状态栏高度
+            val statusBarHeight = resources.getIdentifier("status_bar_height", "dimen", "android").let { id ->
+                if (id > 0) resources.getDimensionPixelSize(id) else 88
+            }
+            // 高度 = 状态栏底部到键盘顶部的可用空间
+            val keyboardLocation = IntArray(2)
+            keyboardView.getLocationOnScreen(keyboardLocation)
+            val keyboardTopScreenY = keyboardLocation[1]
+            val totalHeight = (keyboardTopScreenY - statusBarHeight).coerceAtLeast(200)
 
             val popup = PopupWindow(popupView, popupWidth, totalHeight, true)
             popup.isOutsideTouchable = false
