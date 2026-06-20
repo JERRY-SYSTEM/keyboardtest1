@@ -66,7 +66,7 @@
         android:background="#CCCCCC"
         android:layout_marginHorizontal="12dp" />
 
-    <!-- 智能写作命令列表（GridView 2列，与魔法书一致） -->
+    <!-- 智能写作命令列表（2列，可滚动，与魔法书一致） -->
     <GridView
         android:id="@+id/gv_smart_records"
         android:layout_width="match_parent"

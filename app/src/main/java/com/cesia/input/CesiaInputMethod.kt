@@ -1153,6 +1153,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     micLongPressTriggered = false
+                    dismissAllPopups() // 长按互斥：关闭其他弹窗
                     startMicLongPressDetection()
                     true
                 }
@@ -1245,6 +1246,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     magicBookLongPressTriggered = false
+                    dismissAllPopups() // 长按互斥：关闭其他弹窗
                     startMagicBookLongPress()
                     true
                 }
@@ -1267,16 +1269,17 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             }
         }
 
-        // 智能写作按钮（星星/四角星）：短按执行第一项命令，长按弹出设置弹窗
+        // 智能写作按钮（星星/五角星）：短按执行第一项命令，长按弹出设置弹窗
         // 复用魔法书按钮的触摸处理模式
         btnMagic.setOnClickListener { toggleMagicMode() }
         btnMagic.setOnTouchListener { v, event ->
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     magicBookLongPressTriggered = false
-                    // 开始发光（复用魔法书按钮效果）
+                    dismissAllPopups() // 长按互斥：关闭其他弹窗
+                    // 开始发光（与魔法书按钮一致：青色背景+白色图标）
                     btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF81D8D0.toInt())
-                    btnMagic.setTextColor(0xFFFFFFFF.toInt())
+                    (btnMagic as android.widget.ImageView).setColorFilter(android.graphics.Color.WHITE, android.graphics.PorterDuff.Mode.SRC_ATOP)
                     btnMagic.elevation = 6f
                     startMagicButtonGlow()
                     // 延迟触发长按弹窗
@@ -1297,7 +1300,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                         // 短按：停止发光，执行第一项命令
                         stopMagicButtonGlow()
                         btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFE0E0E0.toInt())
-                        btnMagic.setTextColor(0xFF888888.toInt())
+                        (btnMagic as android.widget.ImageView).clearColorFilter()
                         btnMagic.elevation = 0f
                         v.performClick()
                     }
@@ -1309,7 +1312,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     magicBookRunnable = null
                     stopMagicButtonGlow()
                     btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFE0E0E0.toInt())
-                    btnMagic.setTextColor(0xFF888888.toInt())
+                    (btnMagic as android.widget.ImageView).clearColorFilter()
                     btnMagic.elevation = 0f
                     true
                 }
@@ -2109,9 +2112,11 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         keyboardView.getLocationOnScreen(anchorLocation)
         Log.d("Cesia", "MagicBookPopup: anchorScreenY=${anchorLocation[1]} statusBar=$statusBarHeight total=$totalHeight yOffset=${-totalHeight}")
         popup.showAtLocation(keyboardView, Gravity.TOP or Gravity.START, 0, -totalHeight)
+        magicHistoryPopup = popup
 
         popup.setOnDismissListener {
             cancelMagicBookLongPress()
+            magicHistoryPopup = null
         }
     }
 
@@ -2167,7 +2172,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             optGrammar.setOnClickListener { toggleOption(it as TextView, "grammar", OPT_GRAMMAR) }
             optSearch.setOnClickListener { toggleOption(it as TextView, "search", OPT_SEARCH) }
 
-            // 智能写作命令列表（GridView 2列，与魔法书一致）
+            // 智能写作命令列表（2列，可滚动，与魔法书一致）
             val gvRecords = popupView.findViewById<android.widget.GridView>(R.id.gv_smart_records)
             val smartRecords = mutableListOf<String>()
             loadSmartRecords(smartRecords)
@@ -2338,7 +2343,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                 // 弹窗关闭时停止发光
                 stopMagicButtonGlow()
                 btnMagic.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFFE0E0E0.toInt())
-                btnMagic.setTextColor(0xFF888888.toInt())
+                (btnMagic as android.widget.ImageView).clearColorFilter()
                 btnMagic.elevation = 0f
             }
 
@@ -2677,10 +2682,22 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         }
     }
 
-    /** 智能写作选项弹窗引用 */
+    /** 弹窗引用（用于长按互斥关闭） */
+    private var magicHistoryPopup: PopupWindow? = null
     private var smartWritingPopup: PopupWindow? = null
+    private var clipboardPopup: PopupWindow? = null
     private var smartEditMode = false
     private var smartEditBuffer = StringBuilder()
+
+    /** 关闭所有弹窗（长按互斥） */
+    private fun dismissAllPopups() {
+        magicHistoryPopup?.dismiss()
+        magicHistoryPopup = null
+        smartWritingPopup?.dismiss()
+        smartWritingPopup = null
+        clipboardPopup?.dismiss()
+        clipboardPopup = null
+    }
 
 // endregion 候选适配器
 
@@ -4843,6 +4860,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             popup.elevation = 8f
             popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
             popup.setFocusable(false)
+            clipboardPopup = popup
 
             // 单击：插入文本（非空条目）
             gvClipboard.setOnItemClickListener { _, _, position, _ ->
@@ -4919,6 +4937,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
 
             popup.setOnDismissListener {
                 cancelSendKeyLongPress()
+                clipboardPopup = null
             }
 
             // 持久化保存
