@@ -1255,6 +1255,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     deleteLongPressTriggered = false
+                    dismissAllPopups() // 长按互斥：关闭其他弹窗
                     // 立即高亮清空按钮
                     btnDelete.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF81D8D0.toInt())
                     btnDelete.elevation = 6f
@@ -1399,6 +1400,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     sendKeyLongPressTriggered = false
+                    dismissAllPopups() // 长按互斥：关闭其他弹窗
                     startSendKeyLongPress()
                     true
                 }
@@ -2901,9 +2903,8 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
 
     // 在输入法服务中显示 dialog 的通用方法
     private fun showImeDialog(dialog: androidx.appcompat.app.AlertDialog) {
-        try {
-            dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
-        } catch (_: Exception) { /* fallback */ }
+        // 不设置 window type，让系统自动处理（IME 服务有权限创建 dialog）
+        dialog.show()
     }
 
 // endregion 魔法编辑
@@ -5030,6 +5031,11 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                         clipboardItems.removeAll { !it.isPinned && !it.isEmpty }
                         saveClipboardHistoryFromClassMembers()
                         applyClipboardFilter()
+                        // 清除系统剪贴板，防止重新加载时再次出现
+                        try {
+                            val clipboardMgr = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                            clipboardMgr?.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+                        } catch (_: Exception) {}
                         updateStatus("⊗ 已删除全部（保留置顶）")
                     } else {
                         val target = realItems.find { it.text.hashCode() == menuItem.itemId }
@@ -5037,6 +5043,16 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                             clipboardItems.removeAll { it.text == target.text }
                             saveClipboardHistoryFromClassMembers()
                             applyClipboardFilter()
+                            // 同时清除系统剪贴板中匹配的内容，防止重新加载时再次出现
+                            try {
+                                val clipboardMgr = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                if (clipboardMgr?.hasPrimaryClip() == true) {
+                                    val clipText = clipboardMgr.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                    if (clipText == target.text) {
+                                        clipboardMgr.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+                                    }
+                                }
+                            } catch (_: Exception) {}
                         }
                     }
                     true
@@ -5180,6 +5196,16 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                         if (clipboardFavorites[item.text] == false) {
                             allItems.remove(item)
                             updateClipboardFavorites(); onUpdate()
+                            // 同时清除系统剪贴板中匹配的内容
+                            try {
+                                val clipboardMgr = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                if (clipboardMgr?.hasPrimaryClip() == true) {
+                                    val clipText = clipboardMgr.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                    if (clipText == item.text) {
+                                        clipboardMgr.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+                                    }
+                                }
+                            } catch (_: Exception) {}
                         } else {
                             updateStatus("⚠️ 已锁定，无法删除")
                         }
@@ -5200,7 +5226,6 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             }
             .setNegativeButton("取消", null)
             .create()
-        try { dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT) } catch (_: Exception) {}
         dialog.show()
     }
 
@@ -5219,7 +5244,6 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             }
             .setNegativeButton("取消", null)
             .create()
-        try { dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT) } catch (_: Exception) {}
         dialog.show()
     }
 
