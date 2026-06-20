@@ -2410,9 +2410,15 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         // 立即显示状态，让用户知道正在处理
         updateStatus("⏳ 智能写作处理中...")
 
-        // 获取剪贴板内容（作为搜索 query 和参考内容）
-        val clipboardText = if (selectedOptions.contains("clipboard"))
-            getClipboardFirstNonPinned() else ""
+        // 获取剪贴板内容（输入法剪贴板第0位，与系统剪贴板保持一致）
+        val clipboardText = if (selectedOptions.contains("clipboard")) {
+            // 如果 clipboardItems 为空（弹窗未打开过），先加载
+            if (clipboardItems.isEmpty()) {
+                val clipboardMgr = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                loadClipboardHistoryToClassMembers(clipboardMgr)
+            }
+            getClipboardFirstItemText()
+        } else ""
         Log.d("Cesia", "executeSmartCommand: clipboardText=${clipboardText.length} chars")
 
         isAiProcessing = true
@@ -5095,22 +5101,44 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             val favSet = if (favStr.isNotEmpty()) favStr.split("\n").toSet() else emptySet()
             val historyTexts = if (historyStr.isNotEmpty()) historyStr.split("\n").filter { it.isNotEmpty() }.toSet() else emptySet()
 
-            // 2. 先加载持久化历史（置顶在前）
+            // 2. 获取系统剪贴板内容
+            val sysClipTexts = mutableListOf<String>()
+            if (clipboardMgr?.hasPrimaryClip() == true) {
+                val clip = clipboardMgr.primaryClip
+                if (clip != null) {
+                    for (i in 0 until clip.itemCount) {
+                        val text = clip.getItemAt(i).text?.toString()?.trim() ?: ""
+                        if (text.isNotEmpty() && text.length <= 500) {
+                            sysClipTexts.add(text)
+                        }
+                    }
+                }
+            }
+
+            // 3. 系统剪贴板内容始终放第0位（不在持久化历史中的直接添加）
+            for (text in sysClipTexts) {
+                if (text !in historyTexts) {
+                    clipboardItems.add(ClipboardItem(text = text, isPinned = false))
+                }
+            }
+
+            // 4. 加载持久化历史（跳过已在第0位添加的系统剪贴板内容，避免重复）
             if (historyStr.isNotEmpty()) {
                 for (text in historyStr.split("\n")) {
-                    if (text.isNotEmpty()) {
+                    if (text.isNotEmpty() && text !in sysClipTexts) {
                         clipboardItems.add(ClipboardItem(text = text, isPinned = favSet.contains(text)))
                     }
                 }
             }
 
-            // 3. 再加载系统剪贴板（仅追加不在持久化历史中的内容，避免重复）
-            if (clipboardMgr?.hasPrimaryClip() == true) {
-                val clip = clipboardMgr.primaryClip ?: return
-                for (i in 0 until clip.itemCount) {
-                    val text = clip.getItemAt(i).text?.toString()?.trim() ?: ""
-                    if (text.isNotEmpty() && text.length <= 500 && text !in historyTexts) {
-                        clipboardItems.add(0, ClipboardItem(text = text, isPinned = favSet.contains(text)))
+            // 5. 如果系统剪贴板内容已在持久化历史中，把那条移到最前
+            if (sysClipTexts.isNotEmpty()) {
+                val sysInHistory = sysClipTexts.filter { it in historyTexts }
+                for (text in sysInHistory.reversed()) {
+                    val idx = clipboardItems.indexOfFirst { it.text == text }
+                    if (idx >= 0) {
+                        val item = clipboardItems.removeAt(idx)
+                        clipboardItems.add(0, item.copy(isPinned = item.isPinned))
                     }
                 }
             }
@@ -5118,6 +5146,17 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         if (clipboardItems.isEmpty()) {
             clipboardItems.add(ClipboardItem(text = "(剪贴板为空)", isPinned = true, isEmpty = true))
         }
+    }
+
+    /** 获取输入法剪贴板第一条内容（系统剪贴板优先），智能写作调用此方法替代 getClipboardFirstNonPinned */
+    private fun getClipboardFirstItemText(): String {
+        for (item in clipboardItems) {
+            if (!item.isEmpty && item.text.isNotEmpty()) {
+                return item.text
+            }
+        }
+        // fallback：如果弹窗没打开过（clipboardItems 为空），直接读系统剪贴板
+        return getClipboardFirstNonPinned()
     }
 
     /** 保存剪贴板历史到 SharedPreferences（全部历史 + 收藏标记） */
