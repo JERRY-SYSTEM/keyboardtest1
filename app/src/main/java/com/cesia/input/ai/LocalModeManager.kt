@@ -51,9 +51,9 @@ class LocalModeManager(private val context: Context) {
     /** 云端模式是否有 API Key */
     private fun hasCloudKeys(): Boolean {
         val settings = context.getSharedPreferences("cesia_settings", Context.MODE_PRIVATE)
-        val openRouterKey = settings.getString("open_router_api_key", "")
+        val deepseekKey = settings.getString("deepseek_api_key", "")
         val groqKey = settings.getString("groq_api_key", "")
-        return !openRouterKey.isNullOrBlank() || !groqKey.isNullOrBlank()
+        return !deepseekKey.isNullOrBlank() || !groqKey.isNullOrBlank()
     }
 
     /**

@@ -184,7 +184,7 @@
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:gravity="center"
-            android:text="OpenRouter"
+            android:text="DeepSeek"
             android:textSize="12sp"
             android:textColor="#333333"
             android:background="#F0F0F0" />

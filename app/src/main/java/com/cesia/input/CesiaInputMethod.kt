@@ -348,7 +348,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
 
     // 主题
     private var isDarkTheme = false
-    private var apiUrl = "https://openrouter.ai/api/v1/chat/completions"
+    private var apiUrl = "https://api.deepseek.com/v1/chat/completions"
 
     // ======================== 键盘模式枚举 ========================
     enum class KeyboardMode { QWERTY, SYMBOL_CN, SYMBOL_EN, NUMBER }
@@ -525,10 +525,10 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
         const val PREF_MODEL_ID = "model_id"
         const val PREF_THEME_MODE = "theme_mode"
         const val PREF_AI_STYLE = "ai_reply_style"
-        const val PREF_OPENROUTER_KEY = "openrouter_api_key"
+        const val PREF_DEEPSEEK_KEY = "deepseek_api_key"
         const val PREF_POLISH_PROMPT = "polish_prompt"
-        const val DEFAULT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-        const val DEFAULT_MODEL_ID = "minimax/minimax-m2.5:free"
+        const val DEFAULT_API_URL = "https://api.deepseek.com/v1/chat/completions"
+        const val DEFAULT_MODEL_ID = "deepseek-chat"
         const val KEYCODE_SWITCH_SYMBOL = -100
         const val KEYCODE_SWITCH_LANG = -101
         const val KEYCODE_SWITCH_NUMBER = -102
@@ -829,7 +829,7 @@ class CesiaInputMethod : InputMethodService(), KeyboardView.OnKeyboardActionList
                     }
                 }
             }
-            engine.initialize(getOpenRouterApiKey())
+            engine.initialize(getDeepSeekApiKey())
         }
 
         loadSettings()
@@ -2340,7 +2340,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             val prefs = getSharedPreferences("cesia_settings", MODE_PRIVATE)
             apiUrl = prefs.getString(PREF_API_URL, DEFAULT_API_URL) ?: DEFAULT_API_URL
             typelessEngine?.updateApiUrl(apiUrl)
-            val apiKey = prefs.getString(PREF_OPENROUTER_KEY, "") ?: ""
+            val apiKey = prefs.getString(PREF_DEEPSEEK_KEY, "") ?: ""
             typelessEngine?.getPolishService()?.updateApiKey(apiKey)
             val modelId = prefs.getString(PREF_MODEL_ID, DEFAULT_MODEL_ID) ?: DEFAULT_MODEL_ID
             typelessEngine?.updateModelId(modelId)
@@ -2398,9 +2398,9 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         Log.i("Cesia", "语音后端: Google（云端模式，无本地模型）")
     }
 
-    private fun getOpenRouterApiKey(): String {
+    private fun getDeepSeekApiKey(): String {
         val prefs = getSharedPreferences("cesia_settings", Context.MODE_PRIVATE)
-        return prefs.getString(PREF_OPENROUTER_KEY, "") ?: ""
+        return prefs.getString(PREF_DEEPSEEK_KEY, "") ?: ""
     }
 
     /**
@@ -5286,7 +5286,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
      */
     private fun isVoicePolishAvailable(): Boolean {
         val mnnAvailable = modelManager.hasAiModel()
-        val apiAvailable = !getOpenRouterApiKey().isNullOrEmpty()
+        val apiAvailable = !getDeepSeekApiKey().isNullOrEmpty()
         return mnnAvailable || apiAvailable
     }
 
@@ -5301,7 +5301,7 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
      * 检查云端润色是否可用（API Key）
      */
     private fun isCloudPolishAvailable(): Boolean {
-        return !getOpenRouterApiKey().isNullOrEmpty()
+        return !getDeepSeekApiKey().isNullOrEmpty()
     }
 
     /**

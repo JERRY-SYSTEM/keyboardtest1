@@ -302,7 +302,7 @@ class TypelessEngine(
      * - 如果 URL 已包含路径，保持原样
      */
     private fun normalizeApiUrl(url: String): String {
-        if (url.isEmpty()) return DEFAULT_OPENROUTER_URL
+        if (url.isEmpty()) return DEFAULT_DEEPSEEK_URL
         // 如果 URL 已经包含 /api/ 路径，直接返回
         if (url.contains("/api/")) return url
         // 如果 URL 以 / 结尾，追加 chat/completions
@@ -312,7 +312,7 @@ class TypelessEngine(
     }
 
     companion object {
-        const val DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+        const val DEFAULT_DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
     }
 
     /** 更新模型 ID */

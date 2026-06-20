@@ -14,12 +14,12 @@ import java.util.concurrent.TimeUnit
 /**
  * 调用 AI 润色 API 的服务
  * 支持两种后端：
- * 1. OpenRouter (默认) — 免费模型，不限流
+ * 1. DeepSeek (默认) — 官方 API，兼容 OpenAI 格式
  * 2. 自定义 API — 兼容 {text, language} -> {polished_text} 格式
  */
 class PolishService(
     private val scope: CoroutineScope,
-    private var apiUrl: String = DEFAULT_OPENROUTER_URL
+    private var apiUrl: String = DEFAULT_DEEPSEEK_URL
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -48,8 +48,8 @@ class PolishService(
         }
 
         try {
-            if (isOpenRouterUrl(apiUrl)) {
-                polishWithOpenRouter(text)
+            if (isDeepSeekUrl(apiUrl)) {
+                polishWithDeepSeek(text)
             } else {
                 polishWithCustomApi(text)
             }
@@ -62,25 +62,25 @@ class PolishService(
         }
     }
 
-    /** 判断是否为 OpenRouter URL */
-    private fun isOpenRouterUrl(url: String): Boolean {
-        return url.contains("openrouter.ai") || url.contains("api.cesia.cc")
+    /** 判断是否为 DeepSeek 或兼容 API URL */
+    private fun isDeepSeekUrl(url: String): Boolean {
+        return url.contains("deepseek.com") || url.contains("api.cesia.cc")
     }
 
-    /** 调用 OpenRouter API，支持429重试和备用模型 */
-    private fun polishWithOpenRouter(text: String): PolishResult {
-        val apiKey = getOpenRouterApiKey()
+    /** 调用 DeepSeek API，支持429重试和备用模型 */
+    private fun polishWithDeepSeek(text: String): PolishResult {
+        val apiKey = getApiKey()
         if (apiKey.isNullOrEmpty()) {
-            return PolishResult.Error("OpenRouter API Key 未配置")
+            return PolishResult.Error("DeepSeek API Key 未配置")
         }
 
         val systemPrompt = getSystemPrompt()
 
-        val models = listOf(_modelId, OPENROUTER_MODEL_FALLBACK)
+        val models = listOf(_modelId, DEEPSEEK_MODEL_FALLBACK)
         var lastError = ""
 
         for (model in models.distinct()) {
-            val result = tryOpenRouterModel(text, systemPrompt, model, apiKey)
+            val result = tryDeepSeekModel(text, systemPrompt, model, apiKey)
             if (result is PolishResult.Success) return result
             if (result is PolishResult.Error) {
                 lastError = result.message
@@ -96,7 +96,7 @@ class PolishService(
         return PolishResult.Error("所有模型均失败: $lastError")
     }
 
-    private fun tryOpenRouterModel(text: String, systemPrompt: String, model: String, apiKey: String): PolishResult {
+    private fun tryDeepSeekModel(text: String, systemPrompt: String, model: String, apiKey: String): PolishResult {
         val messages = JSONArray().apply {
             put(JSONObject().apply {
                 put("role", "system")
@@ -126,24 +126,22 @@ class PolishService(
             .post(body)
             .addHeader("Content-Type", "application/json")
             .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("HTTP-Referer", "https://github.com/harviex/cesia-input-method")
-            .addHeader("X-Title", "Cesia Input Method")
             .build()
 
-        Log.d("PolishService", "OpenRouter 请求 [$model]: text='${text.take(80)}' systemPrompt='${systemPrompt.take(80)}'...")
+        Log.d("PolishService", "DeepSeek 请求 [$model]: text='${text.take(80)}' systemPrompt='${systemPrompt.take(80)}'...")
 
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     val errorBody = response.body?.string() ?: "未知错误"
-                    Log.e("PolishService", "OpenRouter 错误 [$model]: ${response.code} - $errorBody")
+                    Log.e("PolishService", "DeepSeek 错误 [$model]: ${response.code} - $errorBody")
                     return PolishResult.Error("API 错误(${response.code}): ${errorBody.take(200)}")
                 }
 
                 val respBody = response.body?.string()
                     ?: return PolishResult.Error("响应为空")
 
-                Log.d("PolishService", "OpenRouter 完整响应 [$model]: $respBody")
+                Log.d("PolishService", "DeepSeek 完整响应 [$model]: $respBody")
 
                 val respJson = JSONObject(respBody)
                 val choices = respJson.optJSONArray("choices")
@@ -154,7 +152,7 @@ class PolishService(
                         .trim()
 
                     if (content.isNotEmpty()) {
-                        Log.d("PolishService", "OpenRouter 润色结果 [$model]: '$content'")
+                        Log.d("PolishService", "DeepSeek 润色结果 [$model]: '$content'")
                         return PolishResult.Success(text, content)
                     }
                 }
@@ -162,14 +160,14 @@ class PolishService(
                 // 尝试其他格式
                 val content = respJson.optString("content", "")
                 if (content.isNotEmpty()) {
-                    Log.d("PolishService", "OpenRouter 润色结果(alt) [$model]: '$content'")
+                    Log.d("PolishService", "DeepSeek 润色结果(alt) [$model]: '$content'")
                     return PolishResult.Success(text, content)
                 }
 
-                PolishResult.Error("OpenRouter 返回格式异常: ${respBody.take(200)}")
+                PolishResult.Error("DeepSeek 返回格式异常: ${respBody.take(200)}")
             }
         } catch (e: Exception) {
-            Log.e("PolishService", "OpenRouter 异常 [$model]", e)
+            Log.e("PolishService", "DeepSeek 异常 [$model]", e)
             PolishResult.Error("网络错误: ${e.message ?: "未知"}", isNetworkError = true)
         }
     }
@@ -267,18 +265,18 @@ class PolishService(
                t.isEmpty()
     }
 
-    /** 获取 OpenRouter API Key */
-    private fun getOpenRouterApiKey(): String? {
+    /** 获取 API Key */
+    private fun getApiKey(): String? {
         return _apiKey
     }
 
     private var _apiKey: String? = null
-    private var _modelId: String = OPENROUTER_MODEL
+    private var _modelId: String = DEEPSEEK_MODEL
     private var _polishPrompt: String? = null  // 用户自定义润色 prompt，null 使用默认
 
     fun updateApiKey(key: String) {
         _apiKey = key.trim()
-        Log.d("PolishService", "OpenRouter API Key 已更新")
+        Log.d("PolishService", "DeepSeek API Key 已更新")
     }
 
     fun updateModelId(model: String) {
@@ -301,7 +299,7 @@ class PolishService(
     }
 
     private fun normalizeApiUrl(url: String): String {
-        if (url.isEmpty()) return DEFAULT_OPENROUTER_URL
+        if (url.isEmpty()) return DEFAULT_DEEPSEEK_URL
         if (url.contains("/api/")) return url
         if (url.endsWith("/")) return "${url}api/v1/chat/completions"
         return "$url/api/v1/chat/completions"
@@ -317,8 +315,8 @@ class PolishService(
     /** 魔法模式：使用自定义 prompt 调用 API */
     fun polishWithPrompt(prompt: String): String? {
         return try {
-            if (isOpenRouterUrl(apiUrl)) {
-                polishWithPromptOpenRouter(prompt)
+            if (isDeepSeekUrl(apiUrl)) {
+                polishWithPromptDeepSeek(prompt)
             } else {
                 polishWithPromptCustom(prompt)
             }
@@ -328,8 +326,8 @@ class PolishService(
         }
     }
 
-    private fun polishWithPromptOpenRouter(prompt: String): String? {
-        val apiKey = getOpenRouterApiKey() ?: return null
+    private fun polishWithPromptDeepSeek(prompt: String): String? {
+        val apiKey = getApiKey() ?: return null
 
         val messages = JSONArray().apply {
             put(JSONObject().apply {
@@ -343,7 +341,7 @@ class PolishService(
         }
 
         // 魔法模式也支持多模型重试
-        val models = listOf(_modelId, OPENROUTER_MODEL_FALLBACK)
+        val models = listOf(_modelId, DEEPSEEK_MODEL_FALLBACK)
         for (model in models.distinct()) {
             val json = JSONObject().apply {
                 put("model", model)
@@ -363,8 +361,6 @@ class PolishService(
                 .post(body)
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Authorization", "Bearer $apiKey")
-                .addHeader("HTTP-Referer", "https://github.com/harviex/cesia-input-method")
-                .addHeader("X-Title", "Cesia Input Method")
                 .build()
 
             try {
@@ -408,9 +404,9 @@ class PolishService(
     }
 
     companion object {
-        const val DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-        const val OPENROUTER_MODEL = "google/gemma-4-26b-a4b-it:free"
-        const val OPENROUTER_MODEL_FALLBACK = "mistralai/mistral-7b-instruct:free"
+        const val DEFAULT_DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+        const val DEEPSEEK_MODEL = "deepseek-chat"
+        const val DEEPSEEK_MODEL_FALLBACK = "deepseek-coder"
         const val DEFAULT_CUSTOM_URL = "https://typeless-ai-service.vercel.app/api/polish"
         const val DEFAULT_POLISH_PROMPT = """你是一个文本润色与输入排版高手。请将输入的口语文字处理为通顺的书面文字，并严格执行以下规则：\n严禁删减核心信息，严禁随意扩写。仅修正错别字、口语和语序，加入标点。只输出润色排版后的纯文本。禁止解释，禁止添加任何前缀（如"润色后："）或后缀。如果用户输入的内容包含多个观点、步骤或长篇大论，请自动通过"换行分段"或使用"* "进行分点陈列。"""
     }

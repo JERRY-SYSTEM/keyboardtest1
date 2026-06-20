@@ -1,0 +1,8 @@
+{
+  "$schema": "https://mimo.xiaomi.com//config.json",
+  "permission": {
+    "read": "allow",
+    "bash": "ask",
+    "edit": "ask"
+  }
+}

@@ -120,9 +120,9 @@ class SettingsActivity : AppCompatActivity() {
 
     companion object {
         const val PREF_API_URL = "api_url"
-        const val DEFAULT_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+        const val DEFAULT_API_URL = "https://api.deepseek.com/v1/chat/completions"
         const val PREF_MODEL_ID = "model_id"
-        const val DEFAULT_MODEL_ID = "minimax/minimax-m2.5:free"
+        const val DEFAULT_MODEL_ID = "deepseek-chat"
         const val PERMISSION_REQUEST_CODE = 1001
         const val PREF_THEME_MODE = "theme_mode"
         const val THEME_LIGHT = 0
@@ -130,7 +130,7 @@ class SettingsActivity : AppCompatActivity() {
         const val IMPORT_DICT_REQUEST = 2001
         const val IMPORT_PHRASES_REQUEST = 2002
         const val PREF_GROQ_KEY = "groq_api_key"
-        const val PREF_OPENROUTER_KEY = "openrouter_api_key"
+        const val PREF_DEEPSEEK_KEY = "deepseek_api_key"
         const val PREF_POLISH_PROMPT = "polish_prompt"
         const val PREF_MODE = "run_mode"
     }
@@ -332,7 +332,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun loadSettings() {
         etApiUrl.setText(prefs.getString(PREF_API_URL, DEFAULT_API_URL))
-        etApiKey.setText(prefs.getString(PREF_OPENROUTER_KEY, ""))
+        etApiKey.setText(prefs.getString(PREF_DEEPSEEK_KEY, ""))
         etModelId.setText(prefs.getString(PREF_MODEL_ID, DEFAULT_MODEL_ID))
         etPolishPrompt.setText(prefs.getString(PREF_POLISH_PROMPT, PolishService.DEFAULT_POLISH_PROMPT))
         // 加载语音命令词
@@ -357,7 +357,7 @@ class SettingsActivity : AppCompatActivity() {
             val polishPrompt = etPolishPrompt.text?.toString()?.trim() ?: ""
             prefs.edit()
                 .putString(PREF_API_URL, url)
-                .putString(PREF_OPENROUTER_KEY, apiKey)
+                .putString(PREF_DEEPSEEK_KEY, apiKey)
                 .putString(PREF_MODEL_ID, modelId)
                 .putString(PREF_POLISH_PROMPT, polishPrompt)
                 .apply()
@@ -872,7 +872,7 @@ class SettingsActivity : AppCompatActivity() {
         Thread {
             try {
                 val apiUrl = etApiUrl.text?.toString()?.trim() ?: DEFAULT_API_URL
-                val isOr = apiUrl.contains("openrouter.ai")
+                val isOr = apiUrl.contains("deepseek.com")
 
                 val request = if (isOr) {
                     // OpenRouter 格式：使用用户自定义 prompt
