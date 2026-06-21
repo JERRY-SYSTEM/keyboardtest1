@@ -2482,42 +2482,25 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                         promptParts.add("【网络搜索】\n$tavilyResults")
                     }
 
-                    // RSS 新闻抓取（智能判断门类 → 用户确认 → 抓取RSS → 翻译 → 生成）
-                    val rssSources = loadEnabledRssSources()
-                    if (rssSources.isNotEmpty()) {
-                        // AI 判断需要抓取哪些门类
+                    // RSS 新闻抓取（AI判断分类 → Firecrawl抓取对应RSS → 提取最新5条）
+                    val categoryRssUrls = loadCategoryRssUrls()
+                    if (categoryRssUrls.isNotEmpty()) {
                         val aiCategories = aiPredictCategories(command + " " + clipboardText)
                         Log.d("Cesia", "AI predicted categories: $aiCategories")
-
-                        // 查找匹配的 RSS 源
-                        val matchedSources = rssSources.filter { it.category in aiCategories || it.tags.any { tag -> aiCategories.any { cat -> tag.contains(cat) || cat.contains(tag) } } }
-
-                        if (matchedSources.isNotEmpty()) {
-                            val confirmResult = showRssConfirmPopup(matchedSources)
-                            if (confirmResult != null && confirmResult.isNotEmpty()) {
-                                withContext(Dispatchers.Main) { updateStatus("📰 正在抓取 RSS 新闻...") }
-                                val sb = StringBuilder()
-                                for (source in confirmResult) {
-                                    val items = RssParser.fetchAndParse(source.url, maxItems = 3)
-                                    if (items.isNotEmpty()) {
-                                        sb.appendLine("【${source.name}】")
-                                        for (item in items) {
-                                            val title = if (source.language == "en") translateToChinese(item.title) else item.title
-                                            val desc = if (source.language == "en" && item.description.isNotBlank()) {
-                                                translateToChinese(item.description.take(200))
-                                            } else {
-                                                item.description.take(200)
-                                            }
-                                            sb.appendLine("• $title")
-                                            if (desc.isNotBlank()) sb.appendLine("  $desc")
-                                        }
-                                        sb.appendLine()
-                                    }
-                                }
-                                if (sb.isNotEmpty()) {
-                                    promptParts.add("【最新新闻】\n${sb.toString().trim()}")
-                                }
+                        // 按分类匹配 RSS URL，逐个抓取
+                        val rssContent = StringBuilder()
+                        for (cat in aiCategories) {
+                            val rssUrl = categoryRssUrls[cat] ?: continue
+                            Log.d("Cesia", "Fetching RSS for category '$cat': $rssUrl")
+                            val items = fetchRssViaFirecrawl(rssUrl)
+                            if (items.isNotBlank()) {
+                                rssContent.appendLine("【$cat】")
+                                rssContent.appendLine(items)
+                                rssContent.appendLine()
                             }
+                        }
+                        if (rssContent.isNotBlank()) {
+                            promptParts.add("【最新新闻】\n${rssContent.toString().trim()}")
                         }
                     }
                 }
@@ -2731,216 +2714,40 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
         }
     }
 
-    /** 弹窗让用户确认要抓取哪些网站，返回确认抓取的列表（null=跳过） */
-    private suspend fun showFetchConfirmPopup(sources: List<RssSource>): List<RssSource>? {
-        return suspendCancellableCoroutine { continuation ->
-            val handler = Handler(Looper.getMainLooper())
-            handler.post {
-                try {
-                    // 检查"以后不再询问"
-                    val skipConfirm = getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
-                        .getBoolean("skip_fetch_confirm", false)
-                    if (skipConfirm) {
-                        continuation.resume(sources) {}
-                        return@post
-                    }
-
-                    val dialogView = android.view.LayoutInflater.from(this@CesiaInputMethod)
-                        .inflate(R.layout.dialog_fetch_confirm, null)
-                    val tvSuggestion = dialogView.findViewById<android.widget.TextView>(R.id.tv_ai_suggestion)
-                    val container = dialogView.findViewById<LinearLayout>(R.id.container_suggested_sources)
-                    val cbTranslate = dialogView.findViewById<android.widget.CheckBox>(R.id.cb_translate)
-                    val cbSkipConfirm = dialogView.findViewById<android.widget.CheckBox>(R.id.cb_skip_confirm)
-                    val btnStartFetch = dialogView.findViewById<android.widget.Button>(R.id.btn_start_fetch)
-                    val btnSkipAll = dialogView.findViewById<android.widget.Button>(R.id.btn_skip_all)
-
-                    tvSuggestion.text = "AI 分析内容后建议抓取以下 ${sources.size} 个网站："
-
-                    // 添加网站复选框
-                    val checkBoxes = mutableListOf<android.widget.CheckBox>()
-                    for (source in sources) {
-                        val cb = android.widget.CheckBox(this@CesiaInputMethod).apply {
-                            text = "${source.name} (${source.language}) — ${source.category}"
-                            isChecked = true
-                            textSize = 13f
-                            setTextColor(0xFF555555.toInt())
-                            setPadding(8, 4, 8, 4)
-                        }
-                        container.addView(cb)
-                        checkBoxes.add(cb)
-                    }
-
-                    val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this@CesiaInputMethod)
-                        .setView(dialogView)
-                        .setCancelable(true)
-                        .create()
-
-                    btnStartFetch.setOnClickListener {
-                        if (cbSkipConfirm.isChecked) {
-                            getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
-                                .edit().putBoolean("skip_fetch_confirm", true).apply()
-                        }
-                        val confirmed = sources.filterIndexed { i, _ -> checkBoxes[i].isChecked }
-                        dialog.dismiss()
-                        continuation.resume(confirmed) {}
-                    }
-
-                    btnSkipAll.setOnClickListener {
-                        dialog.dismiss()
-                        continuation.resume(emptyList()) {}
-                    }
-
-                    dialog.setOnCancelListener {
-                        continuation.resume(null) {}
-                    }
-
-                    dialog.show()
-                } catch (e: Exception) {
-                    Log.w("Cesia", "showFetchConfirmPopup error: ${e.message}")
-                    continuation.resume(null) {}
-                }
-            }
+    /** 加载分类→RSS URL 映射 */
+    private fun loadCategoryRssUrls(): Map<String, String> {
+        val prefs = getSharedPreferences("cesia_category_rss", MODE_PRIVATE)
+        val map = mutableMapOf<String, String>()
+        for (cat in RSS_CATEGORIES) {
+            val url = prefs.getString(cat, "") ?: ""
+            if (url.isNotBlank()) map[cat] = url
         }
+        return map
     }
 
-    /** 翻译英文内容为中文（轻量调用） */
-    private suspend fun translateToChinese(text: String): String {
-        if (text.isBlank()) return text
-        return try {
-            val prompt = "将以下英文翻译成流畅的中文，只输出翻译结果：\n\n$text"
-            val result = withContext(Dispatchers.IO) {
-                val polishService = typelessEngine?.getPolishService()
-                if (polishService != null) {
-                    polishService.polishWithPrompt(prompt, maxTokens = 512) ?: text
-                } else {
-                    text
-                }
+    /** 通过 Firecrawl 抓取 RSS feed，提取最新5条新闻标题 */
+    private fun fetchRssViaFirecrawl(rssUrl: String): String {
+        val markdown = performFirecrawlScrape(rssUrl)
+        if (markdown.isBlank()) return ""
+        // RSS feed 被 Firecrawl 转成 Markdown，提取条目标题
+        // 常见格式：### 标题 或 - 标题 或 **标题**
+        val titles = mutableListOf<String>()
+        for (line in markdown.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) continue
+            // 去掉 Markdown 标题符号
+            val clean = trimmed
+                .replace(Regex("^#{1,6}\\s*"), "")
+                .replace(Regex("^[-*+]\\s*"), "")
+                .replace(Regex("^\\*\\*|\\*\\*$"), "")
+                .replace(Regex("^\\d+\\.\\s*"), "")
+                .trim()
+            if (clean.length > 5 && clean.length < 200 && !clean.startsWith("http")) {
+                titles.add(clean)
             }
-            result.ifBlank { text }
-        } catch (e: Exception) {
-            Log.w("Cesia", "translateToChinese failed: ${e.message}")
-            text
+            if (titles.size >= 5) break
         }
-    }
-
-    /** 加载用户已启用的 RSS 源列表 */
-    private fun loadEnabledRssSources(): List<RssSource> {
-        return try {
-            val rssPrefs = getSharedPreferences("cesia_rss_sources", MODE_PRIVATE)
-            val json = rssPrefs.getString("rss_sources", "[]") ?: "[]"
-            val sources = mutableListOf<RssSource>()
-            val items = json.removePrefix("[").removeSuffix("]").split("},{")
-            for (item in items) {
-                val clean = item.removePrefix("{").removeSuffix("}")
-                val fields = clean.split(",").associate {
-                    val (key, value) = it.split(":", limit = 2)
-                    key.trim('"') to value.trim('"')
-                }
-                if (fields["enabled"]?.toBoolean() == true && fields.containsKey("url")) {
-                    sources.add(RssSource(
-                        id = fields["id"] ?: "",
-                        name = fields["name"] ?: "",
-                        url = fields["url"] ?: "",
-                        category = fields["category"] ?: "综合",
-                        language = fields["language"] ?: "zh",
-                        enabled = true
-                    ))
-                }
-            }
-            sources
-        } catch (e: Exception) {
-            Log.w("Cesia", "loadEnabledRssSources error: ${e.message}")
-            emptyList()
-        }
-    }
-
-    /** RSS 抓取确认弹窗 */
-    private suspend fun showRssConfirmPopup(sources: List<RssSource>): List<RssSource>? {
-        return suspendCancellableCoroutine { continuation ->
-            val handler = Handler(Looper.getMainLooper())
-            handler.post {
-                try {
-                    val skipConfirm = getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
-                        .getBoolean("skip_rss_confirm", false)
-                    if (skipConfirm) {
-                        continuation.resume(sources) {}
-                        return@post
-                    }
-
-                    val dialogView = android.view.LayoutInflater.from(this@CesiaInputMethod)
-                        .inflate(R.layout.dialog_fetch_confirm, null)
-                    val tvSuggestion = dialogView.findViewById<android.widget.TextView>(R.id.tv_ai_suggestion)
-                    val container = dialogView.findViewById<LinearLayout>(R.id.container_suggested_sources)
-                    val cbSkipConfirm = dialogView.findViewById<android.widget.CheckBox>(R.id.cb_skip_confirm)
-                    val btnStartFetch = dialogView.findViewById<android.widget.Button>(R.id.btn_start_fetch)
-                    val btnSkipAll = dialogView.findViewById<android.widget.Button>(R.id.btn_skip_all)
-
-                    tvSuggestion.text = "AI 分析内容后建议抓取以下 ${sources.size} 个 RSS 源："
-
-                    val checkBoxes = mutableListOf<android.widget.CheckBox>()
-                    for (source in sources) {
-                        val cb = android.widget.CheckBox(this@CesiaInputMethod).apply {
-                            text = "${source.name} [${source.category}] (${source.language})"
-                            isChecked = true
-                            textSize = 13f
-                            setTextColor(0xFF555555.toInt())
-                            setPadding(8, 4, 8, 4)
-                        }
-                        container.addView(cb)
-                        checkBoxes.add(cb)
-                    }
-
-                    val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this@CesiaInputMethod)
-                        .setView(dialogView)
-                        .setCancelable(true)
-                        .create()
-
-                    btnStartFetch.setOnClickListener {
-                        if (cbSkipConfirm.isChecked) {
-                            getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
-                                .edit().putBoolean("skip_rss_confirm", true).apply()
-                        }
-                        val confirmed = sources.filterIndexed { i, _ -> checkBoxes[i].isChecked }
-                        dialog.dismiss()
-                        continuation.resume(confirmed) {}
-                    }
-
-                    btnSkipAll.setOnClickListener {
-                        dialog.dismiss()
-                        continuation.resume(emptyList()) {}
-                    }
-
-                    dialog.setOnCancelListener {
-                        continuation.resume(null) {}
-                    }
-
-                    dialog.show()
-                } catch (e: Exception) {
-                    Log.w("Cesia", "showRssConfirmPopup error: ${e.message}")
-                    continuation.resume(null) {}
-                }
-            }
-        }
-    }
-
-    /** Firecrawl 抓取多个新闻网站，返回合并后的最新内容 */
-    private fun fetchLatestNews(): String {
-        val newsSources = listOf(
-            "https://www.zaobao.com.sg/realtime/china",      // 联合早报-中国
-            "https://www.reuters.com/world/middle-east/",       // 路透社-中东
-            "https://www.bbc.com/zhongwen/simp"                 // BBC中文
-        )
-        val sb = StringBuilder()
-        for (url in newsSources) {
-            val content = performFirecrawlScrape(url)
-            if (content.isNotEmpty()) {
-                // 截取每个网站前1000字符，避免单个网站内容过长
-                sb.appendLine("=== $url ===")
-                sb.appendLine(content.take(1000))
-                sb.appendLine()
-            }
-        }
-        return sb.toString().trim()
+        return if (titles.isNotEmpty()) titles.joinToString("\n") { "• $it" } else ""
     }
 
     /** 检查文本中是否包含今天日期 */

@@ -10,7 +10,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="📰 RSS 新闻源管理"
+        android:text="📰 新闻源 RSS 配置"
         android:textSize="18sp"
         android:textStyle="bold"
         android:textColor="#333333"
@@ -20,75 +20,21 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="添加/管理 RSS 新闻源，智能写作时根据内容自动匹配抓取"
+        android:text="每个分类对应一个 RSS 源，智能写作时 AI 判断分类后自动抓取最新5条"
         android:textSize="11sp"
         android:textColor="#999999"
         android:gravity="center"
         android:layout_marginBottom="12dp" />
 
-    <!-- 添加新 RSS 区域 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="8dp">
-
-        <EditText
-            android:id="@+id/et_rss_name"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="1"
-            android:hint="名称（如：36氪）"
-            android:textSize="12sp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:background="@android:drawable/editbox_background"
-            android:layout_marginEnd="4dp"
-            android:inputType="text" />
-
-        <EditText
-            android:id="@+id/et_rss_url"
-            android:layout_width="0dp"
-            android:layout_height="36dp"
-            android:layout_weight="2"
-            android:hint="RSS URL"
-            android:textSize="12sp"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:background="@android:drawable/editbox_background"
-            android:layout_marginEnd="4dp"
-            android:inputType="textUri" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_add_rss"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="+"
-            android:textSize="18sp"
-            android:textColor="#FFFFFF"
-            app:backgroundTint="#81D8D0"
-            app:cornerRadius="8dp"
-            android:minWidth="40dp" />
-    </LinearLayout>
-
-    <!-- 分类选择 -->
-    <Spinner
-        android:id="@+id/spinner_rss_category"
-        android:layout_width="match_parent"
-        android:layout_height="32dp"
-        android:layout_marginBottom="8dp"
-        android:textSize="12sp"
-        android:paddingStart="4dp" />
-
-    <!-- 已添加的 RSS 列表 -->
+    <!-- 6个分类的 RSS URL 输入框（可滚动） -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:maxHeight="300dp">
+        android:maxHeight="360dp">
 
         <LinearLayout
-            android:id="@+id/container_rss_sources"
+            android:id="@+id/container_rss_urls"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical" />

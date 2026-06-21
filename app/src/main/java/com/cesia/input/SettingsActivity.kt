@@ -388,88 +388,59 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * 显示 RSS 新闻源管理弹窗
+     * 显示新闻源 RSS 配置弹窗
+     * 每个分类对应一个 RSS URL 输入框
      */
     private fun showNewsSourceDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_news_sources, null)
-        val etRssName = dialogView.findViewById<android.widget.EditText>(R.id.et_rss_name)
-        val etRssUrl = dialogView.findViewById<android.widget.EditText>(R.id.et_rss_url)
-        val btnAddRss = dialogView.findViewById<Button>(R.id.btn_add_rss)
-        val spinnerCategory = dialogView.findViewById<android.widget.Spinner>(R.id.spinner_rss_category)
-        val container = dialogView.findViewById<LinearLayout>(R.id.container_rss_sources)
+        val container = dialogView.findViewById<LinearLayout>(R.id.container_rss_urls)
         val btnLoadDefaults = dialogView.findViewById<Button>(R.id.btn_load_defaults)
         val btnConfirm = dialogView.findViewById<Button>(R.id.btn_confirm)
         val btnCancel = dialogView.findViewById<Button>(R.id.btn_cancel)
 
-        // 分类 Spinner
-        val adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_item, RSS_CATEGORIES)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinnerCategory.adapter = adapter
-
-        // 加载已保存的 RSS 列表
-        val rssPrefs = getSharedPreferences("cesia_rss_sources", MODE_PRIVATE)
-        val savedSourcesJson = rssPrefs.getString("rss_sources", "[]") ?: "[]"
-        val savedSources = parseRssSourcesFromJson(savedSourcesJson)
-
-        // 渲染已保存的列表
-        fun renderList() {
-            container.removeAllViews()
-            for (source in savedSources) {
-                val row = android.widget.LinearLayout(this).apply {
-                    orientation = android.widget.LinearLayout.HORIZONTAL
-                    setPadding(8, 4, 8, 4)
-                }
-                val checkBox = android.widget.CheckBox(this).apply {
-                    text = "${source.name} [${source.category}]"
-                    textSize = 12f
-                    setTextColor(0xFF555555.toInt())
-                    isChecked = source.enabled
-                    layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                }
-                val btnDelete = android.widget.Button(this).apply {
-                    text = "✕"
-                    textSize = 12f
-                    setTextColor(0xFFFF4444.toInt())
-                    setBackgroundColor(0x00000000)
-                    layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 36)
-                }
-                btnDelete.setOnClickListener {
-                    val newList = savedSources.filter { it.id != source.id }
-                    savedSources.clear()
-                    savedSources.addAll(newList)
-                    saveRssSources(savedSources)
-                    renderList()
-                }
-                row.addView(checkBox)
-                row.addView(btnDelete)
-                container.addView(row)
-            }
+        // 加载已保存的 RSS URL（key=分类名, value=URL）
+        val rssPrefs = getSharedPreferences("cesia_category_rss", MODE_PRIVATE)
+        val savedUrls = mutableMapOf<String, String>()
+        for (cat in RSS_CATEGORIES) {
+            val url = rssPrefs.getString(cat, "") ?: ""
+            savedUrls[cat] = url
         }
-        renderList()
 
-        // 添加新 RSS
-        btnAddRss.setOnClickListener {
-            val name = etRssName.text?.toString()?.trim() ?: ""
-            val url = etRssUrl.text?.toString()?.trim() ?: ""
-            val category = spinnerCategory.selectedItem?.toString() ?: "综合"
-
-            if (name.isNotEmpty() && url.isNotEmpty()) {
-                val id = "rss_${System.currentTimeMillis()}"
-                val newSource = RssSource(id, name, url, category)
-                savedSources.add(newSource)
-                saveRssSources(savedSources)
-                etRssName.text?.clear()
-                etRssUrl.text?.clear()
-                renderList()
+        // 为每个分类创建输入框
+        val editTexts = mutableMapOf<String, android.widget.EditText>()
+        for (cat in RSS_CATEGORIES) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 4, 0, 4)
             }
+            val label = android.widget.TextView(this).apply {
+                text = cat
+                textSize = 13f
+                setTextColor(0xFF333333.toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(60, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
+            }
+            val et = android.widget.EditText(this).apply {
+                hint = "RSS URL（留空则跳过）"
+                textSize = 12f
+                setTextColor(0xFF555555.toInt())
+                setHintTextColor(0xFFAAAAAA.toInt())
+                setSingleLine(true)
+                inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setText(savedUrls[cat] ?: "")
+            }
+            editTexts[cat] = et
+            row.addView(label)
+            row.addView(et)
+            container.addView(row)
         }
 
         // 加载推荐
         btnLoadDefaults.setOnClickListener {
-            savedSources.clear()
-            savedSources.addAll(DEFAULT_RSS_SOURCES)
-            saveRssSources(savedSources)
-            renderList()
+            for (cat in RSS_CATEGORIES) {
+                val defaultUrl = DEFAULT_CATEGORY_RSS_URLS[cat] ?: ""
+                editTexts[cat]?.setText(defaultUrl)
+            }
         }
 
         val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
@@ -478,56 +449,19 @@ class SettingsActivity : AppCompatActivity() {
             .create()
 
         btnConfirm.setOnClickListener {
-            // 保存启用状态
-            val updatedSources = savedSources.mapIndexed { index, source ->
-                val row = container.getChildAt(index) as? android.widget.LinearLayout
-                val cb = row?.getChildAt(0) as? android.widget.CheckBox
-                source.copy(enabled = cb?.isChecked ?: source.enabled)
+            val editor = rssPrefs.edit()
+            for (cat in RSS_CATEGORIES) {
+                val url = editTexts[cat]?.text?.toString()?.trim() ?: ""
+                editor.putString(cat, url)
             }
-            saveRssSources(updatedSources)
-            appendLog("已保存 RSS 源：${updatedSources.count { it.enabled }} 个启用 / ${updatedSources.size} 个总计")
+            editor.apply()
+            appendLog("已保存 ${RSS_CATEGORIES.count { (rssPrefs.getString(it, "") ?: "").isNotEmpty() }} 个分类的 RSS 源")
             dialog.dismiss()
         }
 
         btnCancel.setOnClickListener { dialog.dismiss() }
 
         dialog.show()
-    }
-
-    private fun parseRssSourcesFromJson(json: String): MutableList<RssSource> {
-        try {
-            val list = mutableListOf<RssSource>()
-            // 简单 JSON 解析
-            val items = json.removePrefix("[").removeSuffix("]").split("},{")
-            for (item in items) {
-                val clean = item.removePrefix("{").removeSuffix("}")
-                val fields = clean.split(",").associate {
-                    val (key, value) = it.split(":", limit = 2)
-                    key.trim('"') to value.trim('"')
-                }
-                if (fields.containsKey("id") && fields.containsKey("name") && fields.containsKey("url")) {
-                    list.add(RssSource(
-                        id = fields["id"] ?: "",
-                        name = fields["name"] ?: "",
-                        url = fields["url"] ?: "",
-                        category = fields["category"] ?: "综合",
-                        language = fields["language"] ?: "zh",
-                        enabled = fields["enabled"]?.toBoolean() ?: true
-                    ))
-                }
-            }
-            return list
-        } catch (e: Exception) {
-            return mutableListOf()
-        }
-    }
-
-    private fun saveRssSources(sources: List<RssSource>) {
-        val json = sources.joinToString(",", "[", "]") { s ->
-            """{"id":"${s.id}","name":"${s.name}","url":"${s.url}","category":"${s.category}","language":"${s.language}","enabled":${s.enabled}}"""
-        }
-        getSharedPreferences("cesia_rss_sources", MODE_PRIVATE)
-            .edit().putString("rss_sources", json).apply()
     }
 
     private fun setupListeners() {
