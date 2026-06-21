@@ -85,6 +85,7 @@ class SettingsActivity : AppCompatActivity() {
     private var pbDownload: android.widget.ProgressBar? = null
     private var btnDownloadVoice: Button? = null
     private var btnDownloadAi: Button? = null
+    private var btnNewsSources: Button? = null
     private var isDownloading = false
 
     // 语音命令词
@@ -262,6 +263,12 @@ class SettingsActivity : AppCompatActivity() {
             btnDownloadAi = findViewById(R.id.btn_download_ai)
         } catch (_: Exception) {}
 
+        // 新闻源管理按钮
+        try {
+            btnNewsSources = findViewById(R.id.btn_news_sources)
+            btnNewsSources?.setOnClickListener { showNewsSourceDialog() }
+        } catch (_: Exception) {}
+
         // 语音命令词设置（原个性化设置内容）
         try {
             etCmdExit = findViewById(R.id.et_cmd_exit)
@@ -378,6 +385,71 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         appendLog("已加载设置")
+    }
+
+    /**
+     * 显示新闻源管理弹窗（按门类的复选框）
+     */
+    private fun showNewsSourceDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_news_sources, null)
+        val container = dialogView.findViewById<LinearLayout>(R.id.container_news_sources)
+        val btnConfirm = dialogView.findViewById<Button>(R.id.btn_confirm)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btn_cancel)
+
+        // 加载已保存的选择
+        val selectedSources = prefs.getStringSet("news_sources_selected", null) ?: emptySet()
+
+        // 按门类分组渲染
+        val catPrefs = getSharedPreferences("cesia_news_sources", MODE_PRIVATE)
+        val enabledCategories = catPrefs.getStringSet("enabled_categories", null) ?: emptySet()
+
+        for (category in NEWS_CATEGORIES) {
+            // 门类标题
+            val catTitle = android.widget.TextView(this).apply {
+                text = "📍 $category"
+                textSize = 14f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(0xFF333333.toInt())
+                setPadding(0, 16, 0, 4)
+            }
+            container.addView(catTitle)
+
+            // 获取该门类下的网站
+            val sourcesForCategory = DEFAULT_NEWS_SOURCES.filter { it.category == category }
+            for (source in sourcesForCategory) {
+                val checkBox = android.widget.CheckBox(this).apply {
+                    text = "${source.name} (${source.language})"
+                    textSize = 13f
+                    setTextColor(0xFF555555.toInt())
+                    isChecked = selectedSources.contains(source.id)
+                    tag = source.id
+                    setPadding(24, 2, 0, 2)
+                }
+                container.addView(checkBox)
+            }
+        }
+
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setView(dialogView)
+            .setCancelable(true)
+            .create()
+
+        btnConfirm.setOnClickListener {
+            val newSelected = mutableSetOf<String>()
+            for (i in 0 until container.childCount) {
+                val child = container.getChildAt(i)
+                if (child is android.widget.CheckBox && child.isChecked) {
+                    newSelected.add(child.tag as String)
+                }
+            }
+            prefs.edit().putStringSet("news_sources_selected", newSelected).apply()
+            appendLog("已保存新闻源选择：${newSelected.size} 个网站")
+            dialog.dismiss()
+        }
+
+        btnCancel.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
     }
 
     private fun setupListeners() {

@@ -316,12 +316,17 @@ class PolishService(
 
     /** 魔法模式：使用自定义 prompt 调用 API */
     fun polishWithPrompt(prompt: String): String? {
+        return polishWithPrompt(prompt, 4096)
+    }
+
+    /** 魔法模式：使用自定义 prompt 调用 API（可指定 max_tokens） */
+    fun polishWithPrompt(prompt: String, maxTokens: Int): String? {
         return try {
             Log.d("PolishService", "polishWithPrompt: apiUrl=$apiUrl, isOpenRouter=${isOpenRouterUrl(apiUrl)}")
             if (isOpenRouterUrl(apiUrl)) {
-                polishWithPromptOpenRouter(prompt)
+                polishWithPromptOpenRouter(prompt, maxTokens)
             } else {
-                polishWithPromptCustom(prompt)
+                polishWithPromptCustom(prompt, maxTokens)
             }
         } catch (e: Exception) {
             Log.e("PolishService", "魔法模式异常", e)
@@ -329,7 +334,7 @@ class PolishService(
         }
     }
 
-    private fun polishWithPromptOpenRouter(prompt: String): String? {
+    private fun polishWithPromptOpenRouter(prompt: String, maxTokens: Int): String? {
         val apiKey = getOpenRouterApiKey() ?: return null
         Log.d("PolishService", "polishWithPromptOpenRouter: _modelId=$_modelId, fallback=$OPENROUTER_MODEL_FALLBACK, apiKey=${apiKey.take(8)}...")
 
@@ -351,7 +356,7 @@ class PolishService(
                 put("model", model)
                 put("messages", messages)
                 put("temperature", 0.3)
-                put("max_tokens", 4096)
+                put("max_tokens", maxTokens)
                 put("stop", JSONArray().apply {
                     put("</assistant>")
                     put("<|endoftext|>")
@@ -393,7 +398,7 @@ class PolishService(
         return null
     }
 
-    private fun polishWithPromptCustom(prompt: String): String? {
+    private fun polishWithPromptCustom(prompt: String, maxTokens: Int): String? {
         val json = JSONObject().apply {
             put("text", prompt)
             put("language", "zh")

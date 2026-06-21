@@ -396,6 +396,20 @@
                 android:text="" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- 新闻源管理按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_news_sources"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:text="📰 新闻源管理"
+            android:textSize="13sp"
+            android:textColor="#81D8D0"
+            app:backgroundTint="#FFFFFF"
+            app:strokeColor="#81D8D0"
+            app:strokeWidth="1dp"
+            app:cornerRadius="10dp"
+            android:layout_marginBottom="12dp" />
+
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

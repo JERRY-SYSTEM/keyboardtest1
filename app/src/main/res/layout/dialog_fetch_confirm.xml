@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="#FFFFFF">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🔍 智能写作 — 新闻源确认"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#333333"
+        android:gravity="center"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:id="@+id/tv_ai_suggestion"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="AI 分析内容后建议抓取以下网站："
+        android:textSize="12sp"
+        android:textColor="#666666"
+        android:layout_marginBottom="12dp" />
+
+    <!-- 建议抓取的网站列表 -->
+    <LinearLayout
+        android:id="@+id/container_suggested_sources"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginBottom="12dp" />
+
+    <!-- 翻译选项 -->
+    <CheckBox
+        android:id="@+id/cb_translate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="翻译英文内容为中文"
+        android:textSize="13sp"
+        android:textColor="#555555"
+        android:checked="true"
+        android:layout_marginBottom="8dp" />
+
+    <!-- 以后不再询问 -->
+    <CheckBox
+        android:id="@+id/cb_skip_confirm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="以后不再询问，自动抓取"
+        android:textSize="12sp"
+        android:textColor="#999999"
+        android:layout_marginBottom="12dp" />
+
+    <!-- 底部按钮 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_skip_all"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="跳过新闻"
+            android:textSize="12sp"
+            android:textColor="#999999"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_marginEnd="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_start_fetch"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="✓ 开始抓取"
+            android:textSize="12sp"
+            android:textColor="#FFFFFF"
+            app:backgroundTint="#81D8D0"
+            app:cornerRadius="8dp" />
+    </LinearLayout>
+
+</LinearLayout>

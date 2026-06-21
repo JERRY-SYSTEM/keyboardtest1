@@ -2462,47 +2462,66 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
                     }
                 }
 
-                // 4. 互联网搜索（双通道：Firecrawl 抓最新 + Tavily 搜次新）
+                // 4. 互联网搜索（智能流程：AI判断门类 → 弹窗确认 → 抓取 → 翻译 → 生成）
                 if (selectedOptions.contains("search")) {
-                    // 搜索词：剪贴板内容 + 强制附加当前日期以确保时效性
                     val searchQuery = if (clipboardText.isNotEmpty()) {
                         clipboardText.take(80)
                     } else {
-                        command.replace(Regex("(续写|扩写|改写|润色|翻译|总结|生成|帮我|请|字数|个字)"), "").trim()
-                            .ifEmpty { command }
+                        command.replace(Regex("(续写|扩写|改写|润色|翻译|写作|修改|帮我写|帮我改|帮我润色)"), "").trim()
                     }
                     val sdf = java.text.SimpleDateFormat("yyyy年MM月dd日", java.util.Locale.CHINA)
                     val today = sdf.format(java.util.Date())
                     val finalQuery = "$searchQuery $today"
 
-                    // 并行执行：Firecrawl 抓最新新闻网站 + Tavily 关键词搜索
-                    withContext(Dispatchers.Main) { updateStatus("🔍 正在搜索最新信息...") }
+                    // Tavily 关键词搜索（始终执行）
                     Log.d("Cesia", "SearXNG query: $finalQuery")
-
-                    // Firecrawl：抓取固定新闻网站获取今日最新
-                    val firecrawlJob = async { fetchLatestNews() }
-                    // Tavily：关键词搜索获取相关内容
-                    val tavilyJob = async { performSearXNGSearch(finalQuery) }
-
-                    val firecrawlContent = firecrawlJob.await()
-                    val tavilyResults = tavilyJob.await()
-
-                    Log.d("Cesia", "Firecrawl results: ${firecrawlContent.length} chars, Tavily results: ${tavilyResults.length} chars")
-
-                    // 添加 Firecrawl 抓取结果（最新）
-                    if (firecrawlContent.isNotEmpty()) {
-                        // 截取前3000字符避免 prompt 过长
-                        promptParts.add("【最新新闻】\n${firecrawlContent.take(3000)}")
-                    }
-
-                    // 添加 Tavily 搜索结果（次新/相关）
+                    withContext(Dispatchers.Main) { updateStatus("🔍 正在搜索：${finalQuery.take(20)}...") }
+                    val tavilyResults = performSearXNGSearch(finalQuery)
+                    Log.d("Cesia", "SearXNG results: ${tavilyResults.length} chars")
                     if (tavilyResults.isNotEmpty()) {
-                        promptParts.add("【网络搜索】\n${tavilyResults}")
+                        promptParts.add("【网络搜索】\n$tavilyResults")
                     }
 
-                    if (firecrawlContent.isEmpty() && tavilyResults.isEmpty()) {
-                        Log.w("Cesia", "Firecrawl + Tavily: 全部无结果")
-                        withContext(Dispatchers.Main) { updateStatus("⚠️ 搜索无结果，将不使用搜索内容") }
+                    // Firecrawl 新闻抓取（智能判断门类 → 用户确认）
+                    val firecrawlKey = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+                        .getString("firecrawl_api_key", "") ?: ""
+                    if (firecrawlKey.isNotEmpty()) {
+                        // 先让 AI 判断需要抓取哪些门类
+                        val aiCategories = aiPredictCategories(command + " " + clipboardText)
+                        Log.d("Cesia", "AI predicted categories: $aiCategories")
+
+                        // 查找用户已选中的、匹配这些门类的网站
+                        val selectedSourceIds = getSharedPreferences("cesia_settings", MODE_PRIVATE)
+                            .getStringSet("news_sources_selected", null) ?: emptySet()
+                        val matchedSources = DEFAULT_NEWS_SOURCES.filter {
+                            it.id in selectedSourceIds && it.category in aiCategories
+                        }
+
+                        if (matchedSources.isNotEmpty()) {
+                            // 弹窗让用户确认
+                            val confirmResult = showFetchConfirmPopup(matchedSources)
+                            if (confirmResult != null && confirmResult.isNotEmpty()) {
+                                withContext(Dispatchers.Main) { updateStatus("📰 正在抓取新闻...") }
+                                val sb = StringBuilder()
+                                for (source in confirmResult) {
+                                    val content = performFirecrawlScrape(source.url)
+                                    if (content.isNotEmpty()) {
+                                        // 英文内容翻译为中文
+                                        val finalContent = if (source.language == "en") {
+                                            translateToChinese(content.take(800))
+                                        } else {
+                                            content.take(1000)
+                                        }
+                                        sb.appendLine("【${source.name}】")
+                                        sb.appendLine(finalContent)
+                                        sb.appendLine()
+                                    }
+                                }
+                                if (sb.isNotEmpty()) {
+                                    promptParts.add("【最新新闻】\n${sb.toString().trim()}")
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -2688,6 +2707,123 @@ private fun buildMagicPrompt(original: String, instruction: String, clipboardCon
             Log.w("Cesia", "Firecrawl failed for $url: ${e.message}")
         }
         return ""
+    }
+
+    /** AI 判断内容属于哪些新闻门类 */
+    private suspend fun aiPredictCategories(content: String): List<String> {
+        if (content.isBlank()) return emptyList()
+        val categories = NEWS_CATEGORIES.joinToString("、")
+        val prompt = "根据以下内容判断属于哪些新闻门类（只返回门类名称，用逗号分隔，可选：$categories）：\n\n${content.take(200)}"
+        return try {
+            val result = withContext(Dispatchers.IO) {
+                val polishService = typelessEngine?.getPolishService()
+                if (polishService != null) {
+                    polishService.polishWithPrompt(prompt, maxTokens = 20) ?: ""
+                } else {
+                    ""
+                }
+            }
+            if (result.isNotBlank()) {
+                result.split(",", "，", "、").map { it.trim() }.filter { it in NEWS_CATEGORIES }
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.w("Cesia", "aiPredictCategories failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /** 弹窗让用户确认要抓取哪些网站，返回确认抓取的列表（null=跳过） */
+    private suspend fun showFetchConfirmPopup(sources: List<NewsSource>): List<NewsSource>? {
+        return suspendCancellableCoroutine { continuation ->
+            val handler = Handler(Looper.getMainLooper())
+            handler.post {
+                try {
+                    // 检查"以后不再询问"
+                    val skipConfirm = getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
+                        .getBoolean("skip_fetch_confirm", false)
+                    if (skipConfirm) {
+                        continuation.resume(sources) {}
+                        return@post
+                    }
+
+                    val dialogView = android.view.LayoutInflater.from(this@CesiaInputMethod)
+                        .inflate(R.layout.dialog_fetch_confirm, null)
+                    val tvSuggestion = dialogView.findViewById<android.widget.TextView>(R.id.tv_ai_suggestion)
+                    val container = dialogView.findViewById<LinearLayout>(R.id.container_suggested_sources)
+                    val cbTranslate = dialogView.findViewById<android.widget.CheckBox>(R.id.cb_translate)
+                    val cbSkipConfirm = dialogView.findViewById<android.widget.CheckBox>(R.id.cb_skip_confirm)
+                    val btnStartFetch = dialogView.findViewById<android.widget.Button>(R.id.btn_start_fetch)
+                    val btnSkipAll = dialogView.findViewById<android.widget.Button>(R.id.btn_skip_all)
+
+                    tvSuggestion.text = "AI 分析内容后建议抓取以下 ${sources.size} 个网站："
+
+                    // 添加网站复选框
+                    val checkBoxes = mutableListOf<android.widget.CheckBox>()
+                    for (source in sources) {
+                        val cb = android.widget.CheckBox(this@CesiaInputMethod).apply {
+                            text = "${source.name} (${source.language}) — ${source.category}"
+                            isChecked = true
+                            textSize = 13f
+                            setTextColor(0xFF555555.toInt())
+                            setPadding(8, 4, 8, 4)
+                        }
+                        container.addView(cb)
+                        checkBoxes.add(cb)
+                    }
+
+                    val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this@CesiaInputMethod)
+                        .setView(dialogView)
+                        .setCancelable(true)
+                        .create()
+
+                    btnStartFetch.setOnClickListener {
+                        if (cbSkipConfirm.isChecked) {
+                            getSharedPreferences("cesia_smart_writing", MODE_PRIVATE)
+                                .edit().putBoolean("skip_fetch_confirm", true).apply()
+                        }
+                        val confirmed = sources.filterIndexed { i, _ -> checkBoxes[i].isChecked }
+                        dialog.dismiss()
+                        continuation.resume(confirmed) {}
+                    }
+
+                    btnSkipAll.setOnClickListener {
+                        dialog.dismiss()
+                        continuation.resume(emptyList()) {}
+                    }
+
+                    dialog.setOnCancelListener {
+                        continuation.resume(null) {}
+                    }
+
+                    dialog.show()
+                } catch (e: Exception) {
+                    Log.w("Cesia", "showFetchConfirmPopup error: ${e.message}")
+                    continuation.resume(null) {}
+                }
+            }
+        }
+    }
+
+    /** 翻译英文内容为中文（轻量调用） */
+    private suspend fun translateToChinese(text: String): String {
+        if (text.isBlank()) return text
+        return try {
+            val prompt = "将以下英文翻译成流畅的中文，只输出翻译结果：\n\n$text"
+            val result = withContext(Dispatchers.IO) {
+                val polishService = typelessEngine?.getPolishService()
+                if (polishService != null) {
+                    polishService.polishWithPrompt(prompt, maxTokens = 512) ?: text
+                } else {
+                    text
+                }
+            }
+            result.ifBlank { text }
+        } catch (e: Exception) {
+            Log.w("Cesia", "translateToChinese failed: ${e.message}")
+            text
+        }
     }
 
     /** Firecrawl 抓取多个新闻网站，返回合并后的最新内容 */
