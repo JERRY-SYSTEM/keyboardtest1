@@ -30,7 +30,7 @@ class PinyinDictManager(private val context: Context) {
         const val PREF_LAST_SYNC = "last_sync"
 
         // === 下载源：full.zip 包含所有词库、schema、lua、opencc ===
-        const val FULL_DICT_URL = "https://github.com/iDvel/rime-ice/releases/download/2026.06.03/full.zip"
+        const val FULL_DICT_URL = "https://cdn.iszy.xyz/gh/github.com/iDvel/rime-ice/releases/download/2026.06.03/full.zip"
 
         // === 本地目录名（外部存储，无需权限，卸载时删除） ===
         const val RIME_DIR = "rime"
